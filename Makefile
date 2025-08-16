@@ -6,5 +6,8 @@ build: ## Build the server
 run: ## run the server
 	cargo run
 
+clean: ## clean the targets
+	cargo clean
+
 lint: ## Linter check
 	cargo clippy --all-targets --all-features -- -D warnings
