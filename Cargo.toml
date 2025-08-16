@@ -1,5 +1,5 @@
 [workspace]
-members = ["src/scheduler"]
+members = ["src/scheduler", "src/backdoor"]
 resolver = "2"
 
 [package]
@@ -8,12 +8,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+scheduler = { path = "src/scheduler" }
+backdoor = { path = "src/backdoor" }
+
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-scheduler = { path = "src/scheduler" }
 
 [workspace.dependencies]
 scheduler = { path = "src/scheduler" }
+backdoor = { path = "src/backdoor" }
+
 tracing = "0.1"
 
 [lints.clippy]
