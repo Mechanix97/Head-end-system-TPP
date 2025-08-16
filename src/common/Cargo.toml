@@ -1,14 +1,10 @@
 [package]
-name = "scheduler"
+name = "common"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-common.workspace = true
-
 tracing.workspace = true
-tokio-cron-scheduler.workspace = true
-thiserror.workspace = true
 
 [lib]
 path = "./mod.rs"

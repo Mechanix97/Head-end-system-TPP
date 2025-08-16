@@ -2,24 +2,49 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::info;
 
 use crate::error::SchedulerError;
+use common::connection_data::ConectionData;
 
-pub async fn init_scheduler() -> Result<(), SchedulerError> {
-    info!("init_scheduler");
+const TOTAL_BUCKETS: usize = 48;
 
-    let sched = JobScheduler::new().await?;
+type Bucket = Vec<ConectionData>;
 
-    sched
-        .add(Job::new_async("1/10 * * * * *", |_uuid, _l| {
-            Box::pin(async move {
-                periodically_task().await;
-            })
-        })?)
-        .await?;
-    sched.start().await?;
-
-    Ok(())
+pub struct Scheduler {
+    pub buckets: Vec<Bucket>,
+    pub job_scheduler: JobScheduler,
 }
 
-async fn periodically_task() {
-    info!("periodically_task");
+impl Scheduler {
+    pub async fn new() -> Result<Self, SchedulerError> {
+        Ok(Self {
+            buckets: vec![Vec::new(); TOTAL_BUCKETS],
+            job_scheduler: JobScheduler::new().await?,
+        })
+    }
+
+    pub async fn start(&mut self) -> Result<(), SchedulerError> {
+        self.job_scheduler.start().await?;
+        Ok(())
+    }
+
+    pub async fn add_connection(
+        &mut self,
+        connection: ConectionData,
+    ) -> Result<(), SchedulerError> {
+        self.buckets[0].push(connection.clone());
+
+        self.job_scheduler
+            .add(Job::new_async("1/10 * * * * *", move |_uuid, _l| {
+                let cc = connection.clone();
+
+                Box::pin(async move {
+                    periodically_task(cc.id, cc.ip).await;
+                })
+            })?)
+            .await?;
+        Ok(())
+    }
+}
+
+async fn periodically_task(id: u32, ip: String) {
+    info!("Conection ID: {id} IP: {ip}");
 }

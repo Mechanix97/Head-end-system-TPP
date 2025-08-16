@@ -2,7 +2,8 @@ use std::error::Error;
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
-use scheduler::scheduler::init_scheduler;
+use common::connection_data::ConectionData;
+use scheduler::scheduler::Scheduler;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -10,7 +11,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Head-End System starting");
 
-    init_scheduler().await?;
+    let mut scheduler = Scheduler::new().await?;
+    scheduler.start().await?;
+
+    scheduler
+        .add_connection(ConectionData {
+            id: 0,
+
+            ip: "192.168.0.1".into(),
+        })
+        .await?;
 
     init_backdoor();
 
