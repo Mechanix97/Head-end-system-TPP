@@ -13,12 +13,15 @@ backdoor = { path = "src/backdoor" }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+tokio = { version = "1.47", features = ["full"] }
 
 [workspace.dependencies]
 scheduler = { path = "src/scheduler" }
 backdoor = { path = "src/backdoor" }
 
 tracing = "0.1"
+tokio-cron-scheduler = "0.14"
+thiserror = "2.0"
 
 [lints.clippy]
 unwrap_used = "deny"
