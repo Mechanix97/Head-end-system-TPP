@@ -1,7 +1,7 @@
 use tracing::info;
 
+use backdoor::backdoor::init_backdoor;
 use scheduler::scheduler::init_scheduler;
-use backdoor::backdoor:init_backdoor;
 
 fn main() {
     tracing_subscriber::fmt().init();
