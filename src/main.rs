@@ -2,7 +2,7 @@ use std::error::Error;
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
-use common::connection_data::ConectionData;
+use common::connection_data::Conection;
 use scheduler::scheduler::Scheduler;
 
 #[tokio::main]
@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     scheduler.start().await?;
 
     scheduler
-        .add_connection(ConectionData {
+        .add_connection(Conection {
             id: 0,
 
             ip: "192.168.0.1".into(),

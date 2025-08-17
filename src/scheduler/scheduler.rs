@@ -2,11 +2,11 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::info;
 
 use crate::error::SchedulerError;
-use common::connection_data::ConectionData;
+use common::connection_data::Conection;
 
 const TOTAL_BUCKETS: usize = 48;
 
-type Bucket = Vec<ConectionData>;
+type Bucket = Vec<Conection>;
 
 pub struct Scheduler {
     pub buckets: Vec<Bucket>,
@@ -26,10 +26,7 @@ impl Scheduler {
         Ok(())
     }
 
-    pub async fn add_connection(
-        &mut self,
-        connection: ConectionData,
-    ) -> Result<(), SchedulerError> {
+    pub async fn add_connection(&mut self, connection: Conection) -> Result<(), SchedulerError> {
         self.buckets[0].push(connection.clone());
 
         self.job_scheduler

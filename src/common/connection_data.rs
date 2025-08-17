@@ -1,5 +1,5 @@
 #[derive(Clone)]
-pub struct ConectionData {
+pub struct Conection {
     pub id: u32,
     pub ip: String,
 }
