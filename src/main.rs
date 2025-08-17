@@ -1,4 +1,5 @@
 use std::error::Error;
+use tokio::time::{Duration, sleep};
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
@@ -24,5 +25,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     init_backdoor();
 
-    loop {}
+    loop {
+        sleep(Duration::from_millis(100)).await;
+    }
 }
