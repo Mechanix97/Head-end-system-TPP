@@ -2,7 +2,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::info;
 
 use crate::error::SchedulerError;
-use common::connection_data::Conection;
+use common::connection::Conection;
 
 const TOTAL_BUCKETS: usize = 48;
 

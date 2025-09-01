@@ -3,7 +3,8 @@ use tokio::time::{Duration, sleep};
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
-use common::connection_data::Conection;
+use common::connection::Conection;
+use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
 
 #[tokio::main]
@@ -25,6 +26,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     init_backdoor();
 
+    start_prometheus_metrics_api("127.0.0.1".to_string(), "8000".to_string()).await?;
     loop {
         sleep(Duration::from_millis(100)).await;
     }
