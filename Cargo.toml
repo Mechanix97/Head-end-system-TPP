@@ -3,7 +3,7 @@ members = ["src/scheduler", "src/backdoor", "src/common", "src/metrics"]
 resolver = "2"
 
 [package]
-name = "HES"
+name = "hes"
 version = "0.1.0"
 edition = "2024"
 
