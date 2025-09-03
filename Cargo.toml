@@ -1,9 +1,9 @@
 [workspace]
-members = ["src/scheduler", "src/backdoor", "src/common"]
+members = ["src/scheduler", "src/backdoor", "src/common", "src/metrics"]
 resolver = "2"
 
 [package]
-name = "HES"
+name = "hes"
 version = "0.1.0"
 edition = "2024"
 
@@ -11,6 +11,7 @@ edition = "2024"
 scheduler = { path = "src/scheduler" }
 backdoor = { path = "src/backdoor" }
 common = { path = "src/common" }
+metrics = { path = "src/metrics" }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
@@ -20,10 +21,14 @@ tokio = { version = "1.47", features = ["full"] }
 scheduler = { path = "src/scheduler" }
 backdoor = { path = "src/backdoor" }
 common = { path = "src/common" }
+metrics = { path = "src/metrics" }
 
 tracing = "0.1"
+tokio = "1.47"
 tokio-cron-scheduler = "0.14"
 thiserror = "2.0"
+axum = "0.8"
+prometheus = "0.14"
 
 [lints.clippy]
 unwrap_used = "deny"

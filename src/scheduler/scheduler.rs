@@ -2,7 +2,8 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::info;
 
 use crate::error::SchedulerError;
-use common::connection_data::Conection;
+use common::connection::Conection;
+use metrics::metrics_connections::METRICS_CONNECTIONS;
 
 const TOTAL_BUCKETS: usize = 48;
 
@@ -28,6 +29,11 @@ impl Scheduler {
 
     pub async fn add_connection(&mut self, connection: Conection) -> Result<(), SchedulerError> {
         self.buckets[0].push(connection.clone());
+
+        METRICS_CONNECTIONS
+            .connections_tracker
+            .with_label_values(&["new_connection"])
+            .inc();
 
         self.job_scheduler
             .add(Job::new_async("1/10 * * * * *", move |_uuid, _l| {
