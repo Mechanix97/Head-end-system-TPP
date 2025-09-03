@@ -10,7 +10,7 @@ pub async fn start_prometheus_metrics_api(
 ) -> Result<(), MetricsError> {
     let app = Router::new()
         .route("/metrics", get(get_metrics))
-        .route("/health", get("Service Up"));
+        .route("/health", get(|| async { "Service Up" }));
 
     let listener = tokio::net::TcpListener::bind(&format!("{address}:{port}")).await?;
     axum::serve(listener, app).await?;

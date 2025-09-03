@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 common.workspace = true
+metrics.workspace = true
 
 tracing.workspace = true
 tokio-cron-scheduler.workspace = true

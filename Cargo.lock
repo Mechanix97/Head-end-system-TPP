@@ -724,6 +724,7 @@ name = "scheduler"
 version = "0.1.0"
 dependencies = [
  "common",
+ "metrics",
  "thiserror 2.0.15",
  "tokio-cron-scheduler",
  "tracing",

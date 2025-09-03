@@ -1,5 +1,4 @@
 use std::error::Error;
-use tokio::time::{Duration, sleep};
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
@@ -24,10 +23,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         })
         .await?;
 
+    scheduler
+        .add_connection(Conection {
+            id: 0,
+
+            ip: "192.168.0.1".into(),
+        })
+        .await?;
+
     init_backdoor();
 
-    start_prometheus_metrics_api("127.0.0.1".to_string(), "8000".to_string()).await?;
-    loop {
-        sleep(Duration::from_millis(100)).await;
-    }
+    start_prometheus_metrics_api("0.0.0.0".to_string(), "8000".to_string()).await?;
+    Ok(())
 }
