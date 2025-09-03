@@ -22,7 +22,7 @@ impl MetricsConns {
             Opts::new("connections_tracker", "Keeps track of all connections"),
             &["Connections"],
         )
-        .unwrap();
+        .expect("Invalid Prometheus counter");
 
         MetricsConns {
             connections_tracker,

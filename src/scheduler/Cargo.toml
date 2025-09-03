@@ -13,3 +13,6 @@ thiserror.workspace = true
 
 [lib]
 path = "./mod.rs"
+
+[lints.clippy]
+unwrap_used = "deny"
