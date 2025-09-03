@@ -19,13 +19,11 @@ pub async fn start_prometheus_metrics_api(
 }
 
 pub(crate) async fn get_metrics() -> String {
-    let ret_string = match METRICS_CONNECTIONS.gather_metrics() {
+    match METRICS_CONNECTIONS.gather_metrics() {
         Ok(string) => string,
         Err(_) => {
             error!("Failed to register METRICS_CONNECTIONS");
             String::new()
         }
-    };
-
-    ret_string
+    }
 }
