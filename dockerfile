@@ -23,4 +23,5 @@ FROM debian:bookworm-slim
 WORKDIR /app
 COPY --from=builder /app/target/release/hes /app/hes
 EXPOSE 8000
+EXPOSE 8081
 CMD ["./hes"]

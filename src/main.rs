@@ -1,8 +1,8 @@
-use std::error::Error;
+use std::{error::Error, sync::Arc};
+use tokio::sync::Mutex;
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
-use common::connection::Conection;
 use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
 
@@ -12,26 +12,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Head-End System starting");
 
-    let mut scheduler = Scheduler::new().await?;
-    scheduler.start().await?;
+    let scheduler = Arc::new(Mutex::new(Scheduler::new().await?));
+    scheduler.lock().await.start().await?;
 
-    scheduler
-        .add_connection(Conection {
-            id: 0,
-
-            ip: "192.168.0.1".into(),
-        })
-        .await?;
-
-    scheduler
-        .add_connection(Conection {
-            id: 0,
-
-            ip: "192.168.0.1".into(),
-        })
-        .await?;
-
-    init_backdoor();
+    init_backdoor(scheduler.clone()).await?;
 
     start_prometheus_metrics_api("0.0.0.0".to_string(), "8000".to_string()).await?;
     Ok(())

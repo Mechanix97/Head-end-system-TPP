@@ -4,7 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# local crates
+scheduler.workspace = true
+common.workspace = true
+
+# other crates
 tracing.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
 
 [lib]
 path = "./mod.rs"

@@ -111,6 +111,10 @@ dependencies = [
 name = "backdoor"
 version = "0.1.0"
 dependencies = [
+ "common",
+ "scheduler",
+ "thiserror 2.0.15",
+ "tokio",
  "tracing",
 ]
 
