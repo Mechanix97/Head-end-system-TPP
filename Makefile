@@ -12,5 +12,9 @@ clean: ## clean the targets
 lint: ## Linter check
 	cargo clippy --all-targets --all-features -- -D warnings
 
-run-prometheus:
-	docker run -d -p 9090:9090 --name prometheus -v ${PWD}\metrics\prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
+run-docker-metrics: ## run server in docker with metrics
+	docker compose build
+	docker compose up -d
+
+stop-docker-metrics: ## stop docker with metrics
+	docker compose down
