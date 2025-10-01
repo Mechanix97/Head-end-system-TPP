@@ -64,6 +64,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if !args.no_metrics {
         start_prometheus_metrics_api(args.metrics_ip, args.metrics_port).await?;
     } else {
+        #[allow(clippy::empty_loop)]
         loop {}
     }
     Ok(())
