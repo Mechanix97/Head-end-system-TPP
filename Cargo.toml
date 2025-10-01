@@ -16,6 +16,7 @@ metrics = { path = "src/metrics" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tokio = { version = "1.47", features = ["full"] }
+clap = { version = "4.5.47", features = ["derive"] }
 
 [workspace.dependencies]
 scheduler = { path = "src/scheduler" }

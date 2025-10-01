@@ -1,6 +1,6 @@
 use crate::MetricsError;
 use axum::{Router, routing::get};
-use tracing::error;
+use tracing::{error, info};
 
 use crate::metrics_connections::METRICS_CONNECTIONS;
 
@@ -8,6 +8,7 @@ pub async fn start_prometheus_metrics_api(
     address: String,
     port: String,
 ) -> Result<(), MetricsError> {
+    info!("Starting prometheus api at {}:{}", address, port);
     let app = Router::new()
         .route("/metrics", get(get_metrics))
         .route("/health", get(|| async { "Service Up" }));

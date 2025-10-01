@@ -8,9 +8,13 @@ use crate::BackdoorError;
 use common::connection::Conection;
 use scheduler::scheduler::Scheduler;
 
-pub async fn init_backdoor(scheduler: Arc<Mutex<Scheduler>>) -> Result<(), BackdoorError> {
-    let listener = TcpListener::bind("0.0.0.0:8081").await?;
-    info!("Backdoor Listening for device reports on port 8081");
+pub async fn init_backdoor(
+    scheduler: Arc<Mutex<Scheduler>>,
+    ip: String,
+    port: String,
+) -> Result<(), BackdoorError> {
+    let listener = TcpListener::bind(format!("{}:{}", ip, port)).await?;
+    info!("Listening for device registration on {}:{}", ip, port);
 
     let sc: Arc<Mutex<Scheduler>> = scheduler.clone();
     tokio::spawn(async move {
