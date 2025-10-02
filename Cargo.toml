@@ -30,6 +30,7 @@ tokio-cron-scheduler = "0.14"
 thiserror = "2.0"
 axum = "0.8"
 prometheus = "0.14"
+bytes = "1.10"
 
 [lints.clippy]
 unwrap_used = "deny"
