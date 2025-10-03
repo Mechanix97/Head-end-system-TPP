@@ -8,10 +8,7 @@ use crate::messages::write::{WriteRequestMessage, WriteResponseMessage};
 
 use bytes::BufMut;
 
-<<<<<<< HEAD
-=======
 #[derive(Debug)]
->>>>>>> 66721d278d98ca0cc0bc19084f2f9accb1605d19
 pub struct Message {
     pub version: u8,
     pub msg_type: MsgType,
@@ -96,11 +93,7 @@ pub enum MessagePayload {
 }
 
 impl MessagePayload {
-<<<<<<< HEAD
-    fn encode(&self, buf: &mut dyn BufMut) -> Result<(), MsgCodecError> {
-=======
     pub(crate) fn encode(&self, buf: &mut dyn BufMut) -> Result<(), MsgCodecError> {
->>>>>>> 66721d278d98ca0cc0bc19084f2f9accb1605d19
         match self {
             MessagePayload::Handshake(msg) => msg.encode(buf),
             MessagePayload::HandshakeResponse(msg) => msg.encode(buf),
@@ -118,11 +111,7 @@ impl MessagePayload {
         }
     }
 
-<<<<<<< HEAD
-    fn decode(code: u8, msg_data: &[u8]) -> Result<Self, MsgCodecError> {
-=======
     pub(crate) fn decode(code: u8, _msg_data: &[u8]) -> Result<Self, MsgCodecError> {
->>>>>>> 66721d278d98ca0cc0bc19084f2f9accb1605d19
         match code {
             0x00 => {}
             0x01 => {}
