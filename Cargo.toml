@@ -24,6 +24,8 @@ backdoor = { path = "src/backdoor" }
 common = { path = "src/common" }
 metrics = { path = "src/metrics" }
 
+futures-util = "0.3"
+tokio-util = { version = "0.7", features = ["full"] }
 tracing = "0.1"
 tokio = "1.47"
 tokio-cron-scheduler = "0.14"

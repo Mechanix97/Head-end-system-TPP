@@ -8,6 +8,10 @@ use crate::messages::write::{WriteRequestMessage, WriteResponseMessage};
 
 use bytes::BufMut;
 
+<<<<<<< HEAD
+=======
+#[derive(Debug)]
+>>>>>>> 66721d278d98ca0cc0bc19084f2f9accb1605d19
 pub struct Message {
     pub version: u8,
     pub msg_type: MsgType,
@@ -18,18 +22,10 @@ pub struct Message {
     pub mac: u128,
 }
 
-impl Message {
-    fn encode(&self, buf: &mut dyn BufMut) -> Result<(), MsgCodecError> {
-        Ok(())
-    }
-    // fn decode(msg_data: &[u8]) -> Result<Self, MsgCodecError> {
-
-    // }
-}
-
+#[derive(Debug)]
 pub enum MsgType {
     Handshake,
-    HandshakeRespoonse,
+    HandshakeResponse,
     RegisterRequest,
     RegisterResponse,
     ReadRequest,
@@ -47,7 +43,7 @@ impl MsgType {
     pub fn code(&self) -> u8 {
         match self {
             MsgType::Handshake => 0x00,
-            MsgType::HandshakeRespoonse => 0x01,
+            MsgType::HandshakeResponse => 0x01,
             MsgType::RegisterRequest => 0x02,
             MsgType::RegisterResponse => 0x03,
             MsgType::ReadRequest => 0x0A,
@@ -61,8 +57,28 @@ impl MsgType {
             MsgType::Ack => 0xFF,
         }
     }
+
+    pub fn from_code(code: u8) -> Result<Self, MsgCodecError> {
+        match code {
+            0x00 => Ok(MsgType::Handshake),
+            0x01 => Ok(MsgType::HandshakeResponse),
+            0x02 => Ok(MsgType::RegisterRequest),
+            0x03 => Ok(MsgType::RegisterResponse),
+            0x0A => Ok(MsgType::ReadRequest),
+            0x0B => Ok(MsgType::ReadResponse),
+            0x14 => Ok(MsgType::WriteRequest),
+            0x15 => Ok(MsgType::WriteResponse),
+            0x1E => Ok(MsgType::ExecuteRequest),
+            0x1F => Ok(MsgType::ExecuteResponse),
+            0x28 => Ok(MsgType::ActionRequest),
+            0x29 => Ok(MsgType::ActionResponse),
+            0xFF => Ok(MsgType::Ack),
+            _ => Err(MsgCodecError::UnknownMsgType),
+        }
+    }
 }
 
+#[derive(Debug)]
 pub enum MessagePayload {
     Handshake(HandshakeMessage),
     HandshakeResponse(HandshakeResponseMessage),
@@ -80,7 +96,11 @@ pub enum MessagePayload {
 }
 
 impl MessagePayload {
+<<<<<<< HEAD
     fn encode(&self, buf: &mut dyn BufMut) -> Result<(), MsgCodecError> {
+=======
+    pub(crate) fn encode(&self, buf: &mut dyn BufMut) -> Result<(), MsgCodecError> {
+>>>>>>> 66721d278d98ca0cc0bc19084f2f9accb1605d19
         match self {
             MessagePayload::Handshake(msg) => msg.encode(buf),
             MessagePayload::HandshakeResponse(msg) => msg.encode(buf),
@@ -98,7 +118,11 @@ impl MessagePayload {
         }
     }
 
+<<<<<<< HEAD
     fn decode(code: u8, msg_data: &[u8]) -> Result<Self, MsgCodecError> {
+=======
+    pub(crate) fn decode(code: u8, _msg_data: &[u8]) -> Result<Self, MsgCodecError> {
+>>>>>>> 66721d278d98ca0cc0bc19084f2f9accb1605d19
         match code {
             0x00 => {}
             0x01 => {}

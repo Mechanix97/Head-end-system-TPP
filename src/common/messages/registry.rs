@@ -1,6 +1,7 @@
 use crate::messages::MsgCodecError;
 use bytes::BufMut;
 
+#[derive(Debug)]
 pub struct RegistryRequestMessage {}
 
 impl RegistryRequestMessage {
@@ -8,6 +9,8 @@ impl RegistryRequestMessage {
         Ok(())
     }
 }
+
+#[derive(Debug)]
 pub struct RegistryResponseMessage {}
 
 impl RegistryResponseMessage {
