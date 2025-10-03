@@ -48,6 +48,6 @@ impl Scheduler {
     }
 }
 
-async fn periodically_task(id: u128, ip: String) {
+async fn periodically_task(id: u32, ip: String) {
     info!("Conection ID: {id} IP: {ip}");
 }

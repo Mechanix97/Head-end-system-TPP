@@ -1,5 +1,5 @@
 #[derive(Clone)]
 pub struct Conection {
-    pub id: u128,
+    pub id: u32,
     pub ip: String,
 }
