@@ -8,7 +8,7 @@ use crate::messages::write::{WriteRequestMessage, WriteResponseMessage};
 
 use bytes::BufMut;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Message {
     pub version: u8,
     pub msg_type: MsgType,
@@ -19,7 +19,7 @@ pub struct Message {
     pub mac: u128,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum MsgType {
     Handshake,
     HandshakeResponse,
@@ -75,7 +75,7 @@ impl MsgType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum MessagePayload {
     Handshake(HandshakeMessage),
     HandshakeResponse(HandshakeResponseMessage),

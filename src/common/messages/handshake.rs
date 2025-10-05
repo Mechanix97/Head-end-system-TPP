@@ -1,7 +1,7 @@
 use crate::messages::MsgCodecError;
 use bytes::BufMut;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct HandshakeMessage {}
 
 impl HandshakeMessage {
@@ -10,7 +10,7 @@ impl HandshakeMessage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct HandshakeResponseMessage {}
 
 impl HandshakeResponseMessage {

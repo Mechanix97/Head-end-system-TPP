@@ -153,6 +153,7 @@ dependencies = [
 name = "backdoor"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "common",
  "futures-util",
  "scheduler",

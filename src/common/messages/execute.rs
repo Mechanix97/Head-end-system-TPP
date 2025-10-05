@@ -1,7 +1,7 @@
 use crate::messages::MsgCodecError;
 use bytes::BufMut;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ExecuteRequestMessage {}
 
 impl ExecuteRequestMessage {
@@ -10,7 +10,7 @@ impl ExecuteRequestMessage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ExecuteResponseMessage {}
 
 impl ExecuteResponseMessage {
