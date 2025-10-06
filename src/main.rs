@@ -46,6 +46,14 @@ struct Args {
         help = "No metrics indicator"
     )]
     no_metrics: bool,
+
+    /// number of buckets
+    #[arg(
+        long = "buckets-number",
+        default_value = "48",
+        help = "No metrics indicator"
+    )]
+    buckets_number: usize,
 }
 
 #[tokio::main]
@@ -56,7 +64,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Head-End System starting");
 
-    let scheduler = Arc::new(Mutex::new(Scheduler::new().await?));
+    let scheduler = Arc::new(Mutex::new(Scheduler::new(args.buckets_number).await?));
     scheduler.lock().await.start().await?;
 
     let _bdjh = init_backdoor(scheduler.clone(), args.backdoor_ip, args.backdoor_port).await?;

@@ -13,7 +13,7 @@ use tokio_util::udp::UdpFramed;
 use tracing::{error, info, warn};
 
 use crate::BackdoorError;
-use common::connection::Conection;
+use common::connection::Connection;
 use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
 use common::messages::message::MsgType;
@@ -34,7 +34,7 @@ pub async fn init_backdoor(
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
-        let pending_connections: Arc<Mutex<HashSet<Conection>>> =
+        let pending_connections: Arc<Mutex<HashSet<Connection>>> =
             Arc::new(Mutex::new(HashSet::new()));
 
         loop {
@@ -92,7 +92,7 @@ async fn handle_backdoor_register_msg(
     framed: &mut UdpFramed<MessageCodec>,
     msg: Message,
     socket_addr: SocketAddr,
-    pending_connections: Arc<Mutex<HashSet<Conection>>>,
+    pending_connections: Arc<Mutex<HashSet<Connection>>>,
 ) -> Result<(), BackdoorError> {
     // TODO: check that the information provided is correct #10
     if msg.device_id != 0 {
@@ -101,10 +101,7 @@ async fn handle_backdoor_register_msg(
 
     let device_id = rand::rng().random::<u128>();
 
-    let connection = Conection {
-        id: device_id,
-        ip: socket_addr.ip().to_string(),
-    };
+    let connection = Connection::new(device_id, socket_addr.ip().to_string());
 
     {
         pending_connections.lock().await.insert(connection.clone());
@@ -138,12 +135,9 @@ async fn handle_backdoor_ack_msg(
     scheduler: &Arc<Mutex<Scheduler>>,
     msg: Message,
     socket_addr: SocketAddr,
-    pending_connections: Arc<Mutex<HashSet<Conection>>>,
+    pending_connections: Arc<Mutex<HashSet<Connection>>>,
 ) -> Result<(), BackdoorError> {
-    let connection = Conection {
-        id: msg.device_id,
-        ip: socket_addr.ip().to_string(),
-    };
+    let connection = Connection::new(msg.device_id, socket_addr.ip().to_string());
 
     if pending_connections.lock().await.remove(&connection) {
         let mut scheduler_lock = scheduler.lock().await;
@@ -174,7 +168,7 @@ mod tests {
     async fn test_new_connection() {
         // 0. intial backdoor setup
         let backdoor_port = "8081";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new().await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(Scheduler::new(12).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
@@ -245,7 +239,7 @@ mod tests {
     async fn test_ack_timeout() {
         // 0. intial backdoor setup
         let backdoor_port = "8082";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new().await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(Scheduler::new(12).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
@@ -316,7 +310,7 @@ mod tests {
     async fn test_multiple_connections() {
         // 0. intial backdoor setup
         let backdoor_port = "8083";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new().await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(Scheduler::new(12).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
@@ -384,7 +378,7 @@ mod tests {
     async fn test_parallel_connections() {
         // 0. intial backdoor setup
         let backdoor_port = "8084";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new().await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(Scheduler::new(12).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),

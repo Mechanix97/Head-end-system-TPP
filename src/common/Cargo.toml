@@ -8,6 +8,7 @@ tracing.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true
+uuid.workspace = true
 
 [lib]
 path = "./mod.rs"
