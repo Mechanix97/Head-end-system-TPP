@@ -43,6 +43,7 @@ impl Scheduler {
         let (day, mon, year) = get_date_from_hour(hour);
 
         let schedule = format!("{sec} {min} {hour} {day} {mon} {year}");
+        self.buckets[bucket_number].push(connection.clone());
 
         let cc2 = connection.clone();
         self.job_scheduler
@@ -54,7 +55,6 @@ impl Scheduler {
                 })
             })?)
             .await?;
-        self.buckets[bucket_number].push(connection.clone());
 
         Ok(())
     }
