@@ -25,6 +25,7 @@ common = { path = "src/common" }
 metrics = { path = "src/metrics" }
 
 futures-util = "0.3"
+futures = "0.3"
 tokio-util = { version = "0.7", features = ["full"] }
 tracing = "0.1"
 tokio = "1.47"
@@ -33,6 +34,7 @@ thiserror = "2.0"
 axum = "0.8"
 prometheus = "0.14"
 bytes = "1.10"
+rand = "0.9"
 
 [lints.clippy]
 unwrap_used = "deny"

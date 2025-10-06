@@ -1,4 +1,6 @@
+use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
+use rand::Rng;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -29,7 +31,7 @@ pub async fn init_backdoor(
 
     let scheduler_clone: Arc<Mutex<Scheduler>> = scheduler.clone();
     let codec = MessageCodec;
-    let mut framed = UdpFramed::new(socket, codec);
+    let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         let pending_connections: Arc<Mutex<HashSet<Conection>>> =
@@ -48,9 +50,13 @@ pub async fn init_backdoor(
 
             match msg.msg_type {
                 MsgType::RegisterRequest => {
-                    if let Err(err) =
-                        handle_backdoor_register_msg(msg, socket_addr, pending_connections.clone())
-                            .await
+                    if let Err(err) = handle_backdoor_register_msg(
+                        &mut framed,
+                        msg,
+                        socket_addr,
+                        pending_connections.clone(),
+                    )
+                    .await
                     {
                         error!("Error handle register request: {err}");
                     }
@@ -83,12 +89,20 @@ pub async fn init_backdoor(
 /// The HES will provide unique device_id and inform the device the next schedule connection.
 /// After sending the response msg (RegisterResponse) the HES expects a ACK message to start with the schedule sequence.
 async fn handle_backdoor_register_msg(
+    framed: &mut UdpFramed<MessageCodec>,
     msg: Message,
     socket_addr: SocketAddr,
     pending_connections: Arc<Mutex<HashSet<Conection>>>,
 ) -> Result<(), BackdoorError> {
+    // TODO: check that the information provided is correct #10
+    if msg.device_id != 0 {
+        return Err(BackdoorError::RegisterRequestInvalidId);
+    }
+
+    let device_id = rand::rng().random::<u128>();
+
     let connection = Conection {
-        id: msg.device_id,
+        id: device_id,
         ip: socket_addr.ip().to_string(),
     };
 
@@ -96,11 +110,10 @@ async fn handle_backdoor_register_msg(
         pending_connections.lock().await.insert(connection.clone());
     }
 
-    // TODO: check that the information provided is correct #10
-    // let response = Message::new_register_response();
-    // if let Err(err) = framed.send((response, addr)).await {
-    //     error!("Error sending response: {err}");
-    // }
+    let response = Message::new_register_response(device_id, msg.seq + 1)?;
+    if let Err(err) = (*framed).send((response, socket_addr)).await {
+        error!("Error sending response: {err}");
+    }
 
     let pending_connections_clone = pending_connections.clone();
     let connection_clone = connection.clone();
@@ -148,6 +161,7 @@ mod tests {
     use scheduler::scheduler::Scheduler;
     use std::sync::Arc;
     use tokio::sync::Mutex;
+    use tokio_util::codec::Decoder;
     use tokio_util::codec::Encoder;
 
     use super::*;
@@ -194,14 +208,16 @@ mod tests {
         assert_eq!(connecitons_number, 0);
 
         // 2. receives registration response msg
-        // TODO
+        buffer = BytesMut::new();
+        device_socket.recv_buf(&mut buffer).await.unwrap();
+        let response = codec.decode(&mut buffer).unwrap().unwrap();
 
         // 3. sends ack response
         let ack_msg = Message {
             version: 1,
             msg_type: MsgType::Ack,
-            device_id: 0,
-            seq: 0,
+            device_id: response.device_id,
+            seq: 3,
             timestamp: 0,
             payload: MessagePayload::Ack,
             mac: 0,
