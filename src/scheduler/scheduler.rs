@@ -22,13 +22,6 @@ impl Scheduler {
     }
 
     pub async fn start(&mut self) -> Result<(), SchedulerError> {
-        for i in 0..self.buckets.len() {
-            let (sec, min, hour) = self.get_time_from_bucket_number(i);
-            let (day, month, year) = get_date_from_hour(hour);
-
-            info!("Bucket {i} scheduled at {hour}:{min}:{sec} on {day}/{month}/{year}");
-        }
-
         self.job_scheduler.start().await?;
         self.job_scheduler.shutdown_on_ctrl_c();
         self.job_scheduler.set_shutdown_handler(Box::new(|| {
