@@ -377,4 +377,119 @@ mod tests {
         let connecitons_number = scheduler.lock().await.buckets[0].len();
         assert_eq!(connecitons_number, 10);
     }
+
+    #[tokio::test]
+    async fn test_parallel_connections() {
+        // 0. intial backdoor setup
+        let backdoor_port = "8084";
+        let scheduler = Arc::new(Mutex::new(Scheduler::new().await.unwrap()));
+        init_backdoor(
+            scheduler.clone(),
+            "0.0.0.0".to_string(),
+            backdoor_port.to_string(),
+        )
+        .await
+        .unwrap();
+
+        // 1a. sends registration request msg
+        let register_request = Message {
+            version: 1,
+            msg_type: MsgType::RegisterRequest,
+            device_id: 0,
+            seq: 0,
+            timestamp: 0,
+            payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
+            mac: 0,
+        };
+        let device_socket_a = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut buffer: BytesMut = BytesMut::new();
+
+        let mut codec = MessageCodec;
+        codec.encode(register_request.clone(), &mut buffer).unwrap();
+
+        device_socket_a
+            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .expect("Failed to send RegisterRequest");
+        sleep(Duration::from_millis(100)).await;
+        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        assert_eq!(connecitons_number, 0);
+
+        // 1a. sends registration request msg
+        let register_request = Message {
+            version: 1,
+            msg_type: MsgType::RegisterRequest,
+            device_id: 0,
+            seq: 0,
+            timestamp: 0,
+            payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
+            mac: 0,
+        };
+        let device_socket_b = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut buffer: BytesMut = BytesMut::new();
+
+        let mut codec = MessageCodec;
+        codec.encode(register_request.clone(), &mut buffer).unwrap();
+
+        device_socket_b
+            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .expect("Failed to send RegisterRequest");
+        sleep(Duration::from_millis(100)).await;
+        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        assert_eq!(connecitons_number, 0);
+
+        // 2a. receives registration response msg
+        buffer = BytesMut::new();
+        device_socket_a.recv_buf(&mut buffer).await.unwrap();
+        let response_a = codec.decode(&mut buffer).unwrap().unwrap();
+
+        // 2b. receives registration response msg
+        buffer = BytesMut::new();
+        device_socket_b.recv_buf(&mut buffer).await.unwrap();
+        let response_b = codec.decode(&mut buffer).unwrap().unwrap();
+
+        // 3a. sends ack response
+        let ack_msg_a = Message {
+            version: 1,
+            msg_type: MsgType::Ack,
+            device_id: response_a.device_id,
+            seq: response_a.seq + 1,
+            timestamp: 0,
+            payload: MessagePayload::Ack,
+            mac: 0,
+        };
+
+        buffer = BytesMut::new();
+        codec.encode(ack_msg_a.clone(), &mut buffer).unwrap();
+
+        device_socket_a
+            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .expect("Failed to send RegisterRequest");
+        sleep(Duration::from_millis(100)).await;
+
+        // 3b. sends ack response
+        let ack_msg_b = Message {
+            version: 1,
+            msg_type: MsgType::Ack,
+            device_id: response_b.device_id,
+            seq: response_b.seq + 1,
+            timestamp: 0,
+            payload: MessagePayload::Ack,
+            mac: 0,
+        };
+
+        buffer = BytesMut::new();
+        codec.encode(ack_msg_b.clone(), &mut buffer).unwrap();
+
+        device_socket_a
+            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .expect("Failed to send RegisterRequest");
+        sleep(Duration::from_millis(100)).await;
+
+        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        assert_eq!(connecitons_number, 2);
+    }
 }
