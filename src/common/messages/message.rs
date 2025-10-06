@@ -1,4 +1,8 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::messages::MessageError;
 use crate::messages::MsgCodecError;
+
 use crate::messages::action::{ActionRequestMessage, ActionResponseMessage};
 use crate::messages::execute::{ExecuteRequestMessage, ExecuteResponseMessage};
 use crate::messages::handshake::{HandshakeMessage, HandshakeResponseMessage};
@@ -7,6 +11,8 @@ use crate::messages::registry::{RegistryRequestMessage, RegistryResponseMessage}
 use crate::messages::write::{WriteRequestMessage, WriteResponseMessage};
 
 use bytes::BufMut;
+
+const CURRENT_PROTOCOL_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Message {
@@ -17,6 +23,28 @@ pub struct Message {
     pub timestamp: u64,
     pub payload: MessagePayload,
     pub mac: u128,
+}
+
+impl Message {
+    pub fn new_register_response(device_id: u128, seq: u32) -> Result<Self, MessageError> {
+        let mut msg = Message {
+            version: CURRENT_PROTOCOL_VERSION,
+            msg_type: MsgType::RegisterResponse,
+            device_id,
+            seq,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+            payload: MessagePayload::RegistryResponse(RegistryResponseMessage {}),
+            mac: 0,
+        };
+
+        msg.calculate_mac();
+        Ok(msg)
+    }
+
+    fn calculate_mac(&mut self) {
+        // TODO: calculate mac #9
+        self.mac = 0;
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

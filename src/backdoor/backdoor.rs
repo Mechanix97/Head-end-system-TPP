@@ -17,6 +17,8 @@ use common::messages::message::Message;
 use common::messages::message::MsgType;
 use scheduler::scheduler::Scheduler;
 
+const ACK_TIMEOUT_DURATION_MS: u64 = 300;
+
 pub async fn init_backdoor(
     scheduler: Arc<Mutex<Scheduler>>,
     ip: String,
@@ -94,7 +96,7 @@ async fn handle_backdoor_register_msg(
         pending_connections.lock().await.insert(connection.clone());
     }
 
-    // TODO: check that the information provided is correct
+    // TODO: check that the information provided is correct #10
     // let response = Message::new_register_response();
     // if let Err(err) = framed.send((response, addr)).await {
     //     error!("Error sending response: {err}");
@@ -103,7 +105,7 @@ async fn handle_backdoor_register_msg(
     let pending_connections_clone = pending_connections.clone();
     let connection_clone = connection.clone();
     tokio::spawn(async move {
-        sleep(Duration::from_secs(300)).await;
+        sleep(Duration::from_millis(ACK_TIMEOUT_DURATION_MS)).await;
         if pending_connections_clone
             .lock()
             .await
@@ -112,9 +114,6 @@ async fn handle_backdoor_register_msg(
             info!("Ack from {} not received", connection.id);
         }
     });
-
-    // let mut scheduler_lock = scheduler.lock().await;
-    // scheduler_lock.add_connection(connection).await?;
 
     Ok(())
 }
@@ -153,12 +152,94 @@ mod tests {
 
     use super::*;
 
+    /// This test checks the normal backdoor registration event
+    /// 1. sends registration request msg
+    /// 2. receives registration response msg
+    /// 3. sends ack response
     #[tokio::test]
     async fn test_new_connection() {
+        // 0. intial backdoor setup
+        let backdoor_port = "8081";
         let scheduler = Arc::new(Mutex::new(Scheduler::new().await.unwrap()));
-        init_backdoor(scheduler.clone(), "0.0.0.0".to_string(), "8081".to_string())
+        init_backdoor(
+            scheduler.clone(),
+            "0.0.0.0".to_string(),
+            backdoor_port.to_string(),
+        )
+        .await
+        .unwrap();
+
+        // 1. sends registration request msg
+        let register_request = Message {
+            version: 1,
+            msg_type: MsgType::RegisterRequest,
+            device_id: 0,
+            seq: 0,
+            timestamp: 0,
+            payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
+            mac: 0,
+        };
+        let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut buffer = BytesMut::new();
+
+        let mut codec = MessageCodec;
+        codec.encode(register_request.clone(), &mut buffer).unwrap();
+
+        device_socket
+            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
             .await
-            .unwrap();
+            .expect("Failed to send RegisterRequest");
+        sleep(Duration::from_millis(100)).await;
+        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        assert_eq!(connecitons_number, 0);
+
+        // 2. receives registration response msg
+        // TODO
+
+        // 3. sends ack response
+        let ack_msg = Message {
+            version: 1,
+            msg_type: MsgType::Ack,
+            device_id: 0,
+            seq: 0,
+            timestamp: 0,
+            payload: MessagePayload::Ack,
+            mac: 0,
+        };
+
+        buffer = BytesMut::new();
+        codec.encode(ack_msg.clone(), &mut buffer).unwrap();
+
+        device_socket
+            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .expect("Failed to send RegisterRequest");
+        sleep(Duration::from_millis(100)).await;
+
+        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        assert_eq!(connecitons_number, 1);
+    }
+
+    /// This test checks the ACK timeout in the backdoor registration event
+    /// 1. sends registration request msg
+    /// 2. receives registration response msg
+    /// 3. adds some delay to trigger the ack timeout
+    /// 4. sends ack response
+    #[tokio::test]
+    async fn test_ack_timeout() {
+        // 0. intial backdoor setup
+        let backdoor_port = "8082";
+        let scheduler = Arc::new(Mutex::new(Scheduler::new().await.unwrap()));
+        init_backdoor(
+            scheduler.clone(),
+            "0.0.0.0".to_string(),
+            backdoor_port.to_string(),
+        )
+        .await
+        .unwrap();
+
+        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        assert_eq!(connecitons_number, 0);
 
         let register_request = Message {
             version: 1,
@@ -176,11 +257,19 @@ mod tests {
         codec.encode(register_request.clone(), &mut buffer).unwrap();
 
         device_socket
-            .send_to(&buffer, "127.0.0.1:8081")
+            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
             .await
             .expect("Failed to send RegisterRequest");
-        sleep(Duration::from_millis(100)).await;
+        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        assert_eq!(connecitons_number, 0);
 
+        // 2. receives registration response msg
+        // TODO
+
+        // 3. adds some delay to trigger the ack timeout
+        sleep(Duration::from_millis(ACK_TIMEOUT_DURATION_MS + 200)).await;
+
+        // 4. sends ack response
         let ack_msg = Message {
             version: 1,
             msg_type: MsgType::Ack,
@@ -195,12 +284,12 @@ mod tests {
         codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
         device_socket
-            .send_to(&buffer, "127.0.0.1:8081")
+            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
 
         let connecitons_number = scheduler.lock().await.buckets[0].len();
-        assert_eq!(connecitons_number, 1);
+        assert_eq!(connecitons_number, 0);
     }
 }
