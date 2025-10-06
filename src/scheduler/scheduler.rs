@@ -21,6 +21,14 @@ impl Scheduler {
     }
 
     pub async fn start(&mut self) -> Result<(), SchedulerError> {
+        for i in 0..self.buckets.len() {
+            info!(
+                "Schedule {} at {}",
+                i,
+                self.get_schedule_from_bucket_number(i)
+            );
+        }
+
         self.job_scheduler.start().await?;
         self.job_scheduler.shutdown_on_ctrl_c();
         self.job_scheduler.set_shutdown_handler(Box::new(|| {
@@ -37,22 +45,52 @@ impl Scheduler {
             .with_label_values(&["new_connection"])
             .inc();
 
+        let bucket_number = self.get_bucket_number();
+        let schedule = self.get_schedule_from_bucket_number(bucket_number);
+
         let cc2 = connection.clone();
         self.job_scheduler
             .add(Job::new_async("1/10 * * * * *", move |_uuid, _l| {
                 let cc = cc2.clone();
 
                 Box::pin(async move {
-                    periodically_task(cc.id, cc.ip).await;
+                    periodically_task(cc).await;
                 })
             })?)
             .await?;
-        self.buckets[0].push(connection.clone());
+        self.buckets[bucket_number].push(connection.clone());
 
         Ok(())
     }
+
+    pub fn get_bucket_number(&self) -> usize {
+        self.buckets
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, bucket)| bucket.len())
+            .map(|(index, _)| index)
+            .unwrap_or(0)
+    }
+
+    pub fn get_schedule_from_bucket_number(&self, bucket_number: usize) -> String {
+        let secs_per_day: usize = 24 * 60 * 60;
+
+        let total_buckets = self.buckets.len();
+
+        let secs_per_bucket = secs_per_day / total_buckets;
+
+        let slot_in_secs = secs_per_bucket * bucket_number;
+
+        let (sec, min, hour) = (
+            slot_in_secs % 3600 % 60,
+            slot_in_secs % 3600 / 60,
+            slot_in_secs / 3600,
+        );
+
+        format!("{sec} {min} {hour} * * *")
+    }
 }
 
-async fn periodically_task(id: u128, ip: String) {
-    info!("Conection ID: {id} IP: {ip}");
+async fn periodically_task(conn: Connection) {
+    info!("Conection ID: {} IP: {}", conn.id, conn.ip);
 }
