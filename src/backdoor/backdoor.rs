@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(connecitons_number, 10);
     }
 
-    // test 2 parallel connections
+    // test 2 parallels connections
     #[tokio::test]
     async fn test_parallel_connections() {
         // 0. intial backdoor setup
