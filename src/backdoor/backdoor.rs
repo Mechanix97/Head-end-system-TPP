@@ -311,6 +311,7 @@ mod tests {
         assert_eq!(connecitons_number, 0);
     }
 
+    // test 10 secuential connections
     #[tokio::test]
     async fn test_multiple_connections() {
         // 0. intial backdoor setup
@@ -378,6 +379,7 @@ mod tests {
         assert_eq!(connecitons_number, 10);
     }
 
+    // test 2 parallel connections
     #[tokio::test]
     async fn test_parallel_connections() {
         // 0. intial backdoor setup
