@@ -168,7 +168,7 @@ mod tests {
     async fn test_new_connection() {
         // 0. intial backdoor setup
         let backdoor_port = "8081";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new(12).await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
@@ -239,7 +239,7 @@ mod tests {
     async fn test_ack_timeout() {
         // 0. intial backdoor setup
         let backdoor_port = "8082";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new(12).await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
@@ -310,7 +310,7 @@ mod tests {
     async fn test_multiple_connections() {
         // 0. intial backdoor setup
         let backdoor_port = "8083";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new(12).await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
@@ -378,7 +378,7 @@ mod tests {
     async fn test_parallel_connections() {
         // 0. intial backdoor setup
         let backdoor_port = "8084";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new(12).await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),

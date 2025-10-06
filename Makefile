@@ -12,6 +12,9 @@ clean: ## clean the targets
 lint: ## Linter check
 	cargo clippy --all-targets --all-features -- -D warnings
 
+test: ## run tests
+	cargo test --all
+
 run-docker-metrics: ## run server in docker with metrics
 	docker compose build
 	docker compose up -d
