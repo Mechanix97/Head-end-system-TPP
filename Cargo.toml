@@ -29,7 +29,7 @@ futures = "0.3"
 tokio-util = { version = "0.7", features = ["full"] }
 tracing = "0.1"
 tokio = "1.47"
-tokio-cron-scheduler = "0.14"
+tokio-cron-scheduler = { version = "0.15", features = ["signal"] }
 thiserror = "2.0"
 axum = "0.8"
 prometheus = "0.14"
