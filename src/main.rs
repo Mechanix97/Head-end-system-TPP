@@ -70,8 +70,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let _bdjh = init_backdoor(scheduler.clone(), args.backdoor_ip, args.backdoor_port).await?;
 
     if !args.no_metrics {
-        loop {}
-        // start_prometheus_metrics_api(args.metrics_ip, args.metrics_port).await?;
+        start_prometheus_metrics_api(args.metrics_ip, args.metrics_port).await?;
     } else {
         #[allow(clippy::empty_loop)]
         loop {}
