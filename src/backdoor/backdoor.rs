@@ -217,7 +217,7 @@ mod tests {
             version: 1,
             msg_type: MsgType::Ack,
             device_id: response.device_id,
-            seq: 3,
+            seq: response.seq + 1,
             timestamp: 0,
             payload: MessagePayload::Ack,
             mac: 0,
@@ -280,7 +280,9 @@ mod tests {
         assert_eq!(connecitons_number, 0);
 
         // 2. receives registration response msg
-        // TODO
+        buffer = BytesMut::new();
+        device_socket.recv_buf(&mut buffer).await.unwrap();
+        let response = codec.decode(&mut buffer).unwrap().unwrap();
 
         // 3. adds some delay to trigger the ack timeout
         sleep(Duration::from_millis(ACK_TIMEOUT_DURATION_MS + 200)).await;
@@ -289,8 +291,8 @@ mod tests {
         let ack_msg = Message {
             version: 1,
             msg_type: MsgType::Ack,
-            device_id: 0,
-            seq: 0,
+            device_id: response.device_id,
+            seq: response.seq + 1,
             timestamp: 0,
             payload: MessagePayload::Ack,
             mac: 0,
