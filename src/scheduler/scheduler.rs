@@ -1,3 +1,4 @@
+use chrono::{Datelike, Timelike, Utc};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::info;
 
@@ -22,11 +23,10 @@ impl Scheduler {
 
     pub async fn start(&mut self) -> Result<(), SchedulerError> {
         for i in 0..self.buckets.len() {
-            info!(
-                "Schedule {} at {}",
-                i,
-                self.get_schedule_from_bucket_number(i)
-            );
+            let (sec, min, hour) = self.get_time_from_bucket_number(i);
+            let (day, month, year) = get_date_from_hour(hour);
+
+            info!("Bucket {i} scheduled at {hour}:{min}:{sec} on {day}/{month}/{year}");
         }
 
         self.job_scheduler.start().await?;
@@ -46,11 +46,14 @@ impl Scheduler {
             .inc();
 
         let bucket_number = self.get_bucket_number();
-        let schedule = self.get_schedule_from_bucket_number(bucket_number);
+        let (sec, min, hour) = self.get_time_from_bucket_number(bucket_number);
+        let (day, mon, year) = get_date_from_hour(hour);
+
+        let schedule = format!("{sec} {min} {hour} {day} {mon} {year}");
 
         let cc2 = connection.clone();
         self.job_scheduler
-            .add(Job::new_async("1/10 * * * * *", move |_uuid, _l| {
+            .add(Job::new_async(schedule, move |_uuid, _l| {
                 let cc = cc2.clone();
 
                 Box::pin(async move {
@@ -72,7 +75,7 @@ impl Scheduler {
             .unwrap_or(0)
     }
 
-    pub fn get_schedule_from_bucket_number(&self, bucket_number: usize) -> String {
+    pub fn get_time_from_bucket_number(&self, bucket_number: usize) -> (usize, usize, usize) {
         let secs_per_day: usize = 24 * 60 * 60;
 
         let total_buckets = self.buckets.len();
@@ -81,14 +84,30 @@ impl Scheduler {
 
         let slot_in_secs = secs_per_bucket * bucket_number;
 
-        let (sec, min, hour) = (
+        (
             slot_in_secs % 3600 % 60,
             slot_in_secs % 3600 / 60,
             slot_in_secs / 3600,
-        );
-
-        format!("{sec} {min} {hour} * * *")
+        )
     }
+}
+
+fn get_date_from_hour(hour: usize) -> (usize, usize, usize) {
+    let today = Utc::now();
+    let tomorrow = today + chrono::Duration::days(1);
+
+    if hour > today.hour() as usize + 1 {
+        return (
+            today.day() as usize,
+            today.month() as usize,
+            today.year() as usize,
+        );
+    }
+    (
+        tomorrow.day() as usize,
+        tomorrow.month() as usize,
+        tomorrow.year() as usize,
+    )
 }
 
 async fn periodically_task(conn: Connection) {
