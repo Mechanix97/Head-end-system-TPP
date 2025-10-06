@@ -20,7 +20,7 @@ struct Args {
     backdoor_ip: String,
 
     /// Backdoor port
-    #[arg(long = "backdoor-port", default_value = "8081", help = "Backdoor port")]
+    #[arg(long = "backdoor-port", default_value = "6565", help = "Backdoor port")]
     backdoor_port: String,
 
     /// Prometheus metrics api IP
