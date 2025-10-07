@@ -34,7 +34,7 @@ struct Args {
     /// Prometheus metrics api port
     #[arg(
         long = "metrics-port",
-        default_value = "8000",
+        default_value = "6464",
         help = "Prometheus metrics api port"
     )]
     metrics_port: String,

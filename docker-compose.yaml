@@ -3,8 +3,8 @@ services:
     build: .
     container_name: headend_app
     ports:
-      - "8000:8000"
-      - "8081:8081"
+      - "6464:6464"
+      - "6565:6565"
     depends_on:
       - prometheus
 
