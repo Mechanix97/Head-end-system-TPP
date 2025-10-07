@@ -1,13 +1,12 @@
+use chrono::{Datelike, Timelike, Utc};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::info;
 
 use crate::error::SchedulerError;
-use common::connection::Conection;
+use common::connection::Connection;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
-const TOTAL_BUCKETS: usize = 48;
-
-type Bucket = Vec<Conection>;
+type Bucket = Vec<Connection>;
 
 pub struct Scheduler {
     pub buckets: Vec<Bucket>,
@@ -15,39 +14,95 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub async fn new() -> Result<Self, SchedulerError> {
+    pub async fn new(bucket_number: usize) -> Result<Self, SchedulerError> {
         Ok(Self {
-            buckets: vec![Vec::new(); TOTAL_BUCKETS],
+            buckets: vec![Vec::new(); bucket_number],
             job_scheduler: JobScheduler::new().await?,
         })
     }
 
     pub async fn start(&mut self) -> Result<(), SchedulerError> {
         self.job_scheduler.start().await?;
+        self.job_scheduler.shutdown_on_ctrl_c();
+        self.job_scheduler.set_shutdown_handler(Box::new(|| {
+            Box::pin(async move {
+                info!("Shuting down job scheduler");
+            })
+        }));
         Ok(())
     }
 
-    pub async fn add_connection(&mut self, connection: Conection) -> Result<(), SchedulerError> {
-        self.buckets[0].push(connection.clone());
-
+    pub async fn add_connection(&mut self, connection: Connection) -> Result<(), SchedulerError> {
         METRICS_CONNECTIONS
             .connections_tracker
             .with_label_values(&["new_connection"])
             .inc();
 
+        let bucket_number = self.get_bucket_number();
+        let (sec, min, hour) = self.get_time_from_bucket_number(bucket_number);
+        let (day, mon, year) = get_date_from_hour(hour);
+
+        let schedule = format!("{sec} {min} {hour} {day} {mon} {year}");
+        self.buckets[bucket_number].push(connection.clone());
+
+        let cc2 = connection.clone();
         self.job_scheduler
-            .add(Job::new_async("1/10 * * * * *", move |_uuid, _l| {
-                let cc = connection.clone();
+            .add(Job::new_async(schedule, move |_uuid, _l| {
+                let cc = cc2.clone();
 
                 Box::pin(async move {
-                    periodically_task(cc.id, cc.ip).await;
+                    periodically_task(cc).await;
                 })
             })?)
             .await?;
+
         Ok(())
+    }
+
+    pub fn get_bucket_number(&self) -> usize {
+        self.buckets
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, bucket)| bucket.len())
+            .map(|(index, _)| index)
+            .unwrap_or(0)
+    }
+
+    pub fn get_time_from_bucket_number(&self, bucket_number: usize) -> (usize, usize, usize) {
+        let secs_per_day: usize = 24 * 60 * 60;
+
+        let total_buckets = self.buckets.len();
+
+        let secs_per_bucket = secs_per_day / total_buckets;
+
+        let slot_in_secs = secs_per_bucket * bucket_number;
+
+        (
+            slot_in_secs % 3600 % 60,
+            slot_in_secs % 3600 / 60,
+            slot_in_secs / 3600,
+        )
     }
 }
 
-async fn periodically_task(id: u128, ip: String) {
-    info!("Conection ID: {id} IP: {ip}");
+fn get_date_from_hour(hour: usize) -> (usize, usize, usize) {
+    let today = Utc::now();
+    let tomorrow = today + chrono::Duration::days(1);
+
+    if hour > today.hour() as usize + 1 {
+        return (
+            today.day() as usize,
+            today.month() as usize,
+            today.year() as usize,
+        );
+    }
+    (
+        tomorrow.day() as usize,
+        tomorrow.month() as usize,
+        tomorrow.year() as usize,
+    )
+}
+
+async fn periodically_task(conn: Connection) {
+    info!("Conection ID: {} IP: {}", conn.id, conn.ip);
 }
