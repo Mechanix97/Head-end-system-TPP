@@ -20,15 +20,16 @@ impl MetricsConns {
     pub fn new() -> Self {
         let connections_tracker = IntCounterVec::new(
             Opts::new("connections_tracker", "Keeps track of all connections"),
-            &["Connections"],
+            &["type"],
         )
         .expect("Invalid Prometheus counter");
+
+        connections_tracker.with_label_values(&["total"]).inc_by(0); // Fuerza sample a 0
 
         MetricsConns {
             connections_tracker,
         }
     }
-
     pub fn gather_metrics(&self) -> Result<String, MetricsError> {
         let r = Registry::new();
 
