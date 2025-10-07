@@ -1,18 +1,18 @@
 # Etapa 1: cargo chef (caching de dependencias)
-FROM rust:1.88 as chef
+FROM rust:1.88 AS chef
 WORKDIR /app
 RUN cargo install cargo-chef
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # Etapa 2: construir dependencias
-FROM chef as planner
+FROM chef AS planner
 WORKDIR /app
 COPY --from=chef /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Etapa 3: construir la app
-FROM rust:1.88 as builder
+FROM rust:1.88 AS builder
 WORKDIR /app
 COPY . .
 COPY --from=planner /app/target target
