@@ -20,7 +20,7 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     ports:
-      - "3000:6969"
+      - "6969:3000"
     volumes:
       - grafana_data:/var/lib/grafana
     depends_on:
