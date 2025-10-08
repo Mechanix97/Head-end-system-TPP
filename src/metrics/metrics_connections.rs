@@ -24,8 +24,7 @@ impl MetricsConns {
         )
         .expect("Invalid Prometheus counter");
 
-        connections_tracker.with_label_values(&["total"]).inc_by(0); // Fuerza sample a 0
-
+        connections_tracker.with_label_values(&["total"]).inc_by(0);
         MetricsConns {
             connections_tracker,
         }
