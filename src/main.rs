@@ -1,5 +1,8 @@
 use std::{error::Error, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::{
+    io::{self, AsyncReadExt},
+    sync::Mutex,
+};
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
@@ -67,13 +70,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let scheduler = Arc::new(Mutex::new(Scheduler::new(args.buckets_number).await?));
     scheduler.lock().await.start().await?;
 
-    let _bdjh = init_backdoor(scheduler.clone(), args.backdoor_ip, args.backdoor_port).await?;
+    let backdoor_joinhandle =
+        init_backdoor(scheduler.clone(), args.backdoor_ip, args.backdoor_port).await?;
 
-    if !args.no_metrics {
-        start_prometheus_metrics_api(args.metrics_ip, args.metrics_port).await?;
+    let metrics_join_handle = if !args.no_metrics {
+        let mjh = start_prometheus_metrics_api(args.metrics_ip, args.metrics_port).await?;
+        Some(mjh)
     } else {
-        #[allow(clippy::empty_loop)]
-        loop {}
+        None
+    };
+
+    loop {
+        let mut buffer: [u8; 1] = [0; 1];
+        let mut reader = io::BufReader::new(io::stdin());
+        match reader.read(&mut buffer).await {
+            Ok(0) => break,
+            Ok(n) if n == 1 => {
+                let c = buffer[0] as char;
+                if c == 'q' || c == 'Q' {
+                    info!("Shutting down.");
+                    break;
+                }
+            }
+            _ => (),
+        }
     }
+
+    backdoor_joinhandle.abort_handle().abort();
+    if let Some(metrics_join_handle) = metrics_join_handle {
+        metrics_join_handle.abort_handle().abort();
+    }
+
     Ok(())
 }
