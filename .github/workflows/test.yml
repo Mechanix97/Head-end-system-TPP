@@ -1,4 +1,4 @@
-name: Run Make Lint
+name: Run Make Test
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  lint:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -22,5 +22,5 @@ jobs:
           sudo apt-get install -y python3-pip
           pip3 install yamllint
 
-      - name: Run make lint
-        run: make lint
+      - name: Run make test
+        run: make test
