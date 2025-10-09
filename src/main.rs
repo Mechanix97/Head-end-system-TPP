@@ -85,7 +85,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let mut reader = io::BufReader::new(io::stdin());
         match reader.read(&mut buffer).await {
             Ok(0) => break,
-            Ok(n) if n == 1 => {
+            Ok(1) => {
                 let c = buffer[0] as char;
                 if c == 'q' || c == 'Q' {
                     info!("Shutting down.");

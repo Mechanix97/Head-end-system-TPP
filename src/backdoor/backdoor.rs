@@ -487,6 +487,5 @@ mod tests {
 
         let connecitons_number = scheduler.lock().await.buckets[0].len();
         assert_eq!(connecitons_number, 2);
-        assert!(false);
     }
 }
