@@ -1,9 +1,22 @@
-use crate::database::DatabaseType;
+use std::sync::Arc;
 
-pub struct Database {}
+use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
+
+pub struct Database {
+    pub engine: Arc<dyn Engine>,
+}
 
 impl Database {
-    pub fn new(_database_type: DatabaseType) -> Self {
-        Self {}
+    pub fn new(database_type: DatabaseType) -> Self {
+        match database_type {
+            DatabaseType::InMemory => Self {
+                engine: Arc::new(InMemoryDB {}),
+            },
+            DatabaseType::Postgres => Self {
+                engine: Arc::new(PostgresDB {}),
+            },
+        }
     }
 }
+
+pub trait Engine {}
