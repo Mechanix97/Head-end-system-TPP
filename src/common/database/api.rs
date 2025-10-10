@@ -10,10 +10,10 @@ impl Database {
     pub fn new(database_type: DatabaseType) -> Self {
         match database_type {
             DatabaseType::InMemory => Self {
-                engine: Arc::new(InMemoryDB {}),
+                engine: Arc::new(InMemoryDB::new()),
             },
             DatabaseType::Postgres => Self {
-                engine: Arc::new(PostgresDB {}),
+                engine: Arc::new(PostgresDB::new()),
             },
         }
     }
