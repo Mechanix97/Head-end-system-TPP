@@ -288,6 +288,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "clap",
  "thiserror 2.0.17",
  "tokio-util",
  "tracing",

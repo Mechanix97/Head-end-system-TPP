@@ -1,3 +1,4 @@
+use clap::Parser;
 use std::{error::Error, sync::Arc};
 use tokio::{
     io::{self, AsyncReadExt},
@@ -6,16 +7,9 @@ use tokio::{
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
+use common::database::DatabaseType;
 use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
-
-use clap::{Parser, ValueEnum};
-
-#[derive(Debug, Clone, PartialEq, Eq, Copy, ValueEnum)]
-enum DatabaseType {
-    InMemory,
-    Postgres,
-}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
