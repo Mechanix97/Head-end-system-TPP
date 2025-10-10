@@ -9,7 +9,13 @@ use backdoor::backdoor::init_backdoor;
 use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+#[derive(Debug, Clone, PartialEq, Eq, Copy, ValueEnum)]
+enum DatabaseType {
+    InMemory,
+    Postgres,
+}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -57,6 +63,14 @@ struct Args {
         help = "No metrics indicator"
     )]
     buckets_number: usize,
+
+    /// Database type
+    #[arg(
+        long = "database",
+        default_value = "postgres",
+        help = "Database type to use (in-memory or postgres)"
+    )]
+    database: DatabaseType,
 }
 
 #[tokio::main]
