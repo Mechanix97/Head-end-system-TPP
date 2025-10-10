@@ -7,7 +7,7 @@ use tokio::{
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
-use common::database::DatabaseType;
+use common::database::{DatabaseType, api::Database};
 use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
 
@@ -64,7 +64,7 @@ struct Args {
         default_value = "postgres",
         help = "Database type to use (in-memory or postgres)"
     )]
-    database: DatabaseType,
+    database_type: DatabaseType,
 }
 
 #[tokio::main]
@@ -74,6 +74,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt().init();
 
     info!("Head-End System starting");
+
+    let _db = Database::new(args.database_type);
 
     let scheduler = Arc::new(Mutex::new(Scheduler::new(args.buckets_number).await?));
     scheduler.lock().await.start().await?;
