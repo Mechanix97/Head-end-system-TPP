@@ -1,3 +1,4 @@
+use crate::connection::Connection;
 use crate::database::api::Engine;
 
 pub struct PostgresDB {}
@@ -8,4 +9,8 @@ impl PostgresDB {
     }
 }
 
-impl Engine for PostgresDB {}
+impl Engine for PostgresDB {
+    fn get_active_connections(&self) -> Vec<Connection> {
+        vec![]
+    }
+}

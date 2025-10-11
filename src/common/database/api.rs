@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::connection::Connection;
 use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
 
 pub struct Database {
@@ -17,6 +18,12 @@ impl Database {
             },
         }
     }
+
+    pub fn get_active_connections(&self) -> Vec<Connection> {
+        self.engine.get_active_connections()
+    }
 }
 
-pub trait Engine {}
+pub trait Engine {
+    fn get_active_connections(&self) -> Vec<Connection>;
+}
