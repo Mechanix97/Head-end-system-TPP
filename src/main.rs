@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Head-End System starting");
 
-    let _db = Database::new(args.database_type);
+    let _db = Database::new(args.database_type).await;
 
     let scheduler = Arc::new(Mutex::new(Scheduler::new(args.buckets_number).await?));
     scheduler.lock().await.start().await?;
@@ -94,7 +94,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let mut buffer: [u8; 1] = [0; 1];
         let mut reader = io::BufReader::new(io::stdin());
         match reader.read(&mut buffer).await {
-            Ok(0) => break,
             Ok(1) => {
                 let c = buffer[0] as char;
                 if c == 'q' || c == 'Q' {

@@ -8,13 +8,13 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(database_type: DatabaseType) -> Self {
+    pub async fn new(database_type: DatabaseType) -> Self {
         match database_type {
             DatabaseType::InMemory => Self {
                 engine: Arc::new(InMemoryDB::new()),
             },
             DatabaseType::Postgres => Self {
-                engine: Arc::new(PostgresDB::new()),
+                engine: Arc::new(PostgresDB::new().await),
             },
         }
     }
