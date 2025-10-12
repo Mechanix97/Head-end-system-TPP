@@ -1,3 +1,4 @@
+use clap::Parser;
 use std::{error::Error, sync::Arc};
 use tokio::{
     io::{self, AsyncReadExt},
@@ -6,10 +7,9 @@ use tokio::{
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
+use common::database::{DatabaseType, api::Database};
 use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
-
-use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -57,6 +57,14 @@ struct Args {
         help = "No metrics indicator"
     )]
     buckets_number: usize,
+
+    /// Database type
+    #[arg(
+        long = "database",
+        default_value = "postgres",
+        help = "Database type to use (in-memory or postgres)"
+    )]
+    database_type: DatabaseType,
 }
 
 #[tokio::main]
@@ -66,6 +74,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt().init();
 
     info!("Head-End System starting");
+
+    let _db = Database::new(args.database_type).await;
 
     let scheduler = Arc::new(Mutex::new(Scheduler::new(args.buckets_number).await?));
     scheduler.lock().await.start().await?;
@@ -83,16 +93,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let mut buffer: [u8; 1] = [0; 1];
         let mut reader = io::BufReader::new(io::stdin());
-        match reader.read(&mut buffer).await {
-            Ok(0) => break,
-            Ok(1) => {
-                let c = buffer[0] as char;
-                if c == 'q' || c == 'Q' {
-                    info!("Shutting down.");
-                    break;
-                }
+        if let Ok(1) = reader.read(&mut buffer).await {
+            let c = buffer[0] as char;
+            if c == 'q' || c == 'Q' {
+                info!("Shutting down.");
+                break;
             }
-            _ => (),
         }
     }
 

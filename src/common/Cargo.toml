@@ -9,6 +9,9 @@ bytes.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true
 uuid.workspace = true
+clap.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
 
 [lib]
 path = "./mod.rs"

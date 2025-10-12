@@ -7,6 +7,9 @@ services:
       - "6565:6565"
     depends_on:
       - prometheus
+      - postgres
+    environment:
+      - DATABASE_URL=postgres://postgres:password@postgres:5432/hes
 
   prometheus:
     image: prom/prometheus:latest
@@ -26,5 +29,18 @@ services:
     depends_on:
       - prometheus
 
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: hes
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
 volumes:
   grafana_data:
+  postgres_data:

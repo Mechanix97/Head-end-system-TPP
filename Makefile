@@ -4,7 +4,7 @@ build: ## Build the server
 	cargo build
 
 run: ## run the server
-	cargo run -- --no-metrics
+	cargo run -- --no-metrics --database=in-memory
 
 clean: ## clean the targets
 	cargo clean
