@@ -11,7 +11,7 @@ impl Database {
     pub async fn new(database_type: DatabaseType) -> Self {
         match database_type {
             DatabaseType::InMemory => Self {
-                engine: Arc::new(InMemoryDB::new()),
+                engine: Arc::new(InMemoryDB::default()),
             },
             DatabaseType::Postgres => Self {
                 engine: Arc::new(PostgresDB::new().await),

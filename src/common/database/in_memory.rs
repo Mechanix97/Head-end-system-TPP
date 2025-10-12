@@ -1,12 +1,16 @@
 use crate::connection::Connection;
 use crate::database::api::Engine;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-pub struct InMemoryDB {}
+#[derive(Default)]
+pub struct InMemoryDB {
+    pub inner: Arc<Mutex<InnerDB>>,
+}
 
-impl InMemoryDB {
-    pub fn new() -> Self {
-        Self {}
-    }
+#[derive(Default)]
+pub struct InnerDB {
+    pub active_connections: Vec<Connection>, //todo remove this pub
 }
 
 impl Engine for InMemoryDB {

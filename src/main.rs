@@ -93,15 +93,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let mut buffer: [u8; 1] = [0; 1];
         let mut reader = io::BufReader::new(io::stdin());
-        match reader.read(&mut buffer).await {
-            Ok(1) => {
-                let c = buffer[0] as char;
-                if c == 'q' || c == 'Q' {
-                    info!("Shutting down.");
-                    break;
-                }
+        if let Ok(1) = reader.read(&mut buffer).await {
+            let c = buffer[0] as char;
+            if c == 'q' || c == 'Q' {
+                info!("Shutting down.");
+                break;
             }
-            _ => (),
         }
     }
 
