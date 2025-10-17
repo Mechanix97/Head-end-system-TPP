@@ -80,8 +80,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let scheduler = Arc::new(Mutex::new(Scheduler::new(args.buckets_number).await?));
     scheduler.lock().await.start().await?;
 
-    let backdoor_joinhandle =
-        init_backdoor(scheduler.clone(), args.backdoor_ip, args.backdoor_port).await?;
+    let backdoor_joinhandle = init_backdoor(
+        scheduler.clone(),
+        args.backdoor_ip,
+        args.backdoor_port,
+        None,
+    )
+    .await?;
 
     let metrics_join_handle = if !args.no_metrics {
         let mjh = start_prometheus_metrics_api(args.metrics_ip, args.metrics_port).await?;

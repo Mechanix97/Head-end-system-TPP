@@ -19,15 +19,18 @@ use common::messages::message::Message;
 use common::messages::message::MsgType;
 use scheduler::scheduler::Scheduler;
 
-const ACK_TIMEOUT_DURATION_MS: u64 = 300;
+const ACK_TIMEOUT_DURATION_MS: u64 = 300000;
 
 pub async fn init_backdoor(
     scheduler: Arc<Mutex<Scheduler>>,
     ip: String,
     port: String,
+    ack_timeout_duracion: Option<u64>,
 ) -> Result<JoinHandle<()>, BackdoorError> {
     let socket = UdpSocket::bind(format!("{ip}:{port}")).await?;
     info!("Listening for device registration on {ip}:{port} via UDP");
+
+    let ack_timeout_duracion = ack_timeout_duracion.unwrap_or(ACK_TIMEOUT_DURATION_MS);
 
     let scheduler_clone: Arc<Mutex<Scheduler>> = scheduler.clone();
     let codec = MessageCodec;
@@ -55,6 +58,7 @@ pub async fn init_backdoor(
                         msg,
                         socket_addr,
                         pending_connections.clone(),
+                        ack_timeout_duracion,
                     )
                     .await
                     {
@@ -93,6 +97,7 @@ async fn handle_backdoor_register_msg(
     msg: Message,
     socket_addr: SocketAddr,
     pending_connections: Arc<Mutex<HashSet<Connection>>>,
+    ack_timeout_duracion: u64,
 ) -> Result<(), BackdoorError> {
     // TODO: check that the information provided is correct #10
     if msg.device_id != 0 {
@@ -115,7 +120,7 @@ async fn handle_backdoor_register_msg(
     let pending_connections_clone = pending_connections.clone();
     let connection_clone = connection.clone();
     tokio::spawn(async move {
-        sleep(Duration::from_millis(ACK_TIMEOUT_DURATION_MS)).await;
+        sleep(Duration::from_millis(ack_timeout_duracion)).await;
         if pending_connections_clone
             .lock()
             .await
@@ -173,6 +178,7 @@ mod tests {
             scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
+            Some(300),
         )
         .await
         .unwrap();
@@ -244,6 +250,7 @@ mod tests {
             scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
+            Some(300),
         )
         .await
         .unwrap();
@@ -279,7 +286,7 @@ mod tests {
         let response = codec.decode(&mut buffer).unwrap().unwrap();
 
         // 3. adds some delay to trigger the ack timeout
-        sleep(Duration::from_millis(ACK_TIMEOUT_DURATION_MS + 200)).await;
+        sleep(Duration::from_millis(500)).await;
 
         // 4. sends ack response
         let ack_msg = Message {
@@ -315,6 +322,7 @@ mod tests {
             scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
+            Some(300),
         )
         .await
         .unwrap();
@@ -383,6 +391,7 @@ mod tests {
             scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
+            Some(300),
         )
         .await
         .unwrap();
