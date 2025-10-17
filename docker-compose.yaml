@@ -6,10 +6,8 @@ services:
       - "6464:6464"
       - "6565:6565"
     depends_on:
-      prometheus:
-        condition: service_started
-      postgres:
-        condition: service_healthy
+      - prometheus
+      - postgres
     environment:
       - DATABASE_URL=postgres://postgres:password@postgres:5432/hes
 
@@ -42,12 +40,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "hes"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
 
 volumes:
   grafana_data:
