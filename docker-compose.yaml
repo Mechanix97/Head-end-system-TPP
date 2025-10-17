@@ -6,8 +6,8 @@ services:
       - "6464:6464"
       - "6565:6565"
     depends_on:
-      prometheus
-      postgres
+      - prometheus
+      - postgres
     environment:
       - DATABASE_URL=postgres://postgres:password@postgres:5432/hes
 
