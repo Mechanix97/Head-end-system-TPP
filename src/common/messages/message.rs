@@ -44,7 +44,7 @@ impl Message {
     pub fn new_ack_message(device_id: u128, seq: u32) -> Result<Self, MessageError> {
         let mut msg = Message {
             version: CURRENT_PROTOCOL_VERSION,
-            msg_type: MsgType::RegisterResponse,
+            msg_type: MsgType::Ack,
             device_id,
             seq,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
