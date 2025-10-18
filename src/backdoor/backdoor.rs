@@ -41,16 +41,20 @@ pub async fn init_backdoor(
             Arc::new(Mutex::new(HashSet::new()));
 
         loop {
+            info!("loop 1");
             let Some(frame) = framed.next().await else {
                 warn!("Invalid codec conversion");
+                info!("Error 1");
+
                 continue;
             };
-
+            info!("loop 2");
             let Ok((msg, socket_addr)) = frame else {
                 warn!("Invalid codec conversion");
+                info!("Error 2");
                 continue;
             };
-
+            info!("loop 3");
             match msg.msg_type {
                 MsgType::RegisterRequest => {
                     if let Err(err) = handle_backdoor_register_msg(
