@@ -6,7 +6,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      - postgres
+      prometheus:
+        condition: service_started
     environment:
       - DATABASE_URL=postgres://postgres:password@postgres:5432/hes
 
