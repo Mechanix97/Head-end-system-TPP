@@ -1,3 +1,4 @@
+use bytes::BytesMut;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
 use rand::Rng;
@@ -9,6 +10,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
+use tokio_util::codec::Encoder;
 use tokio_util::udp::UdpFramed;
 use tracing::{error, info, warn};
 
@@ -110,6 +112,13 @@ async fn handle_backdoor_register_msg(
 
     let device_id = rand::rng().random::<u128>();
 
+    let ack_msg = Message::new_ack_message(device_id, 3)?;
+    let mut buffer = BytesMut::new();
+
+    let mut codec = MessageCodec;
+    codec.encode(ack_msg.clone(), &mut buffer).unwrap();
+
+    info!("ACK MESSAGE EXPECTED:|{:?}|", buffer);
     let connection = Connection::new(device_id, socket_addr.ip().to_string());
 
     {
