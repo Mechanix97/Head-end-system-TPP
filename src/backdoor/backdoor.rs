@@ -118,7 +118,7 @@ async fn handle_backdoor_register_msg(
     let mut codec = MessageCodec;
     codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
-    info!("ACK MESSAGE EXPECTED:|{:?}|", buffer);
+    info!("ACK MESSAGE EXPECTED:|{:x?}|", buffer);
     let connection = Connection::new(device_id, socket_addr.ip().to_string());
 
     {
