@@ -27,12 +27,12 @@ pub async fn init_backdoor(
     scheduler: Arc<Mutex<Scheduler>>,
     ip: String,
     port: String,
-    ack_timeout_duracion: Option<u64>,
+    ack_timeout_duration: Option<u64>,
 ) -> Result<JoinHandle<()>, BackdoorError> {
     let socket = UdpSocket::bind(format!("{ip}:{port}")).await?;
     info!("Listening for device registration on {ip}:{port} via UDP");
 
-    let ack_timeout_duracion = ack_timeout_duracion.unwrap_or(ACK_TIMEOUT_DURATION_MS);
+    let ack_timeout_duration = ack_timeout_duration.unwrap_or(ACK_TIMEOUT_DURATION_MS);
 
     let scheduler_clone: Arc<Mutex<Scheduler>> = scheduler.clone();
     let codec = MessageCodec;
@@ -60,7 +60,7 @@ pub async fn init_backdoor(
                         msg,
                         socket_addr,
                         pending_connections.clone(),
-                        ack_timeout_duracion,
+                        ack_timeout_duration,
                     )
                     .await
                     {
@@ -100,7 +100,7 @@ async fn handle_backdoor_register_msg(
     msg: Message,
     socket_addr: SocketAddr,
     pending_connections: Arc<Mutex<HashSet<Connection>>>,
-    ack_timeout_duracion: u64,
+    ack_timeout_duration: u64,
 ) -> Result<(), BackdoorError> {
     // TODO: check that the information provided is correct #10
     if msg.device_id != 0 {
@@ -131,7 +131,7 @@ async fn handle_backdoor_register_msg(
     let pending_connections_clone = pending_connections.clone();
     let connection_clone = connection.clone();
     tokio::spawn(async move {
-        sleep(Duration::from_millis(ack_timeout_duracion)).await;
+        sleep(Duration::from_millis(ack_timeout_duration)).await;
         if pending_connections_clone
             .lock()
             .await
