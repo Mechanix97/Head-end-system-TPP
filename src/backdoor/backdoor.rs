@@ -113,12 +113,14 @@ async fn handle_backdoor_register_msg(
     let device_id = rand::rng().random::<u128>();
 
     let ack_msg = Message::new_ack_message(device_id, 3)?;
-    let mut buffer = BytesMut::new();
+    let mut buffer: BytesMut = BytesMut::new();
 
     let mut codec = MessageCodec;
     codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
-    info!("ACK MESSAGE EXPECTED:|{:#x?}|", buffer);
+    let hex_string = hex::encode(&buffer);
+    info!("ACK Message (hex): {}", hex_string);
+
     let connection = Connection::new(device_id, socket_addr.ip().to_string());
 
     {
