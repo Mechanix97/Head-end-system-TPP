@@ -4,7 +4,8 @@ services:
     container_name: headend_app
     network_mode: host
     depends_on:
-      - prometheus
+      postgres:
+        condition: service_healthy
       - postgres
     environment:
       - DATABASE_URL=postgres://postgres:password@postgres:5432/hes
@@ -39,6 +40,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   grafana_data:
