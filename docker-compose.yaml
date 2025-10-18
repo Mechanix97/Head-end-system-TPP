@@ -2,9 +2,7 @@ services:
   app:
     build: .
     container_name: headend_app
-    ports:
-      - "6464:6464"
-      - "6565:6565"
+    network_mode: host
     depends_on:
       - prometheus
       - postgres
