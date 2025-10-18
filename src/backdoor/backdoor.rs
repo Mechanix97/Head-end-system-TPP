@@ -43,22 +43,18 @@ pub async fn init_backdoor(
             Arc::new(Mutex::new(HashSet::new()));
 
         loop {
-            info!("loop 1");
             let Some(frame) = framed.next().await else {
                 warn!("Invalid codec conversion");
-                info!("Error 1");
-
                 continue;
             };
-            info!("loop 2");
+
             let Ok((msg, socket_addr)) = frame else {
                 warn!("Invalid codec conversion");
-                info!("Error 2");
                 continue;
             };
-            info!("loop 3");
             match msg.msg_type {
                 MsgType::RegisterRequest => {
+                    info!("RegisterRequest received");
                     if let Err(err) = handle_backdoor_register_msg(
                         &mut framed,
                         msg,
@@ -72,6 +68,7 @@ pub async fn init_backdoor(
                     }
                 }
                 MsgType::Ack => {
+                    info!("Ack received");
                     if let Err(err) = handle_backdoor_ack_msg(
                         &scheduler_clone,
                         msg,
@@ -114,12 +111,9 @@ async fn handle_backdoor_register_msg(
 
     let ack_msg = Message::new_ack_message(device_id, 3)?;
     let mut buffer: BytesMut = BytesMut::new();
-
     let mut codec = MessageCodec;
     codec.encode(ack_msg.clone(), &mut buffer).unwrap();
-
-    let hex_string = hex::encode(&buffer);
-    info!("ACK Message (hex): {}", hex_string);
+    info!("ACK Message expected: {}", hex::encode(&buffer));
 
     let connection = Connection::new(device_id, socket_addr.ip().to_string());
 
@@ -160,6 +154,7 @@ async fn handle_backdoor_ack_msg(
     let connection = Connection::new(msg.device_id, socket_addr.ip().to_string());
 
     if pending_connections.lock().await.remove(&connection) {
+        info!("Adding new connection, device_id: {}", msg.device_id);
         let mut scheduler_lock = scheduler.lock().await;
         scheduler_lock.add_connection(connection).await?;
     }
