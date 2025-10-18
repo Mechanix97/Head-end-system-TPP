@@ -14,7 +14,7 @@ impl PostgresDB {
         Self {
             pool: PgPoolOptions::new()
                 .max_connections(5)
-                .connect("postgres://postgres:password@postgres:5432/hes") // TODO fix this
+                .connect("postgres://postgres:password@127.0.0.1:5432/hes") // TODO fix this
                 .await
                 .expect("Error connecting to DB"), // TODO remove this expect
         }
