@@ -21,3 +21,7 @@ run-docker-metrics: ## run server in docker with metrics
 
 stop-docker-metrics: ## stop docker with metrics
 	docker compose down
+
+clean-docker: ## clean docker containers, networks, volumes and images
+	docker compose down -v --remove-orphans
+	docker rmi $(docker images -q headend_app) 2>/dev/null || true

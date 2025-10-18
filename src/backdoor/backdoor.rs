@@ -1,3 +1,4 @@
+use bytes::BytesMut;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
 use rand::Rng;
@@ -9,6 +10,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
+use tokio_util::codec::Encoder;
 use tokio_util::udp::UdpFramed;
 use tracing::{error, info, warn};
 
@@ -19,15 +21,18 @@ use common::messages::message::Message;
 use common::messages::message::MsgType;
 use scheduler::scheduler::Scheduler;
 
-const ACK_TIMEOUT_DURATION_MS: u64 = 300;
+const ACK_TIMEOUT_DURATION_MS: u64 = 300000;
 
 pub async fn init_backdoor(
     scheduler: Arc<Mutex<Scheduler>>,
     ip: String,
     port: String,
+    ack_timeout_duration: Option<u64>,
 ) -> Result<JoinHandle<()>, BackdoorError> {
     let socket = UdpSocket::bind(format!("{ip}:{port}")).await?;
     info!("Listening for device registration on {ip}:{port} via UDP");
+
+    let ack_timeout_duration = ack_timeout_duration.unwrap_or(ACK_TIMEOUT_DURATION_MS);
 
     let scheduler_clone: Arc<Mutex<Scheduler>> = scheduler.clone();
     let codec = MessageCodec;
@@ -47,14 +52,15 @@ pub async fn init_backdoor(
                 warn!("Invalid codec conversion");
                 continue;
             };
-
             match msg.msg_type {
                 MsgType::RegisterRequest => {
+                    info!("RegisterRequest received");
                     if let Err(err) = handle_backdoor_register_msg(
                         &mut framed,
                         msg,
                         socket_addr,
                         pending_connections.clone(),
+                        ack_timeout_duration,
                     )
                     .await
                     {
@@ -62,6 +68,7 @@ pub async fn init_backdoor(
                     }
                 }
                 MsgType::Ack => {
+                    info!("Ack received");
                     if let Err(err) = handle_backdoor_ack_msg(
                         &scheduler_clone,
                         msg,
@@ -93,6 +100,7 @@ async fn handle_backdoor_register_msg(
     msg: Message,
     socket_addr: SocketAddr,
     pending_connections: Arc<Mutex<HashSet<Connection>>>,
+    ack_timeout_duration: u64,
 ) -> Result<(), BackdoorError> {
     // TODO: check that the information provided is correct #10
     if msg.device_id != 0 {
@@ -100,6 +108,14 @@ async fn handle_backdoor_register_msg(
     }
 
     let device_id = rand::rng().random::<u128>();
+
+    let ack_msg = Message::new_ack_message(device_id, 3)?;
+    let mut buffer: BytesMut = BytesMut::new();
+    let mut codec = MessageCodec;
+    codec
+        .encode(ack_msg, &mut buffer)
+        .expect("Error encoding msg");
+    info!("ACK Message expected: {}", hex::encode(&buffer));
 
     let connection = Connection::new(device_id, socket_addr.ip().to_string());
 
@@ -115,7 +131,7 @@ async fn handle_backdoor_register_msg(
     let pending_connections_clone = pending_connections.clone();
     let connection_clone = connection.clone();
     tokio::spawn(async move {
-        sleep(Duration::from_millis(ACK_TIMEOUT_DURATION_MS)).await;
+        sleep(Duration::from_millis(ack_timeout_duration)).await;
         if pending_connections_clone
             .lock()
             .await
@@ -140,6 +156,7 @@ async fn handle_backdoor_ack_msg(
     let connection = Connection::new(msg.device_id, socket_addr.ip().to_string());
 
     if pending_connections.lock().await.remove(&connection) {
+        info!("Adding new connection, device_id: {}", msg.device_id);
         let mut scheduler_lock = scheduler.lock().await;
         scheduler_lock.add_connection(connection).await?;
     }
@@ -173,6 +190,7 @@ mod tests {
             scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
+            Some(300),
         )
         .await
         .unwrap();
@@ -244,6 +262,7 @@ mod tests {
             scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
+            Some(300),
         )
         .await
         .unwrap();
@@ -279,7 +298,7 @@ mod tests {
         let response = codec.decode(&mut buffer).unwrap().unwrap();
 
         // 3. adds some delay to trigger the ack timeout
-        sleep(Duration::from_millis(ACK_TIMEOUT_DURATION_MS + 200)).await;
+        sleep(Duration::from_millis(500)).await;
 
         // 4. sends ack response
         let ack_msg = Message {
@@ -315,6 +334,7 @@ mod tests {
             scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
+            Some(300),
         )
         .await
         .unwrap();
@@ -383,6 +403,7 @@ mod tests {
             scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
+            Some(300),
         )
         .await
         .unwrap();
