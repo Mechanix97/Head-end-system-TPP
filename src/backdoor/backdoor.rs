@@ -77,7 +77,7 @@ pub async fn init_backdoor(
                     )
                     .await
                     {
-                        error!("Error handle register request: {err}");
+                        error!("Error handle ack msg: {err}");
                     }
                 }
 
