@@ -42,7 +42,7 @@ impl Scheduler {
         let (sec, min, hour) = self.get_time_from_bucket_number(bucket_number);
         let (day, mon, year) = get_date_from_hour(hour);
 
-        let schedule = format!("{sec} {min} {hour} {day} {mon} {year}");
+        let schedule = format!("{sec} {min} {hour} {day} {mon} * {year}");
         info!("Schedule {schedule}");
         self.buckets[bucket_number].push(connection.clone());
 
