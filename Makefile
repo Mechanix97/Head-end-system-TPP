@@ -20,7 +20,7 @@ run-docker-metrics: ## run server in docker with metrics
 	docker compose up -d
 
 stop-docker-metrics: ## stop docker with metrics
-	docker compose down
+	docker compose stop
 
 clean-docker: ## clean docker containers, networks, volumes and images
 	docker compose down -v --remove-orphans
