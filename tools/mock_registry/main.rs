@@ -12,12 +12,10 @@ use tracing::{Level, info};
 
 use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
-use common::messages::message::MessagePayload;
-use common::messages::message::MsgType;
 
 #[derive(Parser)]
 struct Args {
-    #[arg(short, long, default_value = "4")]
+    #[arg(short, long, default_value = "1")]
     number: u32,
     /// Backdoor IP
     #[arg(
@@ -41,10 +39,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
-    info!("Sending {} registration messages", args.number);
+    info!("Sending {} registration request\\s", args.number);
 
     for i in 1..args.number + 1 {
-        info!("Sending registration {i}/{}", args.number);
+        info!("[{i}/{}] Sending registration request ", args.number);
 
         // 1. sends registration request msg
         let register_request = Message::new_register_request_message()?;
@@ -52,7 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let mut buffer = BytesMut::new();
 
         let mut codec = MessageCodec;
-        codec.encode(register_request.clone(), &mut buffer).unwrap();
+        codec.encode(register_request.clone(), &mut buffer)?;
 
         device_socket
             .send_to(
@@ -65,22 +63,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         // 2. receives registration response msg
         buffer = BytesMut::new();
-        device_socket.recv_buf(&mut buffer).await.unwrap();
-        let response = codec.decode(&mut buffer).unwrap().unwrap();
-
-        // 3. sends ack response
-        let ack_msg = Message {
-            version: 1,
-            msg_type: MsgType::Ack,
-            device_id: response.device_id,
-            seq: response.seq + 1,
-            timestamp: 0,
-            payload: MessagePayload::Ack,
-            mac: 0,
+        device_socket.recv_buf(&mut buffer).await?;
+        let Some(response) = codec.decode(&mut buffer)? else {
+            return Ok(());
         };
 
+        info!(
+            "[{i}/{}] Received registration response. Device id 0x{:#x} ",
+            args.number, response.device_id
+        );
+
+        // 3. sends ack response
+        let ack_msg = Message::new_ack_message(response.device_id, response.seq + 1)?;
+
         buffer = BytesMut::new();
-        codec.encode(ack_msg.clone(), &mut buffer).unwrap();
+        codec.encode(ack_msg.clone(), &mut buffer)?;
 
         device_socket
             .send_to(
@@ -89,6 +86,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
             .expect("Failed to send RegisterRequest");
+
+        info!("[{i}/{}] Sending ACK message", args.number);
     }
+
+    info!("All registration were successfull");
+
     Ok(())
 }
