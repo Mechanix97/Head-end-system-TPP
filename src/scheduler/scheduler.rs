@@ -11,13 +11,15 @@ type Bucket = Vec<Connection>;
 pub struct Scheduler {
     pub buckets: Vec<Bucket>,
     pub job_scheduler: JobScheduler,
+    pub database: Database,
 }
 
 impl Scheduler {
-    pub async fn new(bucket_number: usize) -> Result<Self, SchedulerError> {
+    pub async fn new(bucket_number: usize, database: Database) -> Result<Self, SchedulerError> {
         Ok(Self {
             buckets: vec![Vec::new(); bucket_number],
             job_scheduler: JobScheduler::new().await?,
+            database,
         })
     }
 

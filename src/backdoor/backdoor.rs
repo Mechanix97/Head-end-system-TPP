@@ -39,8 +39,7 @@ pub async fn init_backdoor(
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
-        let pending_connections: Arc<Mutex<HashSet<Connection>>> =
-            Arc::new(Mutex::new(HashSet::new()));
+        let pending_connections: Arc<Mutex<HashSet<Uuid>>> = Arc::new(Mutex::new(HashSet::new()));
 
         loop {
             let Some(frame) = framed.next().await else {
@@ -103,7 +102,7 @@ async fn handle_backdoor_register_msg(
     framed: &mut UdpFramed<MessageCodec>,
     msg: Message,
     socket_addr: SocketAddr,
-    pending_connections: Arc<Mutex<HashSet<Connection>>>,
+    pending_connections: Arc<Mutex<HashSet<Uuid>>>,
     ack_timeout_duration: u64,
 ) -> Result<(), BackdoorError> {
     // TODO: check that the information provided is correct #10
@@ -128,7 +127,10 @@ async fn handle_backdoor_register_msg(
     let connection = Connection::new(device_id, Some(socket_addr.ip().to_string()));
 
     {
-        pending_connections.lock().await.insert(connection.clone());
+        pending_connections
+            .lock()
+            .await
+            .insert(connection.device_id);
     }
 
     let response = Message::new_register_response_message(device_id.as_u128(), msg.seq + 1)?;
@@ -137,13 +139,13 @@ async fn handle_backdoor_register_msg(
     }
 
     let pending_connections_clone = pending_connections.clone();
-    let connection_clone = connection.clone();
+
     tokio::spawn(async move {
         sleep(Duration::from_millis(ack_timeout_duration)).await;
         if pending_connections_clone
             .lock()
             .await
-            .remove(&connection_clone)
+            .remove(&connection.device_id)
         {
             info!("Ack from {} not received", connection.device_id);
         }
@@ -159,14 +161,18 @@ async fn handle_backdoor_ack_msg(
     scheduler: &Arc<Mutex<Scheduler>>,
     msg: Message,
     socket_addr: SocketAddr,
-    pending_connections: Arc<Mutex<HashSet<Connection>>>,
+    pending_connections: Arc<Mutex<HashSet<Uuid>>>,
 ) -> Result<(), BackdoorError> {
     let connection = Connection::new(
         Uuid::from_u128(msg.device_id),
         Some(socket_addr.ip().to_string()),
     );
 
-    if pending_connections.lock().await.remove(&connection) {
+    if pending_connections
+        .lock()
+        .await
+        .remove(&connection.device_id)
+    {
         info!("Adding new connection, device_id: {}", msg.device_id);
         let mut scheduler_lock = scheduler.lock().await;
         scheduler_lock.add_connection(connection).await?;
@@ -196,7 +202,11 @@ mod tests {
     async fn test_new_connection() {
         // 0. intial backdoor setup
         let backdoor_port = "8081";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(
+            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
+                .await
+                .unwrap(),
+        ));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
@@ -252,7 +262,11 @@ mod tests {
     async fn test_ack_timeout() {
         // 0. intial backdoor setup
         let backdoor_port = "8082";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(
+            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
+                .await
+                .unwrap(),
+        ));
 
         init_backdoor(
             scheduler.clone(),
@@ -308,7 +322,11 @@ mod tests {
     async fn test_multiple_connections() {
         // 0. intial backdoor setup
         let backdoor_port = "8083";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(
+            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
+                .await
+                .unwrap(),
+        ));
 
         init_backdoor(
             scheduler.clone(),
@@ -361,7 +379,11 @@ mod tests {
     async fn test_parallel_connections() {
         // 0. intial backdoor setup
         let backdoor_port = "8084";
-        let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
+        let scheduler = Arc::new(Mutex::new(
+            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
+                .await
+                .unwrap(),
+        ));
 
         init_backdoor(
             scheduler.clone(),
