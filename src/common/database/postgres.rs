@@ -23,13 +23,35 @@ impl PostgresDB {
 }
 
 #[async_trait::async_trait]
-
 impl Engine for PostgresDB {
     async fn get_active_connections(&self) -> Vec<Connection> {
-        vec![]
+        let query = "SELECT device_id, ip, connection_time, next_wakeup, status 
+                     FROM T_ACTIVE_CONNECTIONS 
+                     WHERE status = 'active'";
+
+        sqlx::query_as::<_, Connection>(query)
+            .fetch_all(&self.pool)
+            .await
+            .unwrap_or_else(|e| {
+                eprintln!("Error fetching active connections: {}", e);
+                vec![]
+            })
     }
 
     async fn add_new_connection(&self, connection: Connection) -> Result<(), DatabaseError> {
+        let query = "INSERT INTO T_ACTIVE_CONNECTIONS (device_id, ip, connection_time, next_wakeup, status) 
+                     VALUES ($1, $2, $3, $4, $5, $6)";
+
+        sqlx::query(query)
+            .bind(connection.device_id)
+            .bind(connection.ip)
+            .bind(connection.connection_time)
+            .bind(connection.next_wakeup)
+            .bind(connection.status)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
         Ok(())
     }
 }

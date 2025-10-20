@@ -14,4 +14,6 @@ pub enum DatabaseType {
 pub enum DatabaseError {
     #[error("io error: {0}")]
     TcpError(#[from] std::io::Error),
+    #[error("QueryError error: {0}")]
+    QueryError(String),
 }

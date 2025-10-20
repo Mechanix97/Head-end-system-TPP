@@ -22,6 +22,7 @@ impl Engine for InMemoryDB {
     }
 
     async fn add_new_connection(&self, connection: Connection) -> Result<(), DatabaseError> {
+        self.inner.lock().await.active_connections.push(connection);
         Ok(())
     }
 }

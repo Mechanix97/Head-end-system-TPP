@@ -1,7 +1,6 @@
 use bytes::BytesMut;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
-use rand::Rng;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -13,6 +12,7 @@ use tokio::time::sleep;
 use tokio_util::codec::Encoder;
 use tokio_util::udp::UdpFramed;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 use crate::BackdoorError;
 use common::connection::Connection;
@@ -111,11 +111,11 @@ async fn handle_backdoor_register_msg(
         return Err(BackdoorError::RegisterRequestInvalidId);
     }
 
-    let device_id = rand::rng().random::<u128>();
+    let device_id = Uuid::new_v4();
 
     // TEMPORARY.
     // REMOVE LATER
-    let ack_msg = Message::new_ack_message(device_id, 3)?;
+    let ack_msg = Message::new_ack_message(device_id.as_u128(), 3)?;
     let mut buffer: BytesMut = BytesMut::new();
     let mut codec = MessageCodec;
     codec
@@ -125,13 +125,13 @@ async fn handle_backdoor_register_msg(
     // TEMPORARY.
     // REMOVE LATER
 
-    let connection = Connection::new(device_id, socket_addr.ip().to_string());
+    let connection = Connection::new(device_id, Some(socket_addr.ip().to_string()));
 
     {
         pending_connections.lock().await.insert(connection.clone());
     }
 
-    let response = Message::new_register_response_message(device_id, msg.seq + 1)?;
+    let response = Message::new_register_response_message(device_id.as_u128(), msg.seq + 1)?;
     if let Err(err) = (*framed).send((response, socket_addr)).await {
         error!("Error sending response: {err}");
     }
@@ -145,7 +145,7 @@ async fn handle_backdoor_register_msg(
             .await
             .remove(&connection_clone)
         {
-            info!("Ack from {} not received", connection.id);
+            info!("Ack from {} not received", connection.device_id);
         }
     });
 
@@ -161,7 +161,10 @@ async fn handle_backdoor_ack_msg(
     socket_addr: SocketAddr,
     pending_connections: Arc<Mutex<HashSet<Connection>>>,
 ) -> Result<(), BackdoorError> {
-    let connection = Connection::new(msg.device_id, socket_addr.ip().to_string());
+    let connection = Connection::new(
+        Uuid::from_u128(msg.device_id),
+        Some(socket_addr.ip().to_string()),
+    );
 
     if pending_connections.lock().await.remove(&connection) {
         info!("Adding new connection, device_id: {}", msg.device_id);

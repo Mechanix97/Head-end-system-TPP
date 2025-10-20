@@ -105,5 +105,9 @@ fn get_date_from_hour(hour: usize) -> (usize, usize, usize) {
 }
 
 async fn periodically_task(conn: Connection) {
-    info!("Conection ID: {} IP: {}", conn.id, conn.ip);
+    info!(
+        "Conection ID: {} IP: {}",
+        conn.device_id,
+        conn.ip.unwrap_or("No ip".to_string())
+    );
 }

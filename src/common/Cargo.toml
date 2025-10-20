@@ -13,6 +13,7 @@ clap.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
+chrono.workspace = true
 
 [lib]
 path = "./mod.rs"
