@@ -123,7 +123,7 @@ async fn handle_backdoor_register_msg(
         pending_connections.lock().await.insert(connection.clone());
     }
 
-    let response = Message::new_register_response(device_id, msg.seq + 1)?;
+    let response = Message::new_register_response_message(device_id, msg.seq + 1)?;
     if let Err(err) = (*framed).send((response, socket_addr)).await {
         error!("Error sending response: {err}");
     }
