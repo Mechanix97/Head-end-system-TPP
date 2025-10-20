@@ -178,6 +178,8 @@ async fn handle_backdoor_ack_msg(
 #[cfg(test)]
 mod tests {
     use bytes::BytesMut;
+    use common::database::DatabaseType;
+    use common::database::api::Database;
     use scheduler::scheduler::Scheduler;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -251,6 +253,7 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8082";
         let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
+
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
@@ -306,6 +309,7 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8083";
         let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
+
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
@@ -358,6 +362,7 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8084";
         let scheduler = Arc::new(Mutex::new(Scheduler::new(1).await.unwrap()));
+
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),

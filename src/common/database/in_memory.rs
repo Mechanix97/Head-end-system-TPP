@@ -5,12 +5,12 @@ use crate::database::api::Engine;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct InMemoryDB {
     pub inner: Arc<Mutex<InnerDB>>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct InnerDB {
     pub active_connections: Vec<Connection>, //todo remove this pub
 }

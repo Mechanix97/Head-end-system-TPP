@@ -1,11 +1,13 @@
 use sqlx::Pool;
 use sqlx::Postgres;
 use sqlx::postgres::PgPoolOptions;
+use tracing::error;
 
 use crate::connection::Connection;
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
 
+#[derive(Debug)]
 pub struct PostgresDB {
     pub pool: Pool<Postgres>, // remove this pub
 }
@@ -33,7 +35,7 @@ impl Engine for PostgresDB {
             .fetch_all(&self.pool)
             .await
             .unwrap_or_else(|e| {
-                eprintln!("Error fetching active connections: {}", e);
+                error!("Error fetching active connections: {e}");
                 vec![]
             })
     }

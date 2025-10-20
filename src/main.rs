@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Head-End System starting");
 
-    let _db = Database::new(args.database_type).await;
+    let db = Database::new(args.database_type).await;
 
     let scheduler = Arc::new(Mutex::new(Scheduler::new(args.buckets_number).await?));
     scheduler.lock().await.start().await?;

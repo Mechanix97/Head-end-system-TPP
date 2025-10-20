@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use sqlx::prelude::FromRow;
 use uuid::Uuid;
 
-#[derive(Clone, Eq, PartialEq, Hash, FromRow)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, FromRow)]
 pub struct Connection {
     pub device_id: Uuid,
     pub ip: Option<String>,

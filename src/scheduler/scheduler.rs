@@ -3,7 +3,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::info;
 
 use crate::error::SchedulerError;
-use common::connection::Connection;
+use common::{connection::Connection, database::api::Database};
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
 type Bucket = Vec<Connection>;

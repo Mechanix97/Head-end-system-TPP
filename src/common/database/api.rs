@@ -1,9 +1,11 @@
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use crate::connection::Connection;
 use crate::database::DatabaseError;
 use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
 
+#[derive(Debug, Clone)]
 pub struct Database {
     pub engine: Arc<dyn Engine>,
 }
@@ -30,7 +32,7 @@ impl Database {
 }
 
 #[async_trait::async_trait]
-pub trait Engine {
+pub trait Engine: Debug + Send + Sync {
     async fn get_active_connections(&self) -> Vec<Connection>;
     async fn add_new_connection(&self, connection: Connection) -> Result<(), DatabaseError>;
 }
