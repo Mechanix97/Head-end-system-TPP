@@ -12,6 +12,7 @@ uuid.workspace = true
 clap.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
+async-trait.workspace = true
 
 [lib]
 path = "./mod.rs"

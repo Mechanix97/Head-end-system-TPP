@@ -55,16 +55,20 @@ pub async fn init_backdoor(
             match msg.msg_type {
                 MsgType::RegisterRequest => {
                     info!("RegisterRequest received");
-                    if let Err(err) = handle_backdoor_register_msg(
-                        &mut framed,
-                        msg,
-                        socket_addr,
-                        pending_connections.clone(),
-                        ack_timeout_duration,
-                    )
-                    .await
-                    {
-                        error!("Error handle register request: {err}");
+                    if msg.device_id == 0 {
+                        if let Err(err) = handle_backdoor_register_msg(
+                            &mut framed,
+                            msg,
+                            socket_addr,
+                            pending_connections.clone(),
+                            ack_timeout_duration,
+                        )
+                        .await
+                        {
+                            error!("Error handle register request: {err}");
+                        }
+                    } else {
+                        // TODO handle ip change
                     }
                 }
                 MsgType::Ack => {
@@ -109,6 +113,8 @@ async fn handle_backdoor_register_msg(
 
     let device_id = rand::rng().random::<u128>();
 
+    // TEMPORARY.
+    // REMOVE LATER
     let ack_msg = Message::new_ack_message(device_id, 3)?;
     let mut buffer: BytesMut = BytesMut::new();
     let mut codec = MessageCodec;
@@ -116,6 +122,8 @@ async fn handle_backdoor_register_msg(
         .encode(ack_msg, &mut buffer)
         .expect("Error encoding msg");
     info!("ACK Message expected: {}", hex::encode(&buffer));
+    // TEMPORARY.
+    // REMOVE LATER
 
     let connection = Connection::new(device_id, socket_addr.ip().to_string());
 

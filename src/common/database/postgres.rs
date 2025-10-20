@@ -3,6 +3,7 @@ use sqlx::Postgres;
 use sqlx::postgres::PgPoolOptions;
 
 use crate::connection::Connection;
+use crate::database::DatabaseError;
 use crate::database::api::Engine;
 
 pub struct PostgresDB {
@@ -21,8 +22,14 @@ impl PostgresDB {
     }
 }
 
+#[async_trait::async_trait]
+
 impl Engine for PostgresDB {
-    fn get_active_connections(&self) -> Vec<Connection> {
+    async fn get_active_connections(&self) -> Vec<Connection> {
         vec![]
+    }
+
+    async fn add_new_connection(&self, connection: Connection) -> Result<(), DatabaseError> {
+        Ok(())
     }
 }

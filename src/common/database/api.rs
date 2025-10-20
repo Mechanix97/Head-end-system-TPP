@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::connection::Connection;
+use crate::database::DatabaseError;
 use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
 
 pub struct Database {
@@ -19,11 +20,17 @@ impl Database {
         }
     }
 
-    pub fn get_active_connections(&self) -> Vec<Connection> {
-        self.engine.get_active_connections()
+    pub async fn get_active_connections(&self) -> Vec<Connection> {
+        self.engine.get_active_connections().await
+    }
+
+    pub async fn add_new_connection(&self, connection: Connection) -> Result<(), DatabaseError> {
+        self.engine.add_new_connection(connection).await
     }
 }
 
+#[async_trait::async_trait]
 pub trait Engine {
-    fn get_active_connections(&self) -> Vec<Connection>;
+    async fn get_active_connections(&self) -> Vec<Connection>;
+    async fn add_new_connection(&self, connection: Connection) -> Result<(), DatabaseError>;
 }
