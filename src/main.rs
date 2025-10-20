@@ -15,11 +15,7 @@ use scheduler::scheduler::Scheduler;
 #[command(version, about, long_about = None)]
 struct Args {
     /// Backdoor IP
-    #[arg(
-        long = "backdoor-ip",
-        default_value = "0.0.0.0",
-        help = "Prometheus metrics api IP"
-    )]
+    #[arg(long = "backdoor-ip", default_value = "0.0.0.0", help = "Backdoor IP")]
     backdoor_ip: String,
 
     /// Backdoor port

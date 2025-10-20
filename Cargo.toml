@@ -1,5 +1,11 @@
 [workspace]
-members = ["src/scheduler", "src/backdoor", "src/common", "src/metrics"]
+members = [
+    "src/scheduler",
+    "src/backdoor",
+    "src/common",
+    "src/metrics",
+    "tools/mock_registry",
+]
 resolver = "2"
 
 [package]
@@ -15,7 +21,7 @@ metrics = { path = "src/metrics" }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-tokio = { version = "1.47", features = ["full"] }
+tokio = { version = "1.47", features = ["full", "macros"] }
 clap = { version = "4.5.47", features = ["derive"] }
 
 [workspace.dependencies]
@@ -28,8 +34,9 @@ futures-util = "0.3"
 futures = "0.3"
 tokio-util = { version = "0.7", features = ["full"] }
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 clap = { version = "4.5.47", features = ["derive"] }
-tokio = "1.47"
+tokio = { version = "1.47", features = ["full", "macros"] }
 tokio-cron-scheduler = { version = "0.15", features = ["signal"] }
 thiserror = "2.0"
 axum = "0.8"

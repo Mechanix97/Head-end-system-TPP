@@ -26,7 +26,22 @@ pub struct Message {
 }
 
 impl Message {
-    pub fn new_register_response(device_id: u128, seq: u32) -> Result<Self, MessageError> {
+    pub fn new_register_request_message() -> Result<Self, MessageError> {
+        let mut msg = Message {
+            version: CURRENT_PROTOCOL_VERSION,
+            msg_type: MsgType::RegisterRequest,
+            device_id: 0,
+            seq: 0,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+            payload: MessagePayload::RegistryResponse(RegistryResponseMessage {}),
+            mac: 0,
+        };
+
+        msg.calculate_mac();
+        Ok(msg)
+    }
+
+    pub fn new_register_response_message(device_id: u128, seq: u32) -> Result<Self, MessageError> {
         let mut msg = Message {
             version: CURRENT_PROTOCOL_VERSION,
             msg_type: MsgType::RegisterResponse,

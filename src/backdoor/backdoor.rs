@@ -77,7 +77,7 @@ pub async fn init_backdoor(
                     )
                     .await
                     {
-                        error!("Error handle register request: {err}");
+                        error!("Error handle ack msg: {err}");
                     }
                 }
 
@@ -123,7 +123,7 @@ async fn handle_backdoor_register_msg(
         pending_connections.lock().await.insert(connection.clone());
     }
 
-    let response = Message::new_register_response(device_id, msg.seq + 1)?;
+    let response = Message::new_register_response_message(device_id, msg.seq + 1)?;
     if let Err(err) = (*framed).send((response, socket_addr)).await {
         error!("Error sending response: {err}");
     }
@@ -167,8 +167,6 @@ async fn handle_backdoor_ack_msg(
 #[cfg(test)]
 mod tests {
     use bytes::BytesMut;
-    use common::messages::message::MessagePayload;
-    use common::messages::registry::RegistryRequestMessage;
     use scheduler::scheduler::Scheduler;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -196,15 +194,7 @@ mod tests {
         .unwrap();
 
         // 1. sends registration request msg
-        let register_request = Message {
-            version: 1,
-            msg_type: MsgType::RegisterRequest,
-            device_id: 0,
-            seq: 0,
-            timestamp: 0,
-            payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
-            mac: 0,
-        };
+        let register_request: Message = Message::new_register_request_message().unwrap();
         let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut buffer = BytesMut::new();
 
@@ -225,15 +215,7 @@ mod tests {
         let response = codec.decode(&mut buffer).unwrap().unwrap();
 
         // 3. sends ack response
-        let ack_msg = Message {
-            version: 1,
-            msg_type: MsgType::Ack,
-            device_id: response.device_id,
-            seq: response.seq + 1,
-            timestamp: 0,
-            payload: MessagePayload::Ack,
-            mac: 0,
-        };
+        let ack_msg = Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
 
         buffer = BytesMut::new();
         codec.encode(ack_msg.clone(), &mut buffer).unwrap();
@@ -270,15 +252,7 @@ mod tests {
         let connecitons_number = scheduler.lock().await.buckets[0].len();
         assert_eq!(connecitons_number, 0);
 
-        let register_request = Message {
-            version: 1,
-            msg_type: MsgType::RegisterRequest,
-            device_id: 0,
-            seq: 0,
-            timestamp: 0,
-            payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
-            mac: 0,
-        };
+        let register_request: Message = Message::new_register_request_message().unwrap();
         let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut buffer = BytesMut::new();
 
@@ -301,16 +275,7 @@ mod tests {
         sleep(Duration::from_millis(500)).await;
 
         // 4. sends ack response
-        let ack_msg = Message {
-            version: 1,
-            msg_type: MsgType::Ack,
-            device_id: response.device_id,
-            seq: response.seq + 1,
-            timestamp: 0,
-            payload: MessagePayload::Ack,
-            mac: 0,
-        };
-
+        let ack_msg = Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
         buffer = BytesMut::new();
         codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
@@ -341,15 +306,7 @@ mod tests {
 
         for i in 0..10 {
             // 1. sends registration request msg
-            let register_request = Message {
-                version: 1,
-                msg_type: MsgType::RegisterRequest,
-                device_id: 0,
-                seq: 0,
-                timestamp: 0,
-                payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
-                mac: 0,
-            };
+            let register_request: Message = Message::new_register_request_message().unwrap();
             let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let mut buffer = BytesMut::new();
 
@@ -370,16 +327,7 @@ mod tests {
             let response = codec.decode(&mut buffer).unwrap().unwrap();
 
             // 3. sends ack response
-            let ack_msg = Message {
-                version: 1,
-                msg_type: MsgType::Ack,
-                device_id: response.device_id,
-                seq: response.seq + 1,
-                timestamp: 0,
-                payload: MessagePayload::Ack,
-                mac: 0,
-            };
-
+            let ack_msg = Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
             buffer = BytesMut::new();
             codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
@@ -409,15 +357,7 @@ mod tests {
         .unwrap();
 
         // 1a. sends registration request msg
-        let register_request = Message {
-            version: 1,
-            msg_type: MsgType::RegisterRequest,
-            device_id: 0,
-            seq: 0,
-            timestamp: 0,
-            payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
-            mac: 0,
-        };
+        let register_request: Message = Message::new_register_request_message().unwrap();
         let device_socket_a = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut buffer: BytesMut = BytesMut::new();
 
@@ -433,15 +373,7 @@ mod tests {
         assert_eq!(connecitons_number, 0);
 
         // 1a. sends registration request msg
-        let register_request = Message {
-            version: 1,
-            msg_type: MsgType::RegisterRequest,
-            device_id: 0,
-            seq: 0,
-            timestamp: 0,
-            payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
-            mac: 0,
-        };
+        let register_request: Message = Message::new_register_request_message().unwrap();
         let device_socket_b = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut buffer: BytesMut = BytesMut::new();
 
@@ -467,15 +399,7 @@ mod tests {
         let response_b = codec.decode(&mut buffer).unwrap().unwrap();
 
         // 3a. sends ack response
-        let ack_msg_a = Message {
-            version: 1,
-            msg_type: MsgType::Ack,
-            device_id: response_a.device_id,
-            seq: response_a.seq + 1,
-            timestamp: 0,
-            payload: MessagePayload::Ack,
-            mac: 0,
-        };
+        let ack_msg_a = Message::new_ack_message(response_a.device_id, response_a.seq + 1).unwrap();
 
         buffer = BytesMut::new();
         codec.encode(ack_msg_a.clone(), &mut buffer).unwrap();
@@ -487,15 +411,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         // 3b. sends ack response
-        let ack_msg_b = Message {
-            version: 1,
-            msg_type: MsgType::Ack,
-            device_id: response_b.device_id,
-            seq: response_b.seq + 1,
-            timestamp: 0,
-            payload: MessagePayload::Ack,
-            mac: 0,
-        };
+        let ack_msg_b = Message::new_ack_message(response_b.device_id, response_b.seq + 1).unwrap();
 
         buffer = BytesMut::new();
         codec.encode(ack_msg_b.clone(), &mut buffer).unwrap();
