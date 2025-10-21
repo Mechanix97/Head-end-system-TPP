@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::NaiveDateTime;
 use sqlx::prelude::FromRow;
 use uuid::Uuid;
 
@@ -7,8 +7,8 @@ pub struct Connection {
     pub device_id: Uuid,
     pub ip: Option<String>,
     pub bucket: Option<i64>,
-    pub last_connection: DateTime<Utc>,
-    pub next_wakeup: Option<DateTime<Utc>>,
+    pub last_connection: NaiveDateTime,
+    pub next_wakeup: Option<NaiveDateTime>,
     pub status: ConnectionStatus,
 }
 
@@ -23,7 +23,7 @@ impl Connection {
             device_id,
             ip,
             bucket,
-            last_connection: Utc::now(),
+            last_connection: chrono::Local::now().naive_local(),
             next_wakeup: None,
             status,
         }
