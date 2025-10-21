@@ -1,4 +1,5 @@
 use bytes::BytesMut;
+use common::connection::ConnectionStatus;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
 use std::collections::HashSet;
@@ -124,7 +125,11 @@ async fn handle_backdoor_register_msg(
     // TEMPORARY.
     // REMOVE LATER
 
-    let connection = Connection::new(device_id, Some(socket_addr.ip().to_string()));
+    let connection = Connection::new(
+        device_id,
+        Some(socket_addr.ip().to_string()),
+        ConnectionStatus::PendingAck,
+    );
 
     {
         pending_connections
@@ -166,6 +171,7 @@ async fn handle_backdoor_ack_msg(
     let connection = Connection::new(
         Uuid::from_u128(msg.device_id),
         Some(socket_addr.ip().to_string()),
+        ConnectionStatus::Active,
     );
 
     if pending_connections

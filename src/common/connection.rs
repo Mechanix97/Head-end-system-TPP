@@ -12,19 +12,18 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(device_id: Uuid, ip: Option<String>) -> Self {
+    pub fn new(device_id: Uuid, ip: Option<String>, status: ConnectionStatus) -> Self {
         Connection {
             device_id,
             ip,
             last_connection: Utc::now(),
             next_wakeup: None,
-            status: ConnectionStatus::PendingAck,
+            status,
         }
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, sqlx::Type)]
-
 pub enum ConnectionStatus {
     #[sqlx(rename = "active")]
     Active,
