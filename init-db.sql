@@ -7,12 +7,15 @@ BEGIN
       PERFORM dblink_exec('dbname=postgres', 'CREATE DATABASE hes');
    END IF;
 END
+$$;
 
+DO
+$$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'connectionstatus') THEN
         CREATE TYPE connectionstatus AS ENUM ('active', 'pending_ack', 'lost');
     END IF;
-END   $$;
+END   
 $$;
 
 \connect hes;
