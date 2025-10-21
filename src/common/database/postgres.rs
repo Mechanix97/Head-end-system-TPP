@@ -44,12 +44,13 @@ impl Engine for PostgresDB {
     }
 
     async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        let query = "INSERT INTO T_ACTIVE_CONNECTIONS (device_id, ip, last_connection, next_wakeup, status) 
+        let query = "INSERT INTO T_ACTIVE_CONNECTIONS (device_id, ip, bucket, last_connection, next_wakeup, status) 
                      VALUES ($1, $2, $3, $4, $5)";
 
         sqlx::query(query)
             .bind(connection.device_id)
             .bind(connection.ip.clone())
+            .bind(connection.bucket)
             .bind(connection.last_connection)
             .bind(connection.next_wakeup)
             .bind(connection.status.clone())
