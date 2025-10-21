@@ -50,7 +50,7 @@ impl Scheduler {
         let bucket_number = self.get_bucket_number();
         let next_wake_up = self.get_next_schedule(bucket_number);
 
-        connection.bucket = Some(bucket_number as i64);
+        connection.bucket = Some(bucket_number as i32);
         connection.next_wakeup = Some(
             NaiveDateTime::parse_from_str(&next_wake_up.to_string(), "%H:%M:%S %d/%m/%Y").map_err(
                 |e| {

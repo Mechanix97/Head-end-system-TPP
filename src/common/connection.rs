@@ -6,7 +6,7 @@ use uuid::Uuid;
 pub struct Connection {
     pub device_id: Uuid,
     pub ip: Option<String>,
-    pub bucket: Option<i64>,
+    pub bucket: Option<i32>,
     pub last_connection: NaiveDateTime,
     pub next_wakeup: Option<NaiveDateTime>,
     pub status: ConnectionStatus,
@@ -16,7 +16,7 @@ impl Connection {
     pub fn new(
         device_id: Uuid,
         ip: Option<String>,
-        bucket: Option<i64>,
+        bucket: Option<i32>,
         status: ConnectionStatus,
     ) -> Self {
         Connection {
