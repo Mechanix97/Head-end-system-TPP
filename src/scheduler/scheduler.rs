@@ -3,6 +3,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::info;
 
 use crate::error::SchedulerError;
+use crate::schedule::Schedule;
 use common::{connection::Connection, database::api::Database};
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
@@ -41,16 +42,18 @@ impl Scheduler {
             .inc();
 
         let bucket_number = self.get_bucket_number();
-        let (sec, min, hour) = self.get_time_from_bucket_number(bucket_number);
-        let (day, mon, year) = get_date_from_hour(hour);
+        let schedule = self.get_next_schedule(bucket_number);
 
-        let schedule = format!("{sec} {min} {hour} {day} {mon} * {year}");
+        // let (sec, min, hour) = self.get_time_from_bucket_number(bucket_number);
+        // let (day, mon, year) = get_date_from_hour(hour);
+
+        // let schedule = format!("{sec} {min} {hour} {day} {mon} * {year}");
         info!("Schedule {schedule}");
         self.buckets[bucket_number].push(connection.clone());
 
         let cc2 = connection.clone();
         self.job_scheduler
-            .add(Job::new_async(schedule, move |_uuid, _l| {
+            .add(Job::new_async(schedule.as_cron(), move |_uuid, _l| {
                 let cc = cc2.clone();
 
                 Box::pin(async move {
@@ -59,7 +62,7 @@ impl Scheduler {
             })?)
             .await?;
 
-        self.database.add_new_connection(connection).await?;
+        self.database.add_new_connection(&connection).await?;
 
         Ok(())
     }
@@ -71,6 +74,20 @@ impl Scheduler {
             .min_by_key(|(_, bucket)| bucket.len())
             .map(|(index, _)| index)
             .unwrap_or(0)
+    }
+
+    pub fn get_next_schedule(&self, bucket_number: usize) -> Schedule {
+        let (sec, min, hour) = self.get_time_from_bucket_number(bucket_number);
+        let (day, mon, year) = get_date_from_hour(hour);
+
+        Schedule {
+            sec,
+            min,
+            hour,
+            day,
+            mon,
+            year,
+        }
     }
 
     pub fn get_time_from_bucket_number(&self, bucket_number: usize) -> (usize, usize, usize) {

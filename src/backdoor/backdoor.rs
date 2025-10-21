@@ -60,6 +60,7 @@ pub async fn init_backdoor(
                             &mut framed,
                             msg,
                             socket_addr,
+                            &scheduler_clone,
                             pending_connections.clone(),
                             ack_timeout_duration,
                         )
@@ -103,6 +104,7 @@ async fn handle_backdoor_register_msg(
     framed: &mut UdpFramed<MessageCodec>,
     msg: Message,
     socket_addr: SocketAddr,
+    scheduler: &Arc<Mutex<Scheduler>>,
     pending_connections: Arc<Mutex<HashSet<Uuid>>>,
     ack_timeout_duration: u64,
 ) -> Result<(), BackdoorError> {
@@ -121,13 +123,14 @@ async fn handle_backdoor_register_msg(
     codec
         .encode(ack_msg, &mut buffer)
         .expect("Error encoding msg");
-    info!("ACK Message expected: {}", hex::encode(&buffer));
+    eprintln!("ACK Message expected: {}", hex::encode(&buffer));
     // TEMPORARY.
     // REMOVE LATER
 
     let connection = Connection::new(
         device_id,
         Some(socket_addr.ip().to_string()),
+        None,
         ConnectionStatus::PendingAck,
     );
 
@@ -137,6 +140,13 @@ async fn handle_backdoor_register_msg(
             .await
             .insert(connection.device_id);
     }
+
+    scheduler
+        .lock()
+        .await
+        .database
+        .add_new_connection(&connection)
+        .await?;
 
     let response = Message::new_register_response_message(device_id.as_u128(), msg.seq + 1)?;
     if let Err(err) = (*framed).send((response, socket_addr)).await {
@@ -168,11 +178,16 @@ async fn handle_backdoor_ack_msg(
     socket_addr: SocketAddr,
     pending_connections: Arc<Mutex<HashSet<Uuid>>>,
 ) -> Result<(), BackdoorError> {
-    let connection = Connection::new(
-        Uuid::from_u128(msg.device_id),
-        Some(socket_addr.ip().to_string()),
-        ConnectionStatus::Active,
-    );
+    let connection = scheduler
+        .lock()
+        .await
+        .database
+        .get_connection_data(Uuid::from_u128(msg.device_id))
+        .await?;
+
+    if Some(socket_addr.ip().to_string()) != connection.ip {
+        error!("Invalid IP ")
+    }
 
     if pending_connections
         .lock()

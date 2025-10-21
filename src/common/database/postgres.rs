@@ -1,7 +1,10 @@
 use sqlx::Pool;
 use sqlx::Postgres;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::query_as;
+use sqlx::query_scalar;
 use tracing::error;
+use uuid::Uuid;
 
 use crate::connection::Connection;
 use crate::database::DatabaseError;
@@ -27,7 +30,7 @@ impl PostgresDB {
 #[async_trait::async_trait]
 impl Engine for PostgresDB {
     async fn get_active_connections(&self) -> Vec<Connection> {
-        let query = "SELECT device_id, ip, last_connection, next_wakeup, status 
+        let query = "SELECT device_id, ip, bucket, last_connection, next_wakeup, status 
                      FROM T_ACTIVE_CONNECTIONS 
                      WHERE status = 'active'";
 
@@ -40,20 +43,63 @@ impl Engine for PostgresDB {
             })
     }
 
-    async fn add_new_connection(&self, connection: Connection) -> Result<(), DatabaseError> {
+    async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
         let query = "INSERT INTO T_ACTIVE_CONNECTIONS (device_id, ip, last_connection, next_wakeup, status) 
                      VALUES ($1, $2, $3, $4, $5)";
 
         sqlx::query(query)
             .bind(connection.device_id)
-            .bind(connection.ip)
+            .bind(connection.ip.clone())
             .bind(connection.last_connection)
             .bind(connection.next_wakeup)
-            .bind(connection.status)
+            .bind(connection.status.clone())
             .execute(&self.pool)
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         Ok(())
+    }
+
+    async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError> {
+        let query_count = r#"
+            SELECT COUNT(*) 
+            FROM T_ACTIVE_CONNECTIONS 
+            WHERE device_id = $1
+        "#;
+
+        let count: i32 = query_scalar(query_count)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                error!("Error counting connections for device {}: {}", device_id, e);
+                DatabaseError::QueryError(e.to_string())
+            })?;
+
+        if count < 1 {
+            return Err(DatabaseError::NoDataFound);
+        } else if count > 1 {
+            return Err(DatabaseError::TooManyRows);
+        }
+
+        let query = r#"
+            SELECT device_id, ip, bucket, last_connection, next_wakeup, status 
+            FROM T_ACTIVE_CONNECTIONS 
+            WHERE device_id = $1
+        "#;
+
+        let connection = query_as::<_, Connection>(query)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                error!(
+                    "Error fetching connection data for device {}: {}",
+                    device_id, e
+                );
+                DatabaseError::QueryError(e.to_string())
+            })?;
+
+        Ok(connection)
     }
 }
