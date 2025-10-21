@@ -15,4 +15,6 @@ pub enum BackdoorError {
     RegisterRequestInvalidId,
     #[error("Database Error: {0}")]
     DatabaseError(#[from] DatabaseError),
+    #[error("Parse Error: {0}")]
+    ParseError(String),
 }

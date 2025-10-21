@@ -19,6 +19,7 @@ futures.workspace = true
 rand.workspace = true
 hex.workspace = true
 uuid.workspace = true
+chrono.workspace = true
 
 [lib]
 path = "./mod.rs"

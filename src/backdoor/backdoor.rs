@@ -1,4 +1,5 @@
 use bytes::BytesMut;
+use chrono::NaiveDateTime;
 use common::connection::ConnectionStatus;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
@@ -113,11 +114,28 @@ async fn handle_backdoor_register_msg(
         return Err(BackdoorError::RegisterRequestInvalidId);
     }
 
-    let device_id = Uuid::new_v4();
+    let bucket_number = scheduler.lock().await.get_bucket_number();
 
+    let mut connection = Connection::new(
+        Uuid::new_v4(),
+        Some(socket_addr.ip().to_string()),
+        Some(bucket_number as i64),
+        ConnectionStatus::PendingAck,
+    );
+
+    let next_wake_up = scheduler.lock().await.get_next_schedule(bucket_number);
+
+    connection.next_wakeup = Some(
+        NaiveDateTime::parse_from_str(&next_wake_up.to_string(), "%H:%M:%S %d/%m/%Y").map_err(
+            |e| {
+                error!("Error parsing next_wakeup from Schedule: {}", e);
+                BackdoorError::ParseError(e.to_string())
+            },
+        )?,
+    );
     // TEMPORARY.
     // REMOVE LATER
-    let ack_msg = Message::new_ack_message(device_id.as_u128(), 3)?;
+    let ack_msg = Message::new_ack_message(connection.device_id.as_u128(), 3)?;
     let mut buffer: BytesMut = BytesMut::new();
     let mut codec = MessageCodec;
     codec
@@ -126,13 +144,6 @@ async fn handle_backdoor_register_msg(
     eprintln!("ACK Message expected: {}", hex::encode(&buffer));
     // TEMPORARY.
     // REMOVE LATER
-
-    let connection = Connection::new(
-        device_id,
-        Some(socket_addr.ip().to_string()),
-        None,
-        ConnectionStatus::PendingAck,
-    );
 
     {
         pending_connections
@@ -148,7 +159,8 @@ async fn handle_backdoor_register_msg(
         .add_new_connection(&connection)
         .await?;
 
-    let response = Message::new_register_response_message(device_id.as_u128(), msg.seq + 1)?;
+    let response =
+        Message::new_register_response_message(connection.device_id.as_u128(), msg.seq + 1)?;
     if let Err(err) = (*framed).send((response, socket_addr)).await {
         error!("Error sending response: {err}");
     }
