@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
             .expect("Failed to send RegisterRequest");
-        sleep(Duration::from_millis(1000)).await;
+        sleep(Duration::from_millis(100)).await;
 
         // 2. receives registration response msg
         buffer = BytesMut::new();

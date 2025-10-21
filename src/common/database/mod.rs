@@ -9,3 +9,11 @@ pub enum DatabaseType {
     InMemory,
     Postgres,
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum DatabaseError {
+    #[error("io error: {0}")]
+    TcpError(#[from] std::io::Error),
+    #[error("QueryError error: {0}")]
+    QueryError(String),
+}

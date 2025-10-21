@@ -3,7 +3,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::info;
 
 use crate::error::SchedulerError;
-use common::connection::Connection;
+use common::{connection::Connection, database::api::Database};
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
 type Bucket = Vec<Connection>;
@@ -11,13 +11,15 @@ type Bucket = Vec<Connection>;
 pub struct Scheduler {
     pub buckets: Vec<Bucket>,
     pub job_scheduler: JobScheduler,
+    pub database: Database,
 }
 
 impl Scheduler {
-    pub async fn new(bucket_number: usize) -> Result<Self, SchedulerError> {
+    pub async fn new(bucket_number: usize, database: Database) -> Result<Self, SchedulerError> {
         Ok(Self {
             buckets: vec![Vec::new(); bucket_number],
             job_scheduler: JobScheduler::new().await?,
+            database,
         })
     }
 
@@ -56,6 +58,8 @@ impl Scheduler {
                 })
             })?)
             .await?;
+
+        self.database.add_new_connection(connection).await?;
 
         Ok(())
     }
@@ -105,5 +109,9 @@ fn get_date_from_hour(hour: usize) -> (usize, usize, usize) {
 }
 
 async fn periodically_task(conn: Connection) {
-    info!("Conection ID: {} IP: {}", conn.id, conn.ip);
+    info!(
+        "Conection ID: {} IP: {}",
+        conn.device_id,
+        conn.ip.unwrap_or("No ip".to_string())
+    );
 }

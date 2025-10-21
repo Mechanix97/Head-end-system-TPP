@@ -1,18 +1,34 @@
+use chrono::{DateTime, Utc};
+use sqlx::prelude::FromRow;
 use uuid::Uuid;
 
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, FromRow)]
 pub struct Connection {
-    pub id: u128,
-    pub ip: String,
-    pub job_id: Option<Uuid>,
+    pub device_id: Uuid,
+    pub ip: Option<String>,
+    pub last_connection: DateTime<Utc>,
+    pub next_wakeup: Option<DateTime<Utc>>,
+    pub status: ConnectionStatus,
 }
 
 impl Connection {
-    pub fn new(id: u128, ip: String) -> Self {
+    pub fn new(device_id: Uuid, ip: Option<String>, status: ConnectionStatus) -> Self {
         Connection {
-            id,
+            device_id,
             ip,
-            job_id: None,
+            last_connection: Utc::now(),
+            next_wakeup: None,
+            status,
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, sqlx::Type)]
+pub enum ConnectionStatus {
+    #[sqlx(rename = "active")]
+    Active,
+    #[sqlx(rename = "pending_ack")]
+    PendingAck,
+    #[sqlx(rename = "lost")]
+    Lost,
 }
