@@ -7,13 +7,17 @@ BEGIN
       PERFORM dblink_exec('dbname=postgres', 'CREATE DATABASE hes');
    END IF;
 END
+
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'connectionstatus') THEN
+        CREATE TYPE connectionstatus AS ENUM ('active', 'pending_ack', 'lost');
+    END IF;
+END   $$;
 $$;
 
 \connect hes;
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
-CREATE TYPE IF NOT EXISTS connectionstatus AS ENUM ('active', 'pending_ack', 'lost');
 
 CREATE TABLE IF NOT EXISTS T_ACTIVE_CONNECTIONS (
     device_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
