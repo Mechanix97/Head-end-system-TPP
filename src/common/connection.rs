@@ -6,9 +6,9 @@ use uuid::Uuid;
 pub struct Connection {
     pub device_id: Uuid,
     pub ip: Option<String>,
-    pub connection_time: DateTime<Utc>,
+    pub last_connection: DateTime<Utc>,
     pub next_wakeup: Option<DateTime<Utc>>,
-    pub status: String,
+    pub status: ConnectionStatus,
 }
 
 impl Connection {
@@ -16,9 +16,20 @@ impl Connection {
         Connection {
             device_id,
             ip,
-            connection_time: Utc::now(),
+            last_connection: Utc::now(),
             next_wakeup: None,
-            status: "active".to_string(),
+            status: ConnectionStatus::PendingAck,
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, sqlx::Type)]
+
+pub enum ConnectionStatus {
+    #[sqlx(rename = "active")]
+    Active,
+    #[sqlx(rename = "pending_ack")]
+    PendingAck,
+    #[sqlx(rename = "lost")]
+    Lost,
 }
