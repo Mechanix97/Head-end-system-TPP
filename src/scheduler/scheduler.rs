@@ -77,9 +77,11 @@ impl Scheduler {
         let Some(next_wake_up) = connection.next_wakeup else {
             return Err(SchedulerError::NoScheduleDefined);
         };
+
+        let next_wake_up = next_wake_up.format("%S %M %H %d %m * %Y").to_string();
         let cc2 = connection.clone();
         self.job_scheduler
-            .add(Job::new_async(next_wake_up, move |_uuid, _l| {
+            .add(Job::new_async(next_wake_up.clone(), move |_uuid, _l| {
                 let cc = cc2.clone();
 
                 Box::pin(async move {

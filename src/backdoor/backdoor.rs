@@ -185,7 +185,7 @@ async fn handle_backdoor_ack_msg(
         .await
         .remove(&connection.device_id)
     {
-        info!("Adding new connection, device_id: {}", msg.device_id);
+        info!("Adding new connection, device_id: {:#x}", msg.device_id);
         let mut scheduler_lock = scheduler.lock().await;
         scheduler_lock.start_task(connection).await?;
     }
