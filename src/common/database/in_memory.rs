@@ -48,4 +48,20 @@ impl Engine for InMemoryDB {
 
         Ok(results[0].clone())
     }
+
+    async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
+        let mut guard = self.inner.lock().await; // Lock async, simple y no falla
+
+        if let Some(pos) = guard
+            .active_connections
+            .iter()
+            .position(|c| c.device_id == connection.device_id)
+        {
+            guard.active_connections[pos] = connection.clone(); // Reemplaza con clone (owned)
+        } else {
+            return Err(DatabaseError::NoDataFound);
+        }
+
+        Ok(())
+    }
 }

@@ -1,5 +1,4 @@
 use bytes::BytesMut;
-use chrono::NaiveDateTime;
 use common::connection::ConnectionStatus;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
@@ -114,25 +113,19 @@ async fn handle_backdoor_register_msg(
         return Err(BackdoorError::RegisterRequestInvalidId);
     }
 
-    let bucket_number = scheduler.lock().await.get_bucket_number();
-
     let mut connection = Connection::new(
         Uuid::new_v4(),
         Some(socket_addr.ip().to_string()),
-        Some(bucket_number as i64),
+        None,
         ConnectionStatus::PendingAck,
     );
 
-    let next_wake_up = scheduler.lock().await.get_next_schedule(bucket_number);
+    scheduler
+        .lock()
+        .await
+        .add_connection(&mut connection)
+        .await?;
 
-    connection.next_wakeup = Some(
-        NaiveDateTime::parse_from_str(&next_wake_up.to_string(), "%H:%M:%S %d/%m/%Y").map_err(
-            |e| {
-                error!("Error parsing next_wakeup from Schedule: {}", e);
-                BackdoorError::ParseError(e.to_string())
-            },
-        )?,
-    );
     // TEMPORARY.
     // REMOVE LATER
     let ack_msg = Message::new_ack_message(connection.device_id.as_u128(), 3)?;
@@ -152,31 +145,17 @@ async fn handle_backdoor_register_msg(
             .insert(connection.device_id);
     }
 
-    scheduler
-        .lock()
-        .await
-        .database
-        .add_new_connection(&connection)
-        .await?;
-
     let response =
         Message::new_register_response_message(connection.device_id.as_u128(), msg.seq + 1)?;
     if let Err(err) = (*framed).send((response, socket_addr)).await {
         error!("Error sending response: {err}");
     }
 
-    let pending_connections_clone = pending_connections.clone();
-
-    tokio::spawn(async move {
-        sleep(Duration::from_millis(ack_timeout_duration)).await;
-        if pending_connections_clone
-            .lock()
-            .await
-            .remove(&connection.device_id)
-        {
-            info!("Ack from {} not received", connection.device_id);
-        }
-    });
+    spawn_ack_timeout_task(
+        pending_connections.clone(),
+        ack_timeout_duration,
+        connection.device_id,
+    );
 
     Ok(())
 }
@@ -208,10 +187,23 @@ async fn handle_backdoor_ack_msg(
     {
         info!("Adding new connection, device_id: {}", msg.device_id);
         let mut scheduler_lock = scheduler.lock().await;
-        scheduler_lock.add_connection(connection).await?;
+        scheduler_lock.start_task(connection).await?;
     }
 
     Ok(())
+}
+
+fn spawn_ack_timeout_task(
+    pending_connections: Arc<Mutex<HashSet<Uuid>>>,
+    ack_timeout_duration: u64,
+    device_id: Uuid,
+) {
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(ack_timeout_duration)).await;
+        if pending_connections.lock().await.remove(&device_id) {
+            info!("Ack from {} not received", device_id);
+        }
+    });
 }
 
 #[cfg(test)]

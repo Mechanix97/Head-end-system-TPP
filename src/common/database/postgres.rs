@@ -103,4 +103,23 @@ impl Engine for PostgresDB {
 
         Ok(connection)
     }
+
+    async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
+        let query = "UPDATE T_ACTIVE_CONNECTIONS 
+        SET ip = $2, bucket = $3, last_connection = $4, next_wakeup = $5, status = $6
+        WHERE device_id = $1";
+
+        sqlx::query(query)
+            .bind(connection.device_id)
+            .bind(connection.ip.clone())
+            .bind(connection.bucket)
+            .bind(connection.last_connection)
+            .bind(connection.next_wakeup)
+            .bind(connection.status.clone())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
 }
