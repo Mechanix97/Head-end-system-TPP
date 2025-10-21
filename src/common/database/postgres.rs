@@ -67,7 +67,7 @@ impl Engine for PostgresDB {
             WHERE device_id = $1
         "#;
 
-        let count: i32 = query_scalar(query_count)
+        let count: i64 = query_scalar(query_count)
             .bind(device_id)
             .fetch_one(&self.pool)
             .await
