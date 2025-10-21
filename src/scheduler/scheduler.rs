@@ -59,6 +59,8 @@ impl Scheduler {
             })?)
             .await?;
 
+        self.database.add_new_connection(connection).await?;
+
         Ok(())
     }
 
