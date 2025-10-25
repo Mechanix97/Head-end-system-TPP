@@ -134,7 +134,7 @@ async fn handle_backdoor_register_msg(
     codec
         .encode(ack_msg, &mut buffer)
         .expect("Error encoding msg");
-    eprintln!("ACK Message expected: {}", hex::encode(&buffer));
+    info!("ACK Message expected: {}", hex::encode(&buffer));
     // TEMPORARY.
     // REMOVE LATER
 
