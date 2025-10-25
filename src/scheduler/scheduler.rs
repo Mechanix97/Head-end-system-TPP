@@ -143,7 +143,7 @@ impl Scheduler {
         self.database
             .get_active_connections()
             .await
-            .map_err(|e| SchedulerError::DatabaseError(e))
+            .map_err(SchedulerError::DatabaseError)
     }
 }
 
