@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::connection::Connection;
 use crate::database::DatabaseError;
@@ -22,17 +23,27 @@ impl Database {
         }
     }
 
-    pub async fn get_active_connections(&self) -> Vec<Connection> {
+    pub async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         self.engine.get_active_connections().await
     }
 
-    pub async fn add_new_connection(&self, connection: Connection) -> Result<(), DatabaseError> {
+    pub async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
         self.engine.add_new_connection(connection).await
+    }
+
+    pub async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError> {
+        self.engine.get_connection_data(device_id).await
+    }
+
+    pub async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
+        self.engine.update_connection(connection).await
     }
 }
 
 #[async_trait::async_trait]
 pub trait Engine: Debug + Send + Sync {
-    async fn get_active_connections(&self) -> Vec<Connection>;
-    async fn add_new_connection(&self, connection: Connection) -> Result<(), DatabaseError>;
+    async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError>;
+    async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError>;
+    async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError>;
+    async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError>;
 }

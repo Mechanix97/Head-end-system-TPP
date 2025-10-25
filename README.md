@@ -28,3 +28,6 @@ cargo run -- --help ## displays the cli args
 | `AT+CPIN?` | Checks the SIM status. | `AT+CPIN?`<br>`+CPIN: READY`<br>`OK` |
 | `AT+CPIN="xxxx"` | Enters the PIN if the SIM is locked. | `AT+CPIN="1234"`<br>`OK` |
 | `AT+CSQ` | Shows signal quality (RSSI). | `AT+CSQ`<br>`+CSQ: 20,99`<br>`OK` (RSSI >10 is acceptable) |
+
+## Access to the db
+psql -h localhost -p 5432 -U postgres -d hes

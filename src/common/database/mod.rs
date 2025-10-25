@@ -16,4 +16,8 @@ pub enum DatabaseError {
     TcpError(#[from] std::io::Error),
     #[error("QueryError error: {0}")]
     QueryError(String),
+    #[error("Error: No data found")]
+    NoDataFound,
+    #[error("Error: Too many rows")]
+    TooManyRows,
 }

@@ -1,8 +1,12 @@
+use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
 use tokio_cron_scheduler::{Job, JobScheduler};
+use tracing::error;
 use tracing::info;
 
 use crate::error::SchedulerError;
+use crate::schedule::Schedule;
+use common::connection::ConnectionStatus;
 use common::{connection::Connection, database::api::Database};
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
@@ -34,23 +38,50 @@ impl Scheduler {
         Ok(())
     }
 
-    pub async fn add_connection(&mut self, connection: Connection) -> Result<(), SchedulerError> {
+    pub async fn add_connection(
+        &mut self,
+        connection: &mut Connection,
+    ) -> Result<(), SchedulerError> {
         METRICS_CONNECTIONS
             .connections_tracker
             .with_label_values(&["new_connection"])
             .inc();
 
         let bucket_number = self.get_bucket_number();
-        let (sec, min, hour) = self.get_time_from_bucket_number(bucket_number);
-        let (day, mon, year) = get_date_from_hour(hour);
+        let next_wake_up = self.get_next_schedule(bucket_number);
 
-        let schedule = format!("{sec} {min} {hour} {day} {mon} * {year}");
-        info!("Schedule {schedule}");
+        connection.bucket = Some(bucket_number as i32);
+        connection.next_wakeup = Some(
+            NaiveDateTime::parse_from_str(&next_wake_up.to_string(), "%H:%M:%S %d/%m/%Y").map_err(
+                |e| {
+                    error!("Error parsing next_wakeup from Schedule: {}", e);
+                    SchedulerError::ParseError(e.to_string())
+                },
+            )?,
+        );
+
         self.buckets[bucket_number].push(connection.clone());
+        self.database.add_new_connection(connection).await?;
 
+        info!(
+            "Connection id: {:#x} in bucket {} next wake scheduled at {}",
+            connection.device_id, bucket_number, next_wake_up
+        );
+
+        Ok(())
+    }
+
+    pub async fn start_task(&mut self, mut connection: Connection) -> Result<(), SchedulerError> {
+        connection.status = ConnectionStatus::Active;
+
+        let Some(next_wake_up) = connection.next_wakeup else {
+            return Err(SchedulerError::NoScheduleDefined);
+        };
+
+        let next_wake_up = next_wake_up.format("%S %M %H %d %m * %Y").to_string();
         let cc2 = connection.clone();
         self.job_scheduler
-            .add(Job::new_async(schedule, move |_uuid, _l| {
+            .add(Job::new_async(next_wake_up.clone(), move |_uuid, _l| {
                 let cc = cc2.clone();
 
                 Box::pin(async move {
@@ -59,7 +90,12 @@ impl Scheduler {
             })?)
             .await?;
 
-        self.database.add_new_connection(connection).await?;
+        info!(
+            "Scheduled next connetion to divice {:#x} at {}",
+            connection.device_id, next_wake_up
+        );
+
+        self.database.update_connection(&connection).await?;
 
         Ok(())
     }
@@ -71,6 +107,20 @@ impl Scheduler {
             .min_by_key(|(_, bucket)| bucket.len())
             .map(|(index, _)| index)
             .unwrap_or(0)
+    }
+
+    pub fn get_next_schedule(&self, bucket_number: usize) -> Schedule {
+        let (sec, min, hour) = self.get_time_from_bucket_number(bucket_number);
+        let (day, mon, year) = get_date_from_hour(hour);
+
+        Schedule {
+            sec,
+            min,
+            hour,
+            day,
+            mon,
+            year,
+        }
     }
 
     pub fn get_time_from_bucket_number(&self, bucket_number: usize) -> (usize, usize, usize) {
@@ -87,6 +137,13 @@ impl Scheduler {
             slot_in_secs % 3600 / 60,
             slot_in_secs / 3600,
         )
+    }
+
+    pub async fn get_active_connections(&self) -> Result<Vec<Connection>, SchedulerError> {
+        self.database
+            .get_active_connections()
+            .await
+            .map_err(SchedulerError::DatabaseError)
     }
 }
 

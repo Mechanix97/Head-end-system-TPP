@@ -60,6 +60,7 @@ pub async fn init_backdoor(
                             &mut framed,
                             msg,
                             socket_addr,
+                            &scheduler_clone,
                             pending_connections.clone(),
                             ack_timeout_duration,
                         )
@@ -103,6 +104,7 @@ async fn handle_backdoor_register_msg(
     framed: &mut UdpFramed<MessageCodec>,
     msg: Message,
     socket_addr: SocketAddr,
+    scheduler: &Arc<Mutex<Scheduler>>,
     pending_connections: Arc<Mutex<HashSet<Uuid>>>,
     ack_timeout_duration: u64,
 ) -> Result<(), BackdoorError> {
@@ -111,11 +113,22 @@ async fn handle_backdoor_register_msg(
         return Err(BackdoorError::RegisterRequestInvalidId);
     }
 
-    let device_id = Uuid::new_v4();
+    let mut connection = Connection::new(
+        Uuid::new_v4(),
+        Some(socket_addr.ip().to_string()),
+        None,
+        ConnectionStatus::PendingAck,
+    );
+
+    scheduler
+        .lock()
+        .await
+        .add_connection(&mut connection)
+        .await?;
 
     // TEMPORARY.
     // REMOVE LATER
-    let ack_msg = Message::new_ack_message(device_id.as_u128(), 3)?;
+    let ack_msg = Message::new_ack_message(connection.device_id.as_u128(), 3)?;
     let mut buffer: BytesMut = BytesMut::new();
     let mut codec = MessageCodec;
     codec
@@ -125,12 +138,6 @@ async fn handle_backdoor_register_msg(
     // TEMPORARY.
     // REMOVE LATER
 
-    let connection = Connection::new(
-        device_id,
-        Some(socket_addr.ip().to_string()),
-        ConnectionStatus::PendingAck,
-    );
-
     {
         pending_connections
             .lock()
@@ -138,23 +145,17 @@ async fn handle_backdoor_register_msg(
             .insert(connection.device_id);
     }
 
-    let response = Message::new_register_response_message(device_id.as_u128(), msg.seq + 1)?;
+    let response =
+        Message::new_register_response_message(connection.device_id.as_u128(), msg.seq + 1)?;
     if let Err(err) = (*framed).send((response, socket_addr)).await {
         error!("Error sending response: {err}");
     }
 
-    let pending_connections_clone = pending_connections.clone();
-
-    tokio::spawn(async move {
-        sleep(Duration::from_millis(ack_timeout_duration)).await;
-        if pending_connections_clone
-            .lock()
-            .await
-            .remove(&connection.device_id)
-        {
-            info!("Ack from {} not received", connection.device_id);
-        }
-    });
+    spawn_ack_timeout_task(
+        pending_connections.clone(),
+        ack_timeout_duration,
+        connection.device_id,
+    );
 
     Ok(())
 }
@@ -168,23 +169,41 @@ async fn handle_backdoor_ack_msg(
     socket_addr: SocketAddr,
     pending_connections: Arc<Mutex<HashSet<Uuid>>>,
 ) -> Result<(), BackdoorError> {
-    let connection = Connection::new(
-        Uuid::from_u128(msg.device_id),
-        Some(socket_addr.ip().to_string()),
-        ConnectionStatus::Active,
-    );
+    let connection = scheduler
+        .lock()
+        .await
+        .database
+        .get_connection_data(Uuid::from_u128(msg.device_id))
+        .await?;
+
+    if Some(socket_addr.ip().to_string()) != connection.ip {
+        error!("Invalid IP ")
+    }
 
     if pending_connections
         .lock()
         .await
         .remove(&connection.device_id)
     {
-        info!("Adding new connection, device_id: {}", msg.device_id);
+        info!("Adding new connection, device_id: {:#x}", msg.device_id);
         let mut scheduler_lock = scheduler.lock().await;
-        scheduler_lock.add_connection(connection).await?;
+        scheduler_lock.start_task(connection).await?;
     }
 
     Ok(())
+}
+
+fn spawn_ack_timeout_task(
+    pending_connections: Arc<Mutex<HashSet<Uuid>>>,
+    ack_timeout_duration: u64,
+    device_id: Uuid,
+) {
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(ack_timeout_duration)).await;
+        if pending_connections.lock().await.remove(&device_id) {
+            info!("Ack from {} not received", device_id);
+        }
+    });
 }
 
 #[cfg(test)]
@@ -235,7 +254,13 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
 
         // 2. receives registration response msg
@@ -255,7 +280,13 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
 
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 1);
     }
 
@@ -283,7 +314,13 @@ mod tests {
         .await
         .unwrap();
 
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
 
         let register_request: Message = Message::new_register_request_message().unwrap();
@@ -297,7 +334,13 @@ mod tests {
             .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
             .await
             .expect("Failed to send RegisterRequest");
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
 
         // 2. receives registration response msg
@@ -319,7 +362,13 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
 
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
     }
 
@@ -357,7 +406,13 @@ mod tests {
                 .await
                 .expect("Failed to send RegisterRequest");
             sleep(Duration::from_millis(100)).await;
-            let connecitons_number = scheduler.lock().await.buckets[0].len();
+            let connecitons_number = scheduler
+                .lock()
+                .await
+                .get_active_connections()
+                .await
+                .unwrap()
+                .len();
             assert_eq!(connecitons_number, i);
 
             // 2. receives registration response msg
@@ -376,7 +431,13 @@ mod tests {
                 .expect("Failed to send RegisterRequest");
             sleep(Duration::from_millis(100)).await;
         }
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 10);
     }
 
@@ -413,7 +474,13 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
 
         // 1a. sends registration request msg
@@ -429,7 +496,13 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
 
         // 2a. receives registration response msg
@@ -466,7 +539,13 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
 
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 2);
     }
 }

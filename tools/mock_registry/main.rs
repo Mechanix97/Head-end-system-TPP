@@ -21,6 +21,7 @@ struct Args {
     #[arg(
         long = "backdoor-ip",
         default_value = "mechardo3d.mooo.com",
+        // default_value = "127.0.0.1",
         help = "Prometheus metrics api IP"
     )]
     backdoor_ip: String,
