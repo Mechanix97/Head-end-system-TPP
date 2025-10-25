@@ -40,7 +40,7 @@ impl Engine for InMemoryDB {
             .filter(|c| c.device_id == device_id)
             .collect();
 
-        if results.len() < 1 {
+        if results.is_empty() {
             return Err(DatabaseError::NoDataFound);
         } else if results.len() > 1 {
             return Err(DatabaseError::TooManyRows);

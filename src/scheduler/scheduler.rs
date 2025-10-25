@@ -61,7 +61,7 @@ impl Scheduler {
         );
 
         self.buckets[bucket_number].push(connection.clone());
-        self.database.add_new_connection(&connection).await?;
+        self.database.add_new_connection(connection).await?;
 
         info!(
             "Connection id: {:#x} in bucket {} next wake scheduled at {}",
