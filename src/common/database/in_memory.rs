@@ -1,4 +1,4 @@
-use crate::connection::Connection;
+use crate::connection::{Connection, ConnectionStatus};
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
 
@@ -13,21 +13,25 @@ pub struct InMemoryDB {
 
 #[derive(Default, Debug)]
 pub struct InnerDB {
-    pub active_connections: Vec<Connection>, //todo remove this pub
+    connections: Vec<Connection>,
 }
 
 #[async_trait::async_trait]
 impl Engine for InMemoryDB {
-    async fn get_active_connections(&self) -> Vec<Connection> {
-        self.inner.lock().await.active_connections.clone()
+    async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
+        Ok(self
+            .inner
+            .lock()
+            .await
+            .connections
+            .iter()
+            .filter(|&c| c.status == ConnectionStatus::Active)
+            .cloned()
+            .collect())
     }
 
     async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        self.inner
-            .lock()
-            .await
-            .active_connections
-            .push(connection.clone());
+        self.inner.lock().await.connections.push(connection.clone());
         Ok(())
     }
 
@@ -35,7 +39,7 @@ impl Engine for InMemoryDB {
         let lock = self.inner.lock().await;
 
         let results: Vec<&Connection> = lock
-            .active_connections
+            .connections
             .iter()
             .filter(|c| c.device_id == device_id)
             .collect();
@@ -50,14 +54,14 @@ impl Engine for InMemoryDB {
     }
 
     async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        let mut guard = self.inner.lock().await; // Lock async, simple y no falla
+        let mut guard = self.inner.lock().await;
 
         if let Some(pos) = guard
-            .active_connections
+            .connections
             .iter()
             .position(|c| c.device_id == connection.device_id)
         {
-            guard.active_connections[pos] = connection.clone(); // Reemplaza con clone (owned)
+            guard.connections[pos] = connection.clone();
         } else {
             return Err(DatabaseError::NoDataFound);
         }

@@ -254,7 +254,13 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
 
         // 2. receives registration response msg
@@ -274,7 +280,13 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
 
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 1);
     }
 
@@ -302,7 +314,13 @@ mod tests {
         .await
         .unwrap();
 
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
 
         let register_request: Message = Message::new_register_request_message().unwrap();
@@ -316,7 +334,13 @@ mod tests {
             .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
             .await
             .expect("Failed to send RegisterRequest");
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
 
         // 2. receives registration response msg
@@ -338,7 +362,13 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
 
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
     }
 
@@ -376,7 +406,13 @@ mod tests {
                 .await
                 .expect("Failed to send RegisterRequest");
             sleep(Duration::from_millis(100)).await;
-            let connecitons_number = scheduler.lock().await.buckets[0].len();
+            let connecitons_number = scheduler
+                .lock()
+                .await
+                .get_active_connections()
+                .await
+                .unwrap()
+                .len();
             assert_eq!(connecitons_number, i);
 
             // 2. receives registration response msg
@@ -395,7 +431,13 @@ mod tests {
                 .expect("Failed to send RegisterRequest");
             sleep(Duration::from_millis(100)).await;
         }
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 10);
     }
 
@@ -432,7 +474,13 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
 
         // 1a. sends registration request msg
@@ -448,7 +496,13 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 0);
 
         // 2a. receives registration response msg
@@ -485,7 +539,13 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
 
-        let connecitons_number = scheduler.lock().await.buckets[0].len();
+        let connecitons_number = scheduler
+            .lock()
+            .await
+            .get_active_connections()
+            .await
+            .unwrap()
+            .len();
         assert_eq!(connecitons_number, 2);
     }
 }

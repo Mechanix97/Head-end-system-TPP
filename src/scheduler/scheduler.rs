@@ -138,6 +138,13 @@ impl Scheduler {
             slot_in_secs / 3600,
         )
     }
+
+    pub async fn get_active_connections(&self) -> Result<Vec<Connection>, SchedulerError> {
+        self.database
+            .get_active_connections()
+            .await
+            .map_err(|e| SchedulerError::DatabaseError(e))
+    }
 }
 
 fn get_date_from_hour(hour: usize) -> (usize, usize, usize) {

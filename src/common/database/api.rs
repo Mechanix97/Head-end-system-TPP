@@ -23,7 +23,7 @@ impl Database {
         }
     }
 
-    pub async fn get_active_connections(&self) -> Vec<Connection> {
+    pub async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         self.engine.get_active_connections().await
     }
 
@@ -42,7 +42,7 @@ impl Database {
 
 #[async_trait::async_trait]
 pub trait Engine: Debug + Send + Sync {
-    async fn get_active_connections(&self) -> Vec<Connection>;
+    async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError>;
     async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError>;
     async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError>;
     async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError>;
