@@ -20,11 +20,15 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub async fn new(bucket_number: usize, database: Database) -> Result<Self, SchedulerError> {
-        Ok(Self {
+        let mut scheduler = Self {
             buckets: vec![Vec::new(); bucket_number],
             job_scheduler: JobScheduler::new().await?,
             database,
-        })
+        };
+
+        scheduler.load_active_connections().await?;
+
+        Ok(scheduler)
     }
 
     pub async fn start(&mut self) -> Result<(), SchedulerError> {
@@ -68,6 +72,9 @@ impl Scheduler {
             connection.device_id, bucket_number, next_wake_up
         );
 
+        Ok(())
+    }
+    async fn load_active_connections(&mut self) -> Result<(), SchedulerError> {
         Ok(())
     }
 
