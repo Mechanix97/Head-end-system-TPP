@@ -1,5 +1,6 @@
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
+use std::time::Duration;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::error;
 use tracing::info;
@@ -80,7 +81,7 @@ impl Scheduler {
             info!("Loading connection from db {:#x}", conn.device_id);
 
             let next_wakeup = conn.next_wakeup.ok_or(SchedulerError::NoScheduleDefined)?;
-            if next_wakeup < Utc::now().naive_local() {
+            if next_wakeup < Utc::now().naive_local() + Duration::from_secs(300) {
                 info!(
                     "Connection {:#x} expired, changing status to lost in db",
                     conn.device_id
