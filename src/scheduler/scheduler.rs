@@ -76,9 +76,18 @@ impl Scheduler {
     }
     async fn load_active_connections(&mut self) -> Result<(), SchedulerError> {
         let active_connections = self.database.get_active_connections().await?;
-        for mut conn in active_connections {
+        for conn in active_connections {
             info!("Loading connection from db {}", conn.device_id);
-            self.add_connection(&mut conn).await?;
+            METRICS_CONNECTIONS
+                .connections_tracker
+                .with_label_values(&["new_connection"])
+                .inc();
+
+            let bucket_number = conn.bucket.ok_or(SchedulerError::NoBucketDefined)? as usize;
+
+            self.buckets[bucket_number].push(conn.clone());
+
+            self.start_task(conn).await?;
         }
 
         Ok(())
