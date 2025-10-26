@@ -75,6 +75,10 @@ impl Scheduler {
 
         Ok(())
     }
+
+    /// this function checks the database to load the stored connections
+    /// and schedule the task for the connection if the next wake up time is not expired.
+    /// A margin of 5 mins is needed for safety.
     async fn load_active_connections(&mut self) -> Result<(), SchedulerError> {
         let active_connections = self.database.get_active_connections().await?;
         for mut conn in active_connections {
