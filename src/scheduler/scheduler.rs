@@ -75,6 +75,11 @@ impl Scheduler {
         Ok(())
     }
     async fn load_active_connections(&mut self) -> Result<(), SchedulerError> {
+        let active_connections = self.database.get_active_connections().await?;
+        for mut conn in active_connections {
+            self.add_connection(&mut conn).await?;
+        }
+
         Ok(())
     }
 
