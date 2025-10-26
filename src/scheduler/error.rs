@@ -12,4 +12,6 @@ pub enum SchedulerError {
     ParseError(String),
     #[error("No schedule defined Error")]
     NoScheduleDefined,
+    #[error("No bucket defined")]
+    NoBucketDefined,
 }

@@ -1,5 +1,6 @@
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
+use std::time::Duration;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::error;
 use tracing::info;
@@ -20,11 +21,15 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub async fn new(bucket_number: usize, database: Database) -> Result<Self, SchedulerError> {
-        Ok(Self {
+        let mut scheduler = Self {
             buckets: vec![Vec::new(); bucket_number],
             job_scheduler: JobScheduler::new().await?,
             database,
-        })
+        };
+
+        scheduler.load_active_connections().await?;
+
+        Ok(scheduler)
     }
 
     pub async fn start(&mut self) -> Result<(), SchedulerError> {
@@ -67,6 +72,40 @@ impl Scheduler {
             "Connection id: {:#x} in bucket {} next wake scheduled at {}",
             connection.device_id, bucket_number, next_wake_up
         );
+
+        Ok(())
+    }
+
+    /// this function checks the database to load the stored connections
+    /// and schedule the task for the connection if the next wake up time is not expired.
+    /// A margin of 5 mins is needed for safety.
+    async fn load_active_connections(&mut self) -> Result<(), SchedulerError> {
+        let active_connections = self.database.get_active_connections().await?;
+        for mut conn in active_connections {
+            info!("Loading connection from db {:#x}", conn.device_id);
+
+            let next_wakeup = conn.next_wakeup.ok_or(SchedulerError::NoScheduleDefined)?;
+            if next_wakeup < Utc::now().naive_local() + Duration::from_secs(300) {
+                info!(
+                    "Connection {:#x} expired, changing status to lost in db",
+                    conn.device_id
+                );
+                conn.status = ConnectionStatus::Lost;
+                self.database.update_connection(&conn).await?;
+                continue;
+            }
+
+            METRICS_CONNECTIONS
+                .connections_tracker
+                .with_label_values(&["new_connection"])
+                .inc();
+
+            let bucket_number = conn.bucket.ok_or(SchedulerError::NoBucketDefined)? as usize;
+
+            self.buckets[bucket_number].push(conn.clone());
+
+            self.start_task(conn).await?;
+        }
 
         Ok(())
     }
