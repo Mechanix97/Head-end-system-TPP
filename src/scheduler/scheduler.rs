@@ -76,8 +76,20 @@ impl Scheduler {
     }
     async fn load_active_connections(&mut self) -> Result<(), SchedulerError> {
         let active_connections = self.database.get_active_connections().await?;
-        for conn in active_connections {
-            info!("Loading connection from db {}", conn.device_id);
+        for mut conn in active_connections {
+            info!("Loading connection from db {:#x}", conn.device_id);
+
+            let next_wakeup = conn.next_wakeup.ok_or(SchedulerError::NoScheduleDefined)?;
+            if next_wakeup < Utc::now().naive_local() {
+                info!(
+                    "Connection {:#x} expired, changing status to lost in db",
+                    conn.device_id
+                );
+                conn.status = ConnectionStatus::Lost;
+                self.database.update_connection(&conn).await?;
+                continue;
+            }
+
             METRICS_CONNECTIONS
                 .connections_tracker
                 .with_label_values(&["new_connection"])
