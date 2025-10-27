@@ -61,6 +61,22 @@ struct Args {
         help = "Database type to use (in-memory or postgres)"
     )]
     database_type: DatabaseType,
+
+    /// Postgres user
+    #[arg(
+        long = "postgres-user",
+        default_value = "postgres",
+        help = "Postgres user"
+    )]
+    postgres_user: Option<String>,
+
+    /// Postgres password
+    #[arg(
+        long = "postgres-password",
+        default_value = "HeadEndSystem",
+        help = "Postgres password"
+    )]
+    postgres_password: Option<String>,
 }
 
 #[tokio::main]
@@ -71,7 +87,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Head-End System starting");
 
-    let db = Database::new(args.database_type).await;
+    let db = Database::new(
+        args.database_type,
+        args.postgres_user,
+        args.postgres_password,
+    )
+    .await;
 
     let scheduler = Arc::new(Mutex::new(
         Scheduler::new(args.buckets_number, db.clone()).await?,

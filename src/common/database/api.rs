@@ -12,14 +12,22 @@ pub struct Database {
 }
 
 impl Database {
-    pub async fn new(database_type: DatabaseType) -> Self {
+    pub async fn new(
+        database_type: DatabaseType,
+        postgres_user: Option<String>,
+        postgres_password: Option<String>,
+    ) -> Self {
         match database_type {
             DatabaseType::InMemory => Self {
                 engine: Arc::new(InMemoryDB::default()),
             },
-            DatabaseType::Postgres => Self {
-                engine: Arc::new(PostgresDB::new().await),
-            },
+            DatabaseType::Postgres => {
+                let postgres_user = postgres_user.unwrap();
+                let postgres_password = postgres_password.unwrap();
+                Self {
+                    engine: Arc::new(PostgresDB::new(postgres_user, postgres_password).await),
+                }
+            }
         }
     }
 

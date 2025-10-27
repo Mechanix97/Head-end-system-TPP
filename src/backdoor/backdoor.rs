@@ -228,7 +228,7 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8081";
         let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
+            Scheduler::new(1, Database::new(DatabaseType::InMemory, None, None).await)
                 .await
                 .unwrap(),
         ));
@@ -300,7 +300,7 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8082";
         let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
+            Scheduler::new(1, Database::new(DatabaseType::InMemory, None, None).await)
                 .await
                 .unwrap(),
         ));
@@ -378,7 +378,7 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8083";
         let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
+            Scheduler::new(1, Database::new(DatabaseType::InMemory, None, None).await)
                 .await
                 .unwrap(),
         ));
@@ -447,7 +447,7 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8084";
         let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
+            Scheduler::new(1, Database::new(DatabaseType::InMemory, None, None).await)
                 .await
                 .unwrap(),
         ));
