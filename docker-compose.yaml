@@ -8,8 +8,6 @@ services:
         condition: service_healthy
       prometheus:
         condition: service_started
-    environment:
-      - DATABASE_URL=postgres://postgres:password@postgres:5432/hes
 
   prometheus:
     image: prom/prometheus:latest
@@ -33,7 +31,7 @@ services:
     container_name: postgres
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: HeadEndSystem
       POSTGRES_DB: hes
     network_mode: host
     volumes:
