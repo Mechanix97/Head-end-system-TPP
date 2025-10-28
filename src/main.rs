@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         args.postgres_user,
         args.postgres_password,
     )
-    .await;
+    .await?;
 
     let scheduler = Arc::new(Mutex::new(
         Scheduler::new(args.buckets_number, db.clone()).await?,

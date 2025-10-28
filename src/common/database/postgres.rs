@@ -12,7 +12,7 @@ use crate::database::api::Engine;
 
 #[derive(Debug)]
 pub struct PostgresDB {
-    pub pool: Pool<Postgres>, // remove this pub
+    pool: Pool<Postgres>,
 }
 
 impl PostgresDB {
@@ -21,11 +21,8 @@ impl PostgresDB {
             pool: PgPoolOptions::new()
                 .max_connections(5)
                 .connect(
-                    format!(
-                        "postgres://{}:{}@127.0.0.1:5432/hes",
-                        postgres_user, postgres_password
-                    )
-                    .as_str(),
+                    format!("postgres://{postgres_user}:{postgres_password}@127.0.0.1:5432/hes")
+                        .as_str(),
                 )
                 .await
                 .expect("Error connecting to DB"), // TODO remove this expect

@@ -20,4 +20,6 @@ pub enum DatabaseError {
     NoDataFound,
     #[error("Error: Too many rows")]
     TooManyRows,
+    #[error("Error: Invalid initialization arguments")]
+    InvalidInitilizationArguments,
 }

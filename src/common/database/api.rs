@@ -16,17 +16,19 @@ impl Database {
         database_type: DatabaseType,
         postgres_user: Option<String>,
         postgres_password: Option<String>,
-    ) -> Self {
+    ) -> Result<Self, DatabaseError> {
         match database_type {
-            DatabaseType::InMemory => Self {
+            DatabaseType::InMemory => Ok(Self {
                 engine: Arc::new(InMemoryDB::default()),
-            },
+            }),
             DatabaseType::Postgres => {
-                let postgres_user = postgres_user.unwrap();
-                let postgres_password = postgres_password.unwrap();
-                Self {
+                let postgres_user =
+                    postgres_user.ok_or(DatabaseError::InvalidInitilizationArguments)?;
+                let postgres_password =
+                    postgres_password.ok_or(DatabaseError::InvalidInitilizationArguments)?;
+                Ok(Self {
                     engine: Arc::new(PostgresDB::new(postgres_user, postgres_password).await),
-                }
+                })
             }
         }
     }
