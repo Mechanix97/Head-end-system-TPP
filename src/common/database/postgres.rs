@@ -23,17 +23,19 @@ pub struct PostgresConnectionArgs {
 }
 
 impl PostgresDB {
-    pub async fn new(postgres_user: String, postgres_password: String) -> Self {
-        Self {
+    pub async fn new(
+        postgres_user: String,
+        postgres_password: String,
+    ) -> Result<Self, DatabaseError> {
+        Ok(Self {
             pool: PgPoolOptions::new()
                 .max_connections(5)
                 .connect(
                     format!("postgres://{postgres_user}:{postgres_password}@127.0.0.1:5432/hes")
                         .as_str(),
                 )
-                .await
-                .expect("Error connecting to DB"), // TODO remove this expect
-        }
+                .await?,
+        })
     }
 }
 

@@ -27,7 +27,7 @@ impl Database {
                 let postgres_password =
                     postgres_password.ok_or(DatabaseError::InvalidInitilizationArguments)?;
                 Ok(Self {
-                    engine: Arc::new(PostgresDB::new(postgres_user, postgres_password).await),
+                    engine: Arc::new(PostgresDB::new(postgres_user, postgres_password).await?),
                 })
             }
         }
