@@ -7,7 +7,7 @@ use tokio::{
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
-use common::database::{DatabaseType, api::Database};
+use common::database::{DatabaseType, api::Database, postgres::PostgresConnectionArgs};
 use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
 
@@ -68,7 +68,7 @@ struct Args {
         default_value = "postgres",
         help = "Postgres user"
     )]
-    postgres_user: Option<String>,
+    postgres_user: String,
 
     /// Postgres password
     #[arg(
@@ -76,7 +76,19 @@ struct Args {
         default_value = "HeadEndSystem",
         help = "Postgres password"
     )]
-    postgres_password: Option<String>,
+    postgres_password: String,
+
+    /// Postgres url
+    #[arg(
+        long = "postgres-url",
+        default_value = "127.0.0.1",
+        help = "Postgres url"
+    )]
+    postgres_url: String,
+
+    /// Postgres port
+    #[arg(long = "postgres-port", default_value = "5432", help = "Postgres port")]
+    postgres_port: String,
 }
 
 #[tokio::main]
@@ -87,12 +99,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Head-End System starting");
 
-    let db = Database::new(
-        args.database_type,
-        args.postgres_user,
-        args.postgres_password,
-    )
-    .await?;
+    let db_params = if args.database_type == DatabaseType::Postgres {
+        Some(PostgresConnectionArgs {
+            user: args.postgres_user,
+            password: args.postgres_password,
+            url: args.postgres_url,
+            port: args.postgres_port,
+        })
+    } else {
+        None
+    };
+
+    let db = Database::new(args.database_type, db_params).await?;
 
     let scheduler = Arc::new(Mutex::new(
         Scheduler::new(args.buckets_number, db.clone()).await?,

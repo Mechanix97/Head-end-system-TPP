@@ -230,9 +230,7 @@ mod tests {
         let scheduler = Arc::new(Mutex::new(
             Scheduler::new(
                 1,
-                Database::new(DatabaseType::InMemory, None, None)
-                    .await
-                    .unwrap(),
+                Database::new(DatabaseType::InMemory, None).await.unwrap(),
             )
             .await
             .unwrap(),
@@ -307,9 +305,7 @@ mod tests {
         let scheduler = Arc::new(Mutex::new(
             Scheduler::new(
                 1,
-                Database::new(DatabaseType::InMemory, None, None)
-                    .await
-                    .unwrap(),
+                Database::new(DatabaseType::InMemory, None).await.unwrap(),
             )
             .await
             .unwrap(),
@@ -390,9 +386,7 @@ mod tests {
         let scheduler = Arc::new(Mutex::new(
             Scheduler::new(
                 1,
-                Database::new(DatabaseType::InMemory, None, None)
-                    .await
-                    .unwrap(),
+                Database::new(DatabaseType::InMemory, None).await.unwrap(),
             )
             .await
             .unwrap(),
@@ -464,9 +458,7 @@ mod tests {
         let scheduler = Arc::new(Mutex::new(
             Scheduler::new(
                 1,
-                Database::new(DatabaseType::InMemory, None, None)
-                    .await
-                    .unwrap(),
+                Database::new(DatabaseType::InMemory, None).await.unwrap(),
             )
             .await
             .unwrap(),

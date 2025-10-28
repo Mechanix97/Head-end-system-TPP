@@ -23,16 +23,16 @@ pub struct PostgresConnectionArgs {
 }
 
 impl PostgresDB {
-    pub async fn new(
-        postgres_user: String,
-        postgres_password: String,
-    ) -> Result<Self, DatabaseError> {
+    pub async fn new(args: PostgresConnectionArgs) -> Result<Self, DatabaseError> {
         Ok(Self {
             pool: PgPoolOptions::new()
                 .max_connections(5)
                 .connect(
-                    format!("postgres://{postgres_user}:{postgres_password}@127.0.0.1:5432/hes")
-                        .as_str(),
+                    format!(
+                        "postgres://{}:{}@{}:{}/hes",
+                        args.user, args.password, args.url, args.port
+                    )
+                    .as_str(),
                 )
                 .await?,
         })
