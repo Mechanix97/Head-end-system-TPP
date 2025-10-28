@@ -15,6 +15,13 @@ pub struct PostgresDB {
     pool: Pool<Postgres>,
 }
 
+pub struct PostgresConnectionArgs {
+    pub user: String,
+    pub password: String,
+    pub url: String,
+    pub port: String,
+}
+
 impl PostgresDB {
     pub async fn new(postgres_user: String, postgres_password: String) -> Self {
         Self {
