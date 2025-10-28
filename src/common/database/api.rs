@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::connection::Connection;
 use crate::database::DatabaseError;
+use crate::database::postgres::PostgresConnectionArgs;
 use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
 
 #[derive(Debug, Clone)]
@@ -12,14 +13,21 @@ pub struct Database {
 }
 
 impl Database {
-    pub async fn new(database_type: DatabaseType) -> Self {
+    pub async fn new(
+        database_type: DatabaseType,
+        postgres_args: Option<PostgresConnectionArgs>,
+    ) -> Result<Self, DatabaseError> {
         match database_type {
-            DatabaseType::InMemory => Self {
+            DatabaseType::InMemory => Ok(Self {
                 engine: Arc::new(InMemoryDB::default()),
-            },
-            DatabaseType::Postgres => Self {
-                engine: Arc::new(PostgresDB::new().await),
-            },
+            }),
+            DatabaseType::Postgres => {
+                let args = postgres_args.ok_or(DatabaseError::InvalidInitilizationArguments)?;
+
+                Ok(Self {
+                    engine: Arc::new(PostgresDB::new(args).await?),
+                })
+            }
         }
     }
 

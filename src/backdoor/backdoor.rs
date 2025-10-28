@@ -228,9 +228,12 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8081";
         let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
-                .await
-                .unwrap(),
+            Scheduler::new(
+                1,
+                Database::new(DatabaseType::InMemory, None).await.unwrap(),
+            )
+            .await
+            .unwrap(),
         ));
         init_backdoor(
             scheduler.clone(),
@@ -300,9 +303,12 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8082";
         let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
-                .await
-                .unwrap(),
+            Scheduler::new(
+                1,
+                Database::new(DatabaseType::InMemory, None).await.unwrap(),
+            )
+            .await
+            .unwrap(),
         ));
 
         init_backdoor(
@@ -378,9 +384,12 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8083";
         let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
-                .await
-                .unwrap(),
+            Scheduler::new(
+                1,
+                Database::new(DatabaseType::InMemory, None).await.unwrap(),
+            )
+            .await
+            .unwrap(),
         ));
 
         init_backdoor(
@@ -447,9 +456,12 @@ mod tests {
         // 0. intial backdoor setup
         let backdoor_port = "8084";
         let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(1, Database::new(DatabaseType::InMemory).await)
-                .await
-                .unwrap(),
+            Scheduler::new(
+                1,
+                Database::new(DatabaseType::InMemory, None).await.unwrap(),
+            )
+            .await
+            .unwrap(),
         ));
 
         init_backdoor(

@@ -20,4 +20,8 @@ pub enum DatabaseError {
     NoDataFound,
     #[error("Error: Too many rows")]
     TooManyRows,
+    #[error("Error: Invalid initialization arguments")]
+    InvalidInitilizationArguments,
+    #[error("Sqlx error: {0}")]
+    SqlxError(#[from] sqlx::error::Error),
 }
