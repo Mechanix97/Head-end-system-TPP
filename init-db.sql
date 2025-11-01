@@ -22,9 +22,18 @@ $$;
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+CREATE TABLE IF NOT EXISTS T_DEVICES (
+    device_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    IPv4 TEXT,
+    IPv6 TEXT,
+    MAC TEXT,
+    factory_id BIGINT,
+    batch_id BIGINT,
+);
+
 CREATE TABLE IF NOT EXISTS T_ACTIVE_CONNECTIONS (
     device_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    ip TEXT,  -- Agregá columnas extras como ip y bucket si no están
+    ip TEXT,  
     bucket INTEGER,
     last_connection TIMESTAMP NOT NULL DEFAULT NOW(),
     next_wakeup TIMESTAMP,
