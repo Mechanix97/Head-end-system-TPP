@@ -23,7 +23,7 @@ $$;
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE IF NOT EXISTS T_DEVICES (
-    device_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     IPv4 TEXT,
     IPv6 TEXT,
     MAC TEXT,

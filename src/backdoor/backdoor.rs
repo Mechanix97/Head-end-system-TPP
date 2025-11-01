@@ -1,5 +1,4 @@
 use bytes::BytesMut;
-use common::connection::ConnectionStatus;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
 use std::collections::HashSet;
@@ -16,7 +15,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::BackdoorError;
-use common::connection::Connection;
+use common::device::Device;
 use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
 use common::messages::message::MsgType;
@@ -113,22 +112,24 @@ async fn handle_backdoor_register_msg(
         return Err(BackdoorError::RegisterRequestInvalidId);
     }
 
-    let mut connection = Connection::new(
-        Uuid::new_v4(),
-        Some(socket_addr.ip().to_string()),
-        None,
-        ConnectionStatus::PendingAck,
-    );
+    let mut device = Device::new(socket_addr, None, None, None);
 
-    scheduler
-        .lock()
-        .await
-        .add_connection(&mut connection)
-        .await?;
+    scheduler.lock().await.register_device(&mut device).await?;
+
+    {
+        pending_connections.lock().await.insert(device.id);
+    }
+
+    let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
+    if let Err(err) = (*framed).send((response, socket_addr)).await {
+        error!("Error sending response: {err}");
+    }
+
+    spawn_ack_timeout_task(pending_connections.clone(), ack_timeout_duration, device.id);
 
     // TEMPORARY.
     // REMOVE LATER
-    let ack_msg = Message::new_ack_message(connection.device_id.as_u128(), 3)?;
+    let ack_msg = Message::new_ack_message(device.id.as_u128(), 3)?;
     let mut buffer: BytesMut = BytesMut::new();
     let mut codec = MessageCodec;
     codec
@@ -137,25 +138,6 @@ async fn handle_backdoor_register_msg(
     info!("ACK Message expected: {}", hex::encode(&buffer));
     // TEMPORARY.
     // REMOVE LATER
-
-    {
-        pending_connections
-            .lock()
-            .await
-            .insert(connection.device_id);
-    }
-
-    let response =
-        Message::new_register_response_message(connection.device_id.as_u128(), msg.seq + 1)?;
-    if let Err(err) = (*framed).send((response, socket_addr)).await {
-        error!("Error sending response: {err}");
-    }
-
-    spawn_ack_timeout_task(
-        pending_connections.clone(),
-        ack_timeout_duration,
-        connection.device_id,
-    );
 
     Ok(())
 }
