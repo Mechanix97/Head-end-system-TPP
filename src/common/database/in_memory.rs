@@ -121,12 +121,20 @@ mod test {
 
         let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
 
-        let device: Device = Device::new(socket, None, None, None);
+        let mut device: Device = Device::new(socket, None, None, None);
 
         db.add_device(&device).await.unwrap();
 
         let device2 = db.get_device(device.id).await.unwrap();
 
         assert_eq!(device, device2);
+
+        device.batch_id = Some(123);
+
+        db.modify_device(&device).await.unwrap();
+
+        let device3 = db.get_device(device.id).await.unwrap();
+
+        assert_eq!(device, device3);
     }
 }
