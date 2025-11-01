@@ -6,6 +6,7 @@ use crate::connection::Connection;
 use crate::database::DatabaseError;
 use crate::database::postgres::PostgresConnectionArgs;
 use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
+use crate::device::Device;
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -31,6 +32,18 @@ impl Database {
         }
     }
 
+    pub async fn add_device(&self, device: &Device) -> Result<(), DatabaseError> {
+        self.engine.add_device(device).await
+    }
+
+    pub async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError> {
+        self.engine.get_device(device_id).await
+    }
+
+    pub async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError> {
+        self.engine.modify_device(device).await
+    }
+
     pub async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         self.engine.get_active_connections().await
     }
@@ -54,4 +67,9 @@ pub trait Engine: Debug + Send + Sync {
     async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError>;
     async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError>;
     async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError>;
+
+    // Device fns
+    async fn add_device(&self, device: &Device) -> Result<(), DatabaseError>;
+    async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError>;
+    async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError>;
 }
