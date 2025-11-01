@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::connection::Connection;
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
+use crate::device::Device;
 
 #[derive(Debug)]
 pub struct PostgresDB {
@@ -41,6 +42,18 @@ impl PostgresDB {
 
 #[async_trait::async_trait]
 impl Engine for PostgresDB {
+    // Device fns
+    async fn add_device(&self, device: &Device) -> Result<(), DatabaseError> {
+        Ok(())
+    }
+
+    async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError> {
+        Err(DatabaseError::NoDataFound)
+    }
+
+    async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError> {
+        Ok(())
+    }
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         let query = "SELECT device_id, ip, bucket, last_connection, next_wakeup, status 
                      FROM T_ACTIVE_CONNECTIONS 

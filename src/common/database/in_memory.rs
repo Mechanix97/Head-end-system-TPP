@@ -1,7 +1,9 @@
 use crate::connection::{Connection, ConnectionStatus};
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
+use crate::device::Device;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -14,10 +16,44 @@ pub struct InMemoryDB {
 #[derive(Default, Debug)]
 pub struct InnerDB {
     connections: Vec<Connection>,
+    devices: HashMap<Uuid, Device>,
 }
 
 #[async_trait::async_trait]
 impl Engine for InMemoryDB {
+    // Device fns
+    async fn add_device(&self, device: &Device) -> Result<(), DatabaseError> {
+        self.inner
+            .lock()
+            .await
+            .devices
+            .insert(device.id, device.clone());
+        Ok(())
+    }
+
+    async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError> {
+        self.inner
+            .lock()
+            .await
+            .devices
+            .get(&device_id)
+            .cloned()
+            .ok_or(DatabaseError::NoDataFound)
+    }
+
+    async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError> {
+        let mut lock = self.inner.lock().await;
+
+        let element = lock
+            .devices
+            .get_mut(&device.id)
+            .ok_or(DatabaseError::NoDataFound)?;
+
+        *element = device.clone();
+
+        Ok(())
+    }
+
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         Ok(self
             .inner
@@ -67,5 +103,30 @@ impl Engine for InMemoryDB {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::database::DatabaseType;
+    use crate::database::api::Database;
+    use crate::device::Device;
+
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    // use super::*;
+    #[tokio::test]
+    async fn test_devices() {
+        let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
+
+        let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+
+        let device: Device = Device::new(socket, None, None, None);
+
+        db.add_device(&device).await.unwrap();
+
+        let device2 = db.get_device(device.id).await.unwrap();
+
+        assert_eq!(device, device2);
     }
 }
