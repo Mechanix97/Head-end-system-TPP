@@ -112,9 +112,9 @@ async fn handle_backdoor_register_msg(
         return Err(BackdoorError::RegisterRequestInvalidId);
     }
 
-    let mut device = Device::new(socket_addr, None, None, None);
+    let device = Device::new(socket_addr, None, None, None);
 
-    scheduler.lock().await.register_device(&mut device).await?;
+    scheduler.lock().await.register_device(&device).await?;
 
     {
         pending_connections.lock().await.insert(device.id);

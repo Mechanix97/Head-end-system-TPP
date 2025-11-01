@@ -43,15 +43,15 @@ impl PostgresDB {
 #[async_trait::async_trait]
 impl Engine for PostgresDB {
     // Device fns
-    async fn add_device(&self, device: &Device) -> Result<(), DatabaseError> {
+    async fn add_device(&self, _device: &Device) -> Result<(), DatabaseError> {
         Ok(())
     }
 
-    async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError> {
+    async fn get_device(&self, _device_id: Uuid) -> Result<Device, DatabaseError> {
         Err(DatabaseError::NoDataFound)
     }
 
-    async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError> {
+    async fn modify_device(&self, _device: &Device) -> Result<(), DatabaseError> {
         Ok(())
     }
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
