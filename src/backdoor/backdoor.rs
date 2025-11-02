@@ -1,4 +1,5 @@
 use bytes::BytesMut;
+use chrono::Utc;
 use common::database::api::Database;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
@@ -130,7 +131,7 @@ async fn handle_backdoor_register_msg(
         error!("Error sending response: {err}");
     }
 
-    spawn_ack_timeout_task(pending_connections.clone(), ack_timeout_duration, device.id);
+    spawn_ack_timeout_task(database.clone(), ack_timeout_duration, device.id);
 
     // TEMPORARY.
     // REMOVE LATER
@@ -180,16 +181,13 @@ async fn handle_backdoor_ack_msg(
     Ok(())
 }
 
-fn spawn_ack_timeout_task(
-    pending_connections: Arc<Mutex<HashSet<Uuid>>>,
-    ack_timeout_duration: u64,
-    device_id: Uuid,
-) {
+fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_id: Uuid) {
     tokio::spawn(async move {
         sleep(Duration::from_millis(ack_timeout_duration)).await;
-        if pending_connections.lock().await.remove(&device_id) {
-            info!("Ack from {} not received", device_id);
-        }
+        database
+            .registration_timeout(device_id, Utc::now().naive_utc())
+            .await
+            .expect("Error during registration timeout");
     });
 }
 

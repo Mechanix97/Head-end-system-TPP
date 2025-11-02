@@ -24,4 +24,6 @@ pub enum DatabaseError {
     InvalidInitilizationArguments,
     #[error("Sqlx error: {0}")]
     SqlxError(#[from] sqlx::error::Error),
+    #[error("Error during registration")]
+    RegistrationError,
 }

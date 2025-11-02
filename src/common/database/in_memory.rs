@@ -1,12 +1,14 @@
-use crate::connection::{Connection, ConnectionStatus};
-use crate::database::DatabaseError;
-use crate::database::api::Engine;
-use crate::device::Device;
-
+use chrono::NaiveDateTime;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+
+use crate::connection::{Connection, ConnectionStatus};
+use crate::database::DatabaseError;
+use crate::database::api::Engine;
+use crate::device::Device;
+use crate::device::RegistrationStatus;
 
 #[derive(Default, Debug)]
 pub struct InMemoryDB {
@@ -17,11 +19,12 @@ pub struct InMemoryDB {
 pub struct InnerDB {
     connections: Vec<Connection>,
     devices: HashMap<Uuid, Device>,
+    device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
 }
 
 #[async_trait::async_trait]
 impl Engine for InMemoryDB {
-    // Device fns
+    // Device
     async fn add_device(&self, device: &Device) -> Result<(), DatabaseError> {
         self.inner
             .lock()
@@ -52,6 +55,58 @@ impl Engine for InMemoryDB {
         *element = device.clone();
 
         Ok(())
+    }
+
+    // Device registration
+    async fn register_device(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        self.inner
+            .lock()
+            .await
+            .device_registration
+            .insert(device_id, (RegistrationStatus::PendingAck, timestamp));
+
+        Ok(())
+    }
+
+    async fn registration_ack(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        let mut lock = self.inner.lock().await;
+
+        let element = lock
+            .device_registration
+            .get_mut(&device_id)
+            .ok_or(DatabaseError::NoDataFound)?;
+        if element.0 != RegistrationStatus::PendingAck {
+            return Err(DatabaseError::RegistrationError);
+        }
+        *element = (RegistrationStatus::Registered, timestamp);
+        Ok(())
+    }
+
+    async fn registration_timeout(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<bool, DatabaseError> {
+        let mut lock = self.inner.lock().await;
+
+        let element = lock
+            .device_registration
+            .get_mut(&device_id)
+            .ok_or(DatabaseError::NoDataFound)?;
+        if element.0 == RegistrationStatus::PendingAck {
+            *element = (RegistrationStatus::AckTimeout, timestamp);
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {

@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use std::fmt::Debug;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -32,6 +33,7 @@ impl Database {
         }
     }
 
+    // Device
     pub async fn add_device(&self, device: &Device) -> Result<(), DatabaseError> {
         self.engine.add_device(device).await
     }
@@ -42,6 +44,31 @@ impl Database {
 
     pub async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError> {
         self.engine.modify_device(device).await
+    }
+
+    // Device registration
+    pub async fn register_device(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        self.engine.register_device(device_id, timestamp).await
+    }
+
+    pub async fn registration_ack(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        self.engine.registration_ack(device_id, timestamp).await
+    }
+
+    pub async fn registration_timeout(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<bool, DatabaseError> {
+        self.engine.registration_timeout(device_id, timestamp).await
     }
 
     pub async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
@@ -68,8 +95,27 @@ pub trait Engine: Debug + Send + Sync {
     async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError>;
     async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError>;
 
-    // Device fns
+    // Device
     async fn add_device(&self, device: &Device) -> Result<(), DatabaseError>;
     async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError>;
     async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError>;
+
+    // Device registration
+    async fn register_device(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError>;
+    async fn registration_ack(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError>;
+    /// This fn checks if the registration has been completed,
+    /// if not returns true and updates the db status to timeout
+    async fn registration_timeout(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<bool, DatabaseError>;
 }

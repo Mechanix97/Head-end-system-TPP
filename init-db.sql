@@ -22,7 +22,7 @@ DO
 $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'registrationstatus') THEN
-        CREATE TYPE registrationstatus AS ENUM ('active', 'pending_ack', 'lost');
+        CREATE TYPE registrationstatus AS ENUM ('registered', 'pending_ack', 'ack_timeout');
     END IF;
 END   
 $$;
