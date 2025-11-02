@@ -17,4 +17,8 @@ pub enum BackdoorError {
     DatabaseError(#[from] DatabaseError),
     #[error("Parse Error: {0}")]
     ParseError(String),
+    #[error("Error invalid IP")]
+    InvalidIp,
+    #[error("Error invalid Timestamp")]
+    InvalidTimeStamp,
 }
