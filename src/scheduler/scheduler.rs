@@ -53,6 +53,7 @@ impl Scheduler {
         let bucket_number = self.get_bucket_number();
         let next_wake_up = self.get_next_schedule(bucket_number);
 
+        //TODO improve this creation
         let mut connection = Connection::new(
             device.id,
             device.ipv4.clone(),

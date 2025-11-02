@@ -1,4 +1,5 @@
 use bytes::BytesMut;
+use common::database::api::Database;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
 use std::collections::HashSet;
@@ -28,6 +29,7 @@ pub async fn init_backdoor(
     ip: String,
     port: String,
     ack_timeout_duration: Option<u64>,
+    database: Database,
 ) -> Result<JoinHandle<()>, BackdoorError> {
     let socket = UdpSocket::bind(format!("{ip}:{port}")).await?;
     info!("Listening for device registration on {ip}:{port} via UDP");
@@ -62,6 +64,7 @@ pub async fn init_backdoor(
                             &scheduler_clone,
                             pending_connections.clone(),
                             ack_timeout_duration,
+                            database.clone(),
                         )
                         .await
                         {
@@ -106,6 +109,7 @@ async fn handle_backdoor_register_msg(
     scheduler: &Arc<Mutex<Scheduler>>,
     pending_connections: Arc<Mutex<HashSet<Uuid>>>,
     ack_timeout_duration: u64,
+    database: Database,
 ) -> Result<(), BackdoorError> {
     // TODO: check that the information provided is correct #10
     if msg.device_id != 0 {
@@ -113,6 +117,7 @@ async fn handle_backdoor_register_msg(
     }
 
     let device = Device::new(socket_addr, None, None, None);
+    database.add_device(&device).await?;
 
     scheduler.lock().await.register_device(&device).await?;
 
@@ -201,6 +206,22 @@ mod tests {
 
     use super::*;
 
+    async fn set_up_hes(backdoor_port: &str) -> Arc<Mutex<Scheduler>> {
+        let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
+        let scheduler: Arc<Mutex<Scheduler>> =
+            Arc::new(Mutex::new(Scheduler::new(1, db.clone()).await.unwrap()));
+        init_backdoor(
+            scheduler.clone(),
+            "0.0.0.0".to_string(),
+            backdoor_port.to_string(),
+            Some(300),
+            db.clone(),
+        )
+        .await
+        .unwrap();
+        scheduler
+    }
+
     /// This test checks the normal backdoor registration event
     /// 1. sends registration request msg
     /// 2. receives registration response msg
@@ -209,22 +230,7 @@ mod tests {
     async fn test_new_connection() {
         // 0. intial backdoor setup
         let backdoor_port = "8081";
-        let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(
-                1,
-                Database::new(DatabaseType::InMemory, None).await.unwrap(),
-            )
-            .await
-            .unwrap(),
-        ));
-        init_backdoor(
-            scheduler.clone(),
-            "0.0.0.0".to_string(),
-            backdoor_port.to_string(),
-            Some(300),
-        )
-        .await
-        .unwrap();
+        let scheduler = set_up_hes(backdoor_port).await;
 
         // 1. sends registration request msg
         let register_request: Message = Message::new_register_request_message().unwrap();
@@ -284,23 +290,7 @@ mod tests {
     async fn test_ack_timeout() {
         // 0. intial backdoor setup
         let backdoor_port = "8082";
-        let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(
-                1,
-                Database::new(DatabaseType::InMemory, None).await.unwrap(),
-            )
-            .await
-            .unwrap(),
-        ));
-
-        init_backdoor(
-            scheduler.clone(),
-            "0.0.0.0".to_string(),
-            backdoor_port.to_string(),
-            Some(300),
-        )
-        .await
-        .unwrap();
+        let scheduler = set_up_hes(backdoor_port).await;
 
         let connecitons_number = scheduler
             .lock()
@@ -365,23 +355,7 @@ mod tests {
     async fn test_multiple_connections() {
         // 0. intial backdoor setup
         let backdoor_port = "8083";
-        let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(
-                1,
-                Database::new(DatabaseType::InMemory, None).await.unwrap(),
-            )
-            .await
-            .unwrap(),
-        ));
-
-        init_backdoor(
-            scheduler.clone(),
-            "0.0.0.0".to_string(),
-            backdoor_port.to_string(),
-            Some(300),
-        )
-        .await
-        .unwrap();
+        let scheduler = set_up_hes(backdoor_port).await;
 
         for i in 0..10 {
             // 1. sends registration request msg
@@ -437,23 +411,7 @@ mod tests {
     async fn test_parallel_connections() {
         // 0. intial backdoor setup
         let backdoor_port = "8084";
-        let scheduler = Arc::new(Mutex::new(
-            Scheduler::new(
-                1,
-                Database::new(DatabaseType::InMemory, None).await.unwrap(),
-            )
-            .await
-            .unwrap(),
-        ));
-
-        init_backdoor(
-            scheduler.clone(),
-            "0.0.0.0".to_string(),
-            backdoor_port.to_string(),
-            Some(300),
-        )
-        .await
-        .unwrap();
+        let scheduler = set_up_hes(backdoor_port).await;
 
         // 1a. sends registration request msg
         let register_request: Message = Message::new_register_request_message().unwrap();

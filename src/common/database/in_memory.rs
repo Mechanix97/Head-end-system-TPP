@@ -114,7 +114,6 @@ mod test {
 
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-    // use super::*;
     #[tokio::test]
     async fn test_devices() {
         let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
