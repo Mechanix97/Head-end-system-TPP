@@ -241,6 +241,27 @@ impl Engine for PostgresDB {
         Ok(true)
     }
 
+    // buckets
+    async fn get_bucket_with_less_devices(&self, total_buckets: i32) -> Result<i32, DatabaseError> {
+        Ok(0)
+    }
+
+    async fn add_device_to_bucket(
+        &self,
+        device_id: Uuid,
+        bucket_number: i32,
+    ) -> Result<(), DatabaseError> {
+        Ok(())
+    }
+
+    async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError> {
+        Ok(0)
+    }
+
+    async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError> {
+        Ok(())
+    }
+
     // others fns
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         let query = "SELECT device_id, ip, bucket, last_connection, next_wakeup, status 

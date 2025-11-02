@@ -20,6 +20,7 @@ pub struct InnerDB {
     connections: Vec<Connection>,
     devices: HashMap<Uuid, Device>,
     device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
+    buckets: HashMap<Uuid, i32>,
 }
 
 #[async_trait::async_trait]
@@ -109,6 +110,54 @@ impl Engine for InMemoryDB {
         Ok(false)
     }
 
+    // buckets
+    async fn get_bucket_with_less_devices(&self, total_buckets: i32) -> Result<i32, DatabaseError> {
+        let inner = self.inner.lock().await;
+
+        let mut counts = vec![0usize; total_buckets as usize];
+
+        for &bucket in inner.buckets.values() {
+            let bucket_usize = bucket as usize;
+            if bucket >= 0 && bucket_usize < counts.len() {
+                counts[bucket_usize] += 1;
+            }
+        }
+
+        let min_count = *counts.iter().min().unwrap_or(&0);
+
+        let bucket = counts.iter().position(|&c| c == min_count).unwrap_or(0) as i32;
+        Ok(bucket)
+    }
+
+    async fn add_device_to_bucket(
+        &self,
+        device_id: Uuid,
+        bucket_number: i32,
+    ) -> Result<(), DatabaseError> {
+        self.inner
+            .lock()
+            .await
+            .buckets
+            .insert(device_id, bucket_number);
+        Ok(())
+    }
+
+    async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError> {
+        self.inner
+            .lock()
+            .await
+            .buckets
+            .get(&device_id)
+            .cloned()
+            .ok_or(DatabaseError::NoDataFound)
+    }
+
+    async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError> {
+        self.inner.lock().await.buckets.remove(&device_id);
+        Ok(())
+    }
+
+    // Others
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         Ok(self
             .inner

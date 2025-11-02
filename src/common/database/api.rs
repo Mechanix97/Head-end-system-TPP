@@ -71,6 +71,35 @@ impl Database {
         self.engine.registration_timeout(device_id, timestamp).await
     }
 
+    // buckets
+    pub async fn get_bucket_with_less_devices(
+        &self,
+        total_buckets: i32,
+    ) -> Result<i32, DatabaseError> {
+        self.engine
+            .get_bucket_with_less_devices(total_buckets)
+            .await
+    }
+
+    pub async fn add_device_to_bucket(
+        &self,
+        device_id: Uuid,
+        bucket_number: i32,
+    ) -> Result<(), DatabaseError> {
+        self.engine
+            .add_device_to_bucket(device_id, bucket_number)
+            .await
+    }
+
+    pub async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError> {
+        self.engine.get_bucket_number(device_id).await
+    }
+
+    pub async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError> {
+        self.engine.remove_device_from_bucket(device_id).await
+    }
+
+    // Others
     pub async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         self.engine.get_active_connections().await
     }
@@ -118,4 +147,14 @@ pub trait Engine: Debug + Send + Sync {
         device_id: Uuid,
         timestamp: NaiveDateTime,
     ) -> Result<bool, DatabaseError>;
+
+    // buckets
+    async fn get_bucket_with_less_devices(&self, total_buckets: i32) -> Result<i32, DatabaseError>;
+    async fn add_device_to_bucket(
+        &self,
+        device_id: Uuid,
+        bucket_number: i32,
+    ) -> Result<(), DatabaseError>;
+    async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError>;
+    async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError>;
 }
