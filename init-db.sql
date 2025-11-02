@@ -18,6 +18,15 @@ BEGIN
 END   
 $$;
 
+DO
+$$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'registrationstatus') THEN
+        CREATE TYPE registrationstatus AS ENUM ('active', 'pending_ack', 'lost');
+    END IF;
+END   
+$$;
+
 \connect hes;
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -29,6 +38,12 @@ CREATE TABLE IF NOT EXISTS T_DEVICES (
     MAC TEXT,
     factory_id BIGINT,
     batch_id BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS T_DEVICE_REGISTRATION (
+    FK_DEVICE UUID REFERENCES T_DEVICES(id),
+    registration_status registrationstatus NOT NULL DEFAULT 'pending_ack',
+    registration_time TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS T_ACTIVE_CONNECTIONS (
