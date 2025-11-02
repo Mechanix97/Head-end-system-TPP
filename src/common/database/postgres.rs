@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+
 use chrono::NaiveDateTime;
 use sqlx::Pool;
 use sqlx::Postgres;
+use sqlx::Row;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::query_as;
 use sqlx::query_scalar;
@@ -243,7 +246,45 @@ impl Engine for PostgresDB {
 
     // buckets
     async fn get_bucket_with_less_devices(&self, total_buckets: i32) -> Result<i32, DatabaseError> {
-        Ok(0)
+        let query = r#"
+            SELECT bucket, COUNT(*) as count FROM T_BUCKETS GROUP BY bucket
+        "#;
+
+        let rows = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let bucket_counts: HashMap<i32, i64> = rows
+            .into_iter()
+            .map(|row| {
+                let bucket: i32 = row
+                    .try_get("bucket")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let count: i64 = row
+                    .try_get("count")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                Ok((bucket, count))
+            })
+            .collect::<Result<HashMap<_, _>, DatabaseError>>()?;
+
+        let mut min_count = i64::MAX;
+        let mut min_bucket = 1;
+        for bucket in 1..=total_buckets {
+            let count = *bucket_counts.get(&bucket).unwrap_or(&0);
+            if count < min_count {
+                min_count = count;
+                min_bucket = bucket;
+            } else if count == min_count && bucket < min_bucket {
+                min_bucket = bucket;
+            }
+        }
+
+        if min_count == i64::MAX {
+            return Ok(0);
+        }
+
+        Ok(min_bucket)
     }
 
     async fn add_device_to_bucket(
@@ -251,14 +292,49 @@ impl Engine for PostgresDB {
         device_id: Uuid,
         bucket_number: i32,
     ) -> Result<(), DatabaseError> {
+        let query = "DELETE FROM T_BUCKETS WHERE FK_DEVICE = $1";
+
+        sqlx::query(query)
+            .bind(device_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let query = "INSERT INTO T_BUCKETS
+                    (fk_device, bucket) 
+                    VALUES ($1, $2)";
+
+        sqlx::query(query)
+            .bind(device_id)
+            .bind(bucket_number)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
         Ok(())
     }
 
     async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError> {
-        Ok(0)
+        let query = "SELECT bucket FROM T_BUCKETS
+            WHERE fk_device = $1";
+
+        let bucket = sqlx::query_scalar(query)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(bucket)
     }
 
     async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError> {
+        let query = "DELETE FROM T_BUCKETS WHERE FK_DEVICE = $1";
+
+        sqlx::query(query)
+            .bind(device_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
         Ok(())
     }
 
