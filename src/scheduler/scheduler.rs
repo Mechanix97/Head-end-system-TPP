@@ -15,7 +15,8 @@ use metrics::metrics_connections::METRICS_CONNECTIONS;
 type Bucket = Vec<Connection>;
 
 pub struct Scheduler {
-    pub buckets: Vec<Bucket>,
+    pub bucket_number: i32,
+    // pub buckets: Vec<Bucket>,
     pub job_scheduler: JobScheduler,
     pub database: Database,
 }
@@ -23,7 +24,8 @@ pub struct Scheduler {
 impl Scheduler {
     pub async fn new(bucket_number: usize, database: Database) -> Result<Self, SchedulerError> {
         let mut scheduler = Self {
-            buckets: vec![Vec::new(); bucket_number],
+            bucket_number: bucket_number as i32,
+            // buckets: vec![Vec::new(); bucket_number],
             job_scheduler: JobScheduler::new().await?,
             database,
         };
@@ -53,7 +55,7 @@ impl Scheduler {
             .with_label_values(&["new_connection"])
             .inc();
 
-        let bucket_number = self.get_bucket_number();
+        let bucket_number = self.get_bucket_number().await;
         let next_wake_up = self.get_next_schedule(bucket_number);
 
         //TODO improve this creation
@@ -73,7 +75,9 @@ impl Scheduler {
             )?,
         );
 
-        self.buckets[bucket_number].push(connection.clone());
+        self.database
+            .add_device_to_bucket(device.id, bucket_number as i32)
+            .await?;
         self.database.add_new_connection(&connection).await?;
 
         info!(
@@ -107,9 +111,10 @@ impl Scheduler {
                 .with_label_values(&["new_connection"])
                 .inc();
 
-            let bucket_number = conn.bucket.ok_or(SchedulerError::NoBucketDefined)? as usize;
+            // let bucket_number = conn.bucket.ok_or(SchedulerError::NoBucketDefined)? as usize;
 
-            self.buckets[bucket_number].push(conn.clone());
+            // self.database.add_device_to_bucket(conn.device_id, bucket_number)
+            // self.buckets[bucket_number].push(conn.clone());
 
             self.start_task(conn).await?;
         }
@@ -146,13 +151,18 @@ impl Scheduler {
         Ok(())
     }
 
-    pub fn get_bucket_number(&self) -> usize {
-        self.buckets
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, bucket)| bucket.len())
-            .map(|(index, _)| index)
-            .unwrap_or(0)
+    pub async fn get_bucket_number(&self) -> usize {
+        // self.buckets
+        //     .iter()
+        //     .enumerate()
+        //     .min_by_key(|(_, bucket)| bucket.len())
+        //     .map(|(index, _)| index)
+        //     .unwrap_or(0)
+
+        self.database
+            .get_bucket_with_less_devices(self.bucket_number)
+            .await
+            .unwrap_or(0) as usize
     }
 
     pub fn get_next_schedule(&self, bucket_number: usize) -> Schedule {
@@ -172,7 +182,7 @@ impl Scheduler {
     pub fn get_time_from_bucket_number(&self, bucket_number: usize) -> (usize, usize, usize) {
         let secs_per_day: usize = 24 * 60 * 60;
 
-        let total_buckets = self.buckets.len();
+        let total_buckets = self.bucket_number as usize;
 
         let secs_per_bucket = secs_per_day / total_buckets;
 
