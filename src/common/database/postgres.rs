@@ -141,7 +141,7 @@ impl Engine for PostgresDB {
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         let query = "INSERT INTO T_DEVICE_REGISTRATION
-                    (FK_DEVICE, registration_status, registration_time) 
+                    (fk_device, registration_status, registration_time) 
                     VALUES ($1, $2, $3)";
 
         sqlx::query(query)
@@ -163,7 +163,7 @@ impl Engine for PostgresDB {
         let query_count = r#"
             SELECT COUNT(*) 
             FROM T_DEVICE_REGISTRATION 
-            WHERE "FK_DEVICE" = $1 
+            WHERE fk_device = $1 
             AND "registration_status" = 'pending_ack'
         "#;
 
@@ -185,7 +185,7 @@ impl Engine for PostgresDB {
         let query = r#"UPDATE T_DEVICE_REGISTRATION 
         SET registration_status = 'registered', 
         registration_time = $2, 
-         WHERE FK_DEVICE = $1 
+        WHERE fk_device = $1 
             AND registration_status = 'pending_ack'"#;
 
         sqlx::query(query)
@@ -206,7 +206,7 @@ impl Engine for PostgresDB {
         let query_count = r#"
             SELECT COUNT(*) 
             FROM T_DEVICE_REGISTRATION 
-            WHERE FK_DEVICE = $1 
+            WHERE fk_device = $1 
             AND registration_status = 'pending_ack'
         "#;
 
@@ -228,7 +228,7 @@ impl Engine for PostgresDB {
         let query = r#"UPDATE T_DEVICE_REGISTRATION 
         SET registration_status = 'ack_timeout', 
         registration_time = $2, 
-         WHERE FK_DEVICE = $1 
+         WHERE fk_device = $1 
             AND registration_status = 'pending_ack'"#;
 
         sqlx::query(query)
