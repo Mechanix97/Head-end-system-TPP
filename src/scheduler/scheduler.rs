@@ -44,6 +44,9 @@ impl Scheduler {
         Ok(())
     }
 
+    /// this fn register a new device in the scheduler by asigning a bucket number
+    /// and a next wake up time. It stores the information in the DB waiting for the
+    /// ACK to actually schedule the connection task.
     pub async fn register_device(&mut self, device: &Device) -> Result<(), SchedulerError> {
         METRICS_CONNECTIONS
             .connections_tracker
