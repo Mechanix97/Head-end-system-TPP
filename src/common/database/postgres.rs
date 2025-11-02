@@ -163,8 +163,8 @@ impl Engine for PostgresDB {
         let query_count = r#"
             SELECT COUNT(*) 
             FROM T_DEVICE_REGISTRATION 
-            WHERE FK_DEVICE = $1 
-            AND registration_status = 'pending_ack'
+            WHERE "FK_DEVICE" = $1 
+            AND "registration_status" = 'pending_ack'
         "#;
 
         let count: i64 = query_scalar(query_count)
@@ -182,11 +182,11 @@ impl Engine for PostgresDB {
             return Err(DatabaseError::TooManyRows);
         }
 
-        let query = "UPDATE T_DEVICE_REGISTRATION 
+        let query = r#"UPDATE T_DEVICE_REGISTRATION 
         SET registration_status = 'registered', 
         registration_time = $2, 
          WHERE FK_DEVICE = $1 
-            AND registration_status = 'pending_ack'";
+            AND registration_status = 'pending_ack'"#;
 
         sqlx::query(query)
             .bind(device_id)
@@ -225,11 +225,11 @@ impl Engine for PostgresDB {
             return Err(DatabaseError::TooManyRows);
         }
 
-        let query = "UPDATE T_DEVICE_REGISTRATION 
+        let query = r#"UPDATE T_DEVICE_REGISTRATION 
         SET registration_status = 'ack_timeout', 
         registration_time = $2, 
          WHERE FK_DEVICE = $1 
-            AND registration_status = 'pending_ack'";
+            AND registration_status = 'pending_ack'"#;
 
         sqlx::query(query)
             .bind(device_id)

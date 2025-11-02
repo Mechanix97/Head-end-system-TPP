@@ -196,7 +196,7 @@ fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_
                 info!("Ack from {} not received", device_id);
             }
             Err(e) => {
-                error!("Error during device registration ack timout check {e}");
+                error!("Error during device registration ack timeout check {e}");
             }
             _ => {}
         }
