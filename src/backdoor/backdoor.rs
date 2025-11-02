@@ -1,8 +1,9 @@
 use bytes::BytesMut;
+use chrono::DateTime;
+use chrono::Utc;
 use common::database::api::Database;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
-use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -41,8 +42,6 @@ pub async fn init_backdoor(
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
-        let pending_connections: Arc<Mutex<HashSet<Uuid>>> = Arc::new(Mutex::new(HashSet::new()));
-
         loop {
             let Some(frame) = framed.next().await else {
                 warn!("Invalid codec conversion");
@@ -62,7 +61,6 @@ pub async fn init_backdoor(
                             msg,
                             socket_addr,
                             &scheduler_clone,
-                            pending_connections.clone(),
                             ack_timeout_duration,
                             database.clone(),
                         )
@@ -80,7 +78,7 @@ pub async fn init_backdoor(
                         &scheduler_clone,
                         msg,
                         socket_addr,
-                        pending_connections.clone(),
+                        database.clone(),
                     )
                     .await
                     {
@@ -107,7 +105,6 @@ async fn handle_backdoor_register_msg(
     msg: Message,
     socket_addr: SocketAddr,
     scheduler: &Arc<Mutex<Scheduler>>,
-    pending_connections: Arc<Mutex<HashSet<Uuid>>>,
     ack_timeout_duration: u64,
     database: Database,
 ) -> Result<(), BackdoorError> {
@@ -121,16 +118,17 @@ async fn handle_backdoor_register_msg(
 
     scheduler.lock().await.register_device(&device).await?;
 
-    {
-        pending_connections.lock().await.insert(device.id);
-    }
+    let timestamp = DateTime::from_timestamp(msg.timestamp as i64, 0)
+        .ok_or(BackdoorError::InvalidTimeStamp)?
+        .naive_utc();
+    database.register_device(device.id, timestamp).await?;
 
     let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
     if let Err(err) = (*framed).send((response, socket_addr)).await {
         error!("Error sending response: {err}");
     }
 
-    spawn_ack_timeout_task(pending_connections.clone(), ack_timeout_duration, device.id);
+    spawn_ack_timeout_task(database.clone(), ack_timeout_duration, device.id);
 
     // TEMPORARY.
     // REMOVE LATER
@@ -154,7 +152,7 @@ async fn handle_backdoor_ack_msg(
     scheduler: &Arc<Mutex<Scheduler>>,
     msg: Message,
     socket_addr: SocketAddr,
-    pending_connections: Arc<Mutex<HashSet<Uuid>>>,
+    database: Database,
 ) -> Result<(), BackdoorError> {
     let connection = scheduler
         .lock()
@@ -164,31 +162,43 @@ async fn handle_backdoor_ack_msg(
         .await?;
 
     if Some(socket_addr.ip().to_string()) != connection.ip {
-        error!("Invalid IP ")
+        error!(
+            "Invalid IP, expected {}, recvd {:?}",
+            socket_addr.ip().to_string(),
+            connection.ip
+        );
+        return Err(BackdoorError::InvalidIp);
     }
 
-    if pending_connections
-        .lock()
-        .await
-        .remove(&connection.device_id)
-    {
-        info!("Adding new connection, device_id: {:#x}", msg.device_id);
-        let mut scheduler_lock = scheduler.lock().await;
-        scheduler_lock.start_task(connection).await?;
-    }
+    let timestamp = DateTime::from_timestamp(msg.timestamp as i64, 0)
+        .ok_or(BackdoorError::InvalidTimeStamp)?
+        .naive_utc();
+
+    database
+        .registration_ack(Uuid::from_u128(msg.device_id), timestamp)
+        .await?;
+
+    info!("Adding new connection, device_id: {:#x}", msg.device_id);
+    let mut scheduler_lock = scheduler.lock().await;
+    scheduler_lock.start_task(connection).await?;
 
     Ok(())
 }
 
-fn spawn_ack_timeout_task(
-    pending_connections: Arc<Mutex<HashSet<Uuid>>>,
-    ack_timeout_duration: u64,
-    device_id: Uuid,
-) {
+fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_id: Uuid) {
     tokio::spawn(async move {
         sleep(Duration::from_millis(ack_timeout_duration)).await;
-        if pending_connections.lock().await.remove(&device_id) {
-            info!("Ack from {} not received", device_id);
+        match database
+            .registration_timeout(device_id, Utc::now().naive_utc())
+            .await
+        {
+            Ok(true) => {
+                info!("Ack from {} not received", device_id);
+            }
+            Err(e) => {
+                error!("Error during device registration ack timeout check {e}");
+            }
+            _ => {}
         }
     });
 }

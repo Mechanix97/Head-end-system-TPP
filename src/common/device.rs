@@ -34,3 +34,13 @@ impl Device {
         }
     }
 }
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, sqlx::Type)]
+pub enum RegistrationStatus {
+    #[sqlx(rename = "registered")]
+    Registered,
+    #[sqlx(rename = "pending_ack")]
+    PendingAck,
+    #[sqlx(rename = "ack_timeout")]
+    AckTimeout,
+}

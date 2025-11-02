@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use sqlx::Pool;
 use sqlx::Postgres;
 use sqlx::postgres::PgPoolOptions;
@@ -10,6 +11,7 @@ use crate::connection::Connection;
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
 use crate::device::Device;
+use crate::device::RegistrationStatus;
 
 #[derive(Debug)]
 pub struct PostgresDB {
@@ -42,7 +44,7 @@ impl PostgresDB {
 
 #[async_trait::async_trait]
 impl Engine for PostgresDB {
-    // Device fns
+    // Device
     async fn add_device(&self, device: &Device) -> Result<(), DatabaseError> {
         let query = "INSERT INTO T_DEVICES
                     (id, IPv4, IPv6, MAC, factory_id, batch_id) 
@@ -124,6 +126,122 @@ impl Engine for PostgresDB {
         Ok(())
     }
 
+    // Device registration
+    async fn register_device(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        let query = "DELETE FROM T_DEVICE_REGISTRATION WHERE FK_DEVICE = $1";
+
+        sqlx::query(query)
+            .bind(device_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let query = "INSERT INTO T_DEVICE_REGISTRATION
+                    (fk_device, registration_status, registration_time) 
+                    VALUES ($1, $2, $3)";
+
+        sqlx::query(query)
+            .bind(device_id)
+            .bind(RegistrationStatus::PendingAck)
+            .bind(timestamp)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn registration_ack(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        let query_count = r#"
+            SELECT COUNT(*) 
+            FROM T_DEVICE_REGISTRATION 
+            WHERE fk_device = $1 
+            AND "registration_status" = 'pending_ack'
+        "#;
+
+        let count: i64 = query_scalar(query_count)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                error!("Error counting connections for device {}: {}", device_id, e);
+                DatabaseError::QueryError(e.to_string())
+            })?;
+
+        if count < 1 {
+            return Err(DatabaseError::NoDataFound);
+        } else if count > 1 {
+            return Err(DatabaseError::TooManyRows);
+        }
+
+        let query = r#"UPDATE T_DEVICE_REGISTRATION 
+        SET registration_status = 'registered', 
+        registration_time = $2
+        WHERE fk_device = $1 
+            AND registration_status = 'pending_ack'"#;
+
+        sqlx::query(query)
+            .bind(device_id)
+            .bind(timestamp)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn registration_timeout(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<bool, DatabaseError> {
+        let query_count = r#"
+            SELECT COUNT(*) 
+            FROM T_DEVICE_REGISTRATION 
+            WHERE fk_device = $1 
+            AND registration_status = 'pending_ack'
+        "#;
+
+        let count: i64 = query_scalar(query_count)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                error!("Error counting connections for device {}: {}", device_id, e);
+                DatabaseError::QueryError(e.to_string())
+            })?;
+
+        if count < 1 {
+            return Ok(false);
+        } else if count > 1 {
+            return Err(DatabaseError::TooManyRows);
+        }
+
+        let query = r#"UPDATE T_DEVICE_REGISTRATION 
+        SET registration_status = 'ack_timeout', 
+        registration_time = $2
+         WHERE fk_device = $1 
+            AND registration_status = 'pending_ack'"#;
+
+        sqlx::query(query)
+            .bind(device_id)
+            .bind(timestamp)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(true)
+    }
+
+    // others fns
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         let query = "SELECT device_id, ip, bucket, last_connection, next_wakeup, status 
                      FROM T_ACTIVE_CONNECTIONS 
