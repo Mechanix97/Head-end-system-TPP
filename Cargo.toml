@@ -43,7 +43,7 @@ axum = "0.8"
 prometheus = "0.14"
 bytes = "1.10"
 rand = "0.9"
-uuid = "1.18"
+uuid = { version = "1.18", features = ["v4"] }
 chrono = "0.4"
 sqlx = { version = "0.8", features = [
     "runtime-tokio",

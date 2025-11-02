@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::connection::Connection;
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
+use crate::device::Device;
 
 #[derive(Debug)]
 pub struct PostgresDB {
@@ -41,6 +42,88 @@ impl PostgresDB {
 
 #[async_trait::async_trait]
 impl Engine for PostgresDB {
+    // Device fns
+    async fn add_device(&self, device: &Device) -> Result<(), DatabaseError> {
+        let query = "INSERT INTO T_DEVICES
+                    (id, IPv4, IPv6, MAC, factory_id, batch_id) 
+                    VALUES ($1, $2, $3, $4, $5, $6)";
+
+        sqlx::query(query)
+            .bind(device.id)
+            .bind(device.ipv4.clone())
+            .bind(device.ipv6.clone())
+            .bind(device.mac.clone())
+            .bind(device.factory_id)
+            .bind(device.batch_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError> {
+        let query_count = r#"
+            SELECT COUNT(*) 
+            FROM T_DEVICES 
+            WHERE id = $1
+        "#;
+
+        let count: i64 = query_scalar(query_count)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                error!("Error counting connections for device {}: {}", device_id, e);
+                DatabaseError::QueryError(e.to_string())
+            })?;
+
+        if count < 1 {
+            return Err(DatabaseError::NoDataFound);
+        } else if count > 1 {
+            return Err(DatabaseError::TooManyRows);
+        }
+
+        let query = r#"
+            SELECT id, IPv4, IPv6, MAC, factory_id, batch_id
+            FROM T_DEVICES 
+            WHERE id = $1
+        "#;
+
+        let device = query_as::<_, Device>(query)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                error!(
+                    "Error fetching connection data for device {}: {}",
+                    device_id, e
+                );
+                DatabaseError::QueryError(e.to_string())
+            })?;
+
+        Ok(device)
+    }
+
+    async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError> {
+        let query = "UPDATE T_DEVICE 
+        SET IPv4 = $2, IPv6 = $3, MAC = $4, factory_id = $5, batch_id = $6
+        WHERE device_id = $1";
+
+        sqlx::query(query)
+            .bind(device.id)
+            .bind(device.ipv4.clone())
+            .bind(device.ipv6.clone())
+            .bind(device.mac.clone())
+            .bind(device.factory_id)
+            .bind(device.batch_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         let query = "SELECT device_id, ip, bucket, last_connection, next_wakeup, status 
                      FROM T_ACTIVE_CONNECTIONS 

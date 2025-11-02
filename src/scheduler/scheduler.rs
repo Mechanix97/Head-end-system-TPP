@@ -8,6 +8,7 @@ use tracing::info;
 use crate::error::SchedulerError;
 use crate::schedule::Schedule;
 use common::connection::ConnectionStatus;
+use common::device::Device;
 use common::{connection::Connection, database::api::Database};
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
@@ -43,10 +44,10 @@ impl Scheduler {
         Ok(())
     }
 
-    pub async fn add_connection(
-        &mut self,
-        connection: &mut Connection,
-    ) -> Result<(), SchedulerError> {
+    /// this fn register a new device in the scheduler by asigning a bucket number
+    /// and a next wake up time. It stores the information in the DB waiting for the
+    /// ACK to actually schedule the connection task.
+    pub async fn register_device(&mut self, device: &Device) -> Result<(), SchedulerError> {
         METRICS_CONNECTIONS
             .connections_tracker
             .with_label_values(&["new_connection"])
@@ -55,7 +56,14 @@ impl Scheduler {
         let bucket_number = self.get_bucket_number();
         let next_wake_up = self.get_next_schedule(bucket_number);
 
-        connection.bucket = Some(bucket_number as i32);
+        //TODO improve this creation
+        let mut connection = Connection::new(
+            device.id,
+            device.ipv4.clone(),
+            Some(bucket_number as i32),
+            ConnectionStatus::PendingAck,
+        );
+
         connection.next_wakeup = Some(
             NaiveDateTime::parse_from_str(&next_wake_up.to_string(), "%H:%M:%S %d/%m/%Y").map_err(
                 |e| {
@@ -66,13 +74,12 @@ impl Scheduler {
         );
 
         self.buckets[bucket_number].push(connection.clone());
-        self.database.add_new_connection(connection).await?;
+        self.database.add_new_connection(&connection).await?;
 
         info!(
-            "Connection id: {:#x} in bucket {} next wake scheduled at {}",
-            connection.device_id, bucket_number, next_wake_up
+            "Device id: {:#x} in bucket {} next wake scheduled at {}",
+            device.id, bucket_number, next_wake_up
         );
-
         Ok(())
     }
 

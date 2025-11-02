@@ -122,6 +122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         args.backdoor_ip,
         args.backdoor_port,
         None,
+        db.clone(),
     )
     .await?;
 
