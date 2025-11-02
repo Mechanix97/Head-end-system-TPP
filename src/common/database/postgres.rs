@@ -184,7 +184,7 @@ impl Engine for PostgresDB {
 
         let query = r#"UPDATE T_DEVICE_REGISTRATION 
         SET registration_status = 'registered', 
-        registration_time = $2, 
+        registration_time = $2
         WHERE fk_device = $1 
             AND registration_status = 'pending_ack'"#;
 
@@ -227,7 +227,7 @@ impl Engine for PostgresDB {
 
         let query = r#"UPDATE T_DEVICE_REGISTRATION 
         SET registration_status = 'ack_timeout', 
-        registration_time = $2, 
+        registration_time = $2
          WHERE fk_device = $1 
             AND registration_status = 'pending_ack'"#;
 
@@ -241,6 +241,7 @@ impl Engine for PostgresDB {
         Ok(true)
     }
 
+    // others fns
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         let query = "SELECT device_id, ip, bucket, last_connection, next_wakeup, status 
                      FROM T_ACTIVE_CONNECTIONS 
