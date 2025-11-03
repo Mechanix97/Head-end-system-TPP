@@ -99,6 +99,15 @@ impl Database {
         self.engine.remove_device_from_bucket(device_id).await
     }
 
+    // schedule connection
+    pub async fn schedule_connection(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        self.engine.schedule_connection(device_id, timestamp).await
+    }
+
     // Others
     pub async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         self.engine.get_active_connections().await
@@ -157,4 +166,11 @@ pub trait Engine: Debug + Send + Sync {
     ) -> Result<(), DatabaseError>;
     async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError>;
     async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError>;
+
+    // schedule connection
+    async fn schedule_connection(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError>;
 }

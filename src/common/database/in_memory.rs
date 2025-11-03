@@ -157,6 +157,15 @@ impl Engine for InMemoryDB {
         Ok(())
     }
 
+    // schedule connection
+    async fn schedule_connection(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        Ok(())
+    }
+
     // Others
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         Ok(self

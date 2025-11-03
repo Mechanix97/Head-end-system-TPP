@@ -65,8 +65,7 @@ CREATE TABLE IF NOT EXISTS T_SCHEDULED_CONNECTIONS (
     FK_DEVICE UUID REFERENCES T_DEVICES(id),
     schedule_time TIMESTAMP NOT NULL,
     connection_time TIMESTAMP,
-    status scheduledstatus NOT NULL default 'awaiting',
-    PRIMARY KEY (FK_DEVICE) 
+    status scheduledstatus NOT NULL default 'awaiting'
 );
 
 CREATE TABLE IF NOT EXISTS T_ACTIVE_CONNECTIONS (

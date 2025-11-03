@@ -338,6 +338,26 @@ impl Engine for PostgresDB {
         Ok(())
     }
 
+    // schedule connection
+    async fn schedule_connection(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        let query = "INSERT INTO T_SCHEDULED_CONNECTIONS
+                    (fk_device, schedule_time, connection_time, status) 
+                    VALUES ($1, $2, NULL, 'awaiting')";
+
+        sqlx::query(query)
+            .bind(device_id)
+            .bind(timestamp)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
     // others fns
     async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
         let query = "SELECT device_id, ip, bucket, last_connection, next_wakeup, status 
