@@ -62,18 +62,22 @@ impl Scheduler {
             ConnectionStatus::PendingAck,
         );
 
-        connection.next_wakeup = Some(
+        let next_wake_up_naive =
             NaiveDateTime::parse_from_str(&next_wake_up.to_string(), "%H:%M:%S %d/%m/%Y").map_err(
                 |e| {
                     error!("Error parsing next_wakeup from Schedule: {}", e);
                     SchedulerError::ParseError(e.to_string())
                 },
-            )?,
-        );
+            )?;
+        connection.next_wakeup = Some(next_wake_up_naive);
 
         self.database
             .add_device_to_bucket(device.id, bucket_number as i32)
             .await?;
+        self.database
+            .schedule_connection(device.id, next_wake_up_naive)
+            .await?;
+
         self.database.add_new_connection(&connection).await?;
 
         info!(
