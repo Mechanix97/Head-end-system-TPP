@@ -1,6 +1,5 @@
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
-use std::time::Duration;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::error;
 use tracing::info;
@@ -8,9 +7,8 @@ use uuid::Uuid;
 
 use crate::error::SchedulerError;
 use crate::schedule::Schedule;
-use common::connection::ConnectionStatus;
+use common::database::api::Database;
 use common::device::Device;
-use common::{connection::Connection, database::api::Database};
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
 pub struct Scheduler {
