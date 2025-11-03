@@ -270,7 +270,7 @@ impl Engine for PostgresDB {
 
         let mut min_count = i64::MAX;
         let mut min_bucket = 1;
-        for bucket in 1..=total_buckets {
+        for bucket in 0..total_buckets {
             let count = *bucket_counts.get(&bucket).unwrap_or(&0);
             if count < min_count {
                 min_count = count;
