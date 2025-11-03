@@ -4,7 +4,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::connection::{Connection, ConnectionStatus};
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
 use crate::device::Device;
@@ -17,7 +16,6 @@ pub struct InMemoryDB {
 
 #[derive(Default, Debug)]
 pub struct InnerDB {
-    connections: Vec<Connection>,
     devices: HashMap<Uuid, Device>,
     device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
     buckets: HashMap<Uuid, i32>,
@@ -170,56 +168,15 @@ impl Engine for InMemoryDB {
         Ok(())
     }
 
-    // Others
-    async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
+    async fn get_scheduled_connections(&self) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError> {
         Ok(self
             .inner
             .lock()
             .await
-            .connections
+            .scheduled_connections
             .iter()
-            .filter(|&c| c.status == ConnectionStatus::Active)
-            .cloned()
+            .map(|(&device_id, &time)| (device_id, time))
             .collect())
-    }
-
-    async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        self.inner.lock().await.connections.push(connection.clone());
-        Ok(())
-    }
-
-    async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError> {
-        let lock = self.inner.lock().await;
-
-        let results: Vec<&Connection> = lock
-            .connections
-            .iter()
-            .filter(|c| c.device_id == device_id)
-            .collect();
-
-        if results.is_empty() {
-            return Err(DatabaseError::NoDataFound);
-        } else if results.len() > 1 {
-            return Err(DatabaseError::TooManyRows);
-        }
-
-        Ok(results[0].clone())
-    }
-
-    async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        let mut guard = self.inner.lock().await;
-
-        if let Some(pos) = guard
-            .connections
-            .iter()
-            .position(|c| c.device_id == connection.device_id)
-        {
-            guard.connections[pos] = connection.clone();
-        } else {
-            return Err(DatabaseError::NoDataFound);
-        }
-
-        Ok(())
     }
 }
 

@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::connection::Connection;
 use crate::database::DatabaseError;
 use crate::database::postgres::PostgresConnectionArgs;
 use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
@@ -108,31 +107,15 @@ impl Database {
         self.engine.schedule_connection(device_id, timestamp).await
     }
 
-    // Others
-    pub async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
-        self.engine.get_active_connections().await
-    }
-
-    pub async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        self.engine.add_new_connection(connection).await
-    }
-
-    pub async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError> {
-        self.engine.get_connection_data(device_id).await
-    }
-
-    pub async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        self.engine.update_connection(connection).await
+    pub async fn get_scheduled_connections(
+        &self,
+    ) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError> {
+        self.engine.get_scheduled_connections().await
     }
 }
 
 #[async_trait::async_trait]
 pub trait Engine: Debug + Send + Sync {
-    async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError>;
-    async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError>;
-    async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError>;
-    async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError>;
-
     // Device
     async fn add_device(&self, device: &Device) -> Result<(), DatabaseError>;
     async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError>;
@@ -173,4 +156,5 @@ pub trait Engine: Debug + Send + Sync {
         device_id: Uuid,
         timestamp: NaiveDateTime,
     ) -> Result<(), DatabaseError>;
+    async fn get_scheduled_connections(&self) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError>;
 }
