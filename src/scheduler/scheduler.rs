@@ -12,11 +12,8 @@ use common::device::Device;
 use common::{connection::Connection, database::api::Database};
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
-type Bucket = Vec<Connection>;
-
 pub struct Scheduler {
     pub bucket_number: i32,
-    // pub buckets: Vec<Bucket>,
     pub job_scheduler: JobScheduler,
     pub database: Database,
 }
@@ -25,7 +22,6 @@ impl Scheduler {
     pub async fn new(bucket_number: usize, database: Database) -> Result<Self, SchedulerError> {
         let mut scheduler = Self {
             bucket_number: bucket_number as i32,
-            // buckets: vec![Vec::new(); bucket_number],
             job_scheduler: JobScheduler::new().await?,
             database,
         };
@@ -111,11 +107,6 @@ impl Scheduler {
                 .with_label_values(&["new_connection"])
                 .inc();
 
-            // let bucket_number = conn.bucket.ok_or(SchedulerError::NoBucketDefined)? as usize;
-
-            // self.database.add_device_to_bucket(conn.device_id, bucket_number)
-            // self.buckets[bucket_number].push(conn.clone());
-
             self.start_task(conn).await?;
         }
 
@@ -152,13 +143,6 @@ impl Scheduler {
     }
 
     pub async fn get_bucket_number(&self) -> usize {
-        // self.buckets
-        //     .iter()
-        //     .enumerate()
-        //     .min_by_key(|(_, bucket)| bucket.len())
-        //     .map(|(index, _)| index)
-        //     .unwrap_or(0)
-
         self.database
             .get_bucket_with_less_devices(self.bucket_number)
             .await

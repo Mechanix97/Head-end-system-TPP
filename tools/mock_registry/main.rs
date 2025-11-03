@@ -15,7 +15,7 @@ use common::messages::message::Message;
 
 #[derive(Parser)]
 struct Args {
-    #[arg(short, long, default_value = "1")]
+    #[arg(short, long, default_value = "47")]
     number: u32,
     /// Backdoor IP
     #[arg(

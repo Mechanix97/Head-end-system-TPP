@@ -27,6 +27,15 @@ BEGIN
 END   
 $$;
 
+DO
+$$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'scheduledstatus') THEN
+        CREATE TYPE scheduledstatus AS ENUM ('awaiting', 'lost', 'done');
+    END IF;
+END   
+$$;
+
 \connect hes;
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -50,6 +59,14 @@ CREATE TABLE IF NOT EXISTS T_BUCKETS (
     FK_DEVICE UUID REFERENCES T_DEVICES(id),
     bucket INTEGER,
     PRIMARY KEY (FK_DEVICE)
+);
+
+CREATE TABLE IF NOT EXISTS T_SCHEDULED_CONNECTIONS (
+    FK_DEVICE UUID REFERENCES T_DEVICES(id),
+    schedule_time TIMESTAMP NOT NULL,
+    connection_time TIMESTAMP,
+    status scheduledstatus NOT NULL default 'awaiting',
+    PRIMARY KEY (FK_DEVICE) 
 );
 
 CREATE TABLE IF NOT EXISTS T_ACTIVE_CONNECTIONS (
