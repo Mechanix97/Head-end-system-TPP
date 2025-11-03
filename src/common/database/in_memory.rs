@@ -19,7 +19,7 @@ pub struct InnerDB {
     devices: HashMap<Uuid, Device>,
     device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
     buckets: HashMap<Uuid, i32>,
-    scheduled_connections: HashMap<Uuid, NaiveDateTime>,
+    scheduled_connections: HashMap<Uuid, (NaiveDateTime, Uuid)>,
 }
 
 #[async_trait::async_trait]
@@ -161,10 +161,12 @@ impl Engine for InMemoryDB {
         &self,
         device_id: Uuid,
         timestamp: NaiveDateTime,
+        job_id: Uuid,
     ) -> Result<(), DatabaseError> {
         let mut lock = self.inner.lock().await;
         lock.scheduled_connections.remove(&device_id);
-        lock.scheduled_connections.insert(device_id, timestamp);
+        lock.scheduled_connections
+            .insert(device_id, (timestamp, job_id));
         Ok(())
     }
 
@@ -175,7 +177,7 @@ impl Engine for InMemoryDB {
             .await
             .scheduled_connections
             .iter()
-            .map(|(&device_id, &time)| (device_id, time))
+            .map(|(&device_id, &(time, _job_id))| (device_id, time))
             .collect())
     }
 }

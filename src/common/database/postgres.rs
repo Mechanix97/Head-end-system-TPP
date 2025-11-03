@@ -342,14 +342,16 @@ impl Engine for PostgresDB {
         &self,
         device_id: Uuid,
         timestamp: NaiveDateTime,
+        job_id: Uuid,
     ) -> Result<(), DatabaseError> {
         let query = "INSERT INTO T_SCHEDULED_CONNECTIONS
-                    (fk_device, schedule_time, connection_time, status) 
-                    VALUES ($1, $2, NULL, 'awaiting')";
+                    (fk_device, schedule_time, connection_time, status, job_id) 
+                    VALUES ($1, $2, NULL, 'awaiting', $3)";
 
         sqlx::query(query)
             .bind(device_id)
             .bind(timestamp)
+            .bind(job_id)
             .execute(&self.pool)
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;

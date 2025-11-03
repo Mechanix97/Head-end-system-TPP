@@ -53,28 +53,9 @@ impl Scheduler {
         let bucket_number = self.get_bucket_number().await;
         let next_wake_up = self.get_next_schedule(bucket_number);
 
-        // //TODO improve this creation
-        // let mut connection = Connection::new(
-        //     device.id,
-        //     device.ipv4.clone(),
-        //     Some(bucket_number as i32),
-        //     ConnectionStatus::PendingAck,
-        // );
-
-        // let next_wake_up_naive =
-        //     NaiveDateTime::parse_from_str(&next_wake_up.to_string(), "%H:%M:%S %d/%m/%Y").map_err(
-        //         |e| {
-        //             error!("Error parsing next_wakeup from Schedule: {}", e);
-        //             SchedulerError::ParseError(e.to_string())
-        //         },
-        //     )?;
-        // connection.next_wakeup = Some(next_wake_up_naive);
-
         self.database
             .add_device_to_bucket(device.id, bucket_number as i32)
             .await?;
-
-        // self.database.add_new_connection(&connection).await?;
 
         info!(
             "Device id: {:#x} in bucket {} next wake scheduled at {}",
@@ -107,13 +88,13 @@ impl Scheduler {
         //         .with_label_values(&["new_connection"])
         //         .inc();
 
-        //     self.schedule_wakeup_task(conn.device_id).await?;
+        //     self.schedule_wakeup_job(conn.device_id).await?;
         // }
 
         Ok(())
     }
 
-    pub async fn schedule_wakeup_task(&mut self, device_id: Uuid) -> Result<(), SchedulerError> {
+    pub async fn schedule_wakeup_job(&mut self, device_id: Uuid) -> Result<(), SchedulerError> {
         let bucket_number = self.database.get_bucket_number(device_id).await?;
 
         let next_wake_up = self.get_next_schedule(bucket_number as usize);
@@ -126,22 +107,25 @@ impl Scheduler {
                 },
             )?;
 
-        self.database
-            .schedule_connection(device_id, next_wake_up)
+        let job_id = self
+            .job_scheduler
+            .add(Job::new_async(
+                next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
+                move |_uuid, _l| {
+                    Box::pin(async move {
+                        periodically_task(device_id).await;
+                    })
+                },
+            )?)
             .await?;
 
-        let next_wake_up = next_wake_up.format("%S %M %H %d %m * %Y").to_string();
-        self.job_scheduler
-            .add(Job::new_async(next_wake_up.clone(), move |_uuid, _l| {
-                Box::pin(async move {
-                    periodically_task(device_id).await;
-                })
-            })?)
+        self.database
+            .schedule_connection(device_id, next_wake_up, job_id)
             .await?;
 
         info!(
-            "Scheduled next connetion to divice {:#x} at {}",
-            device_id, next_wake_up
+            "[Job id {}]Scheduled next connetion to divice {:#x} at {}",
+            job_id, device_id, next_wake_up
         );
 
         // self.database.update_connection(&connection).await?;

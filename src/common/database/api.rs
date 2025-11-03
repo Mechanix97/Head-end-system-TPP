@@ -103,8 +103,11 @@ impl Database {
         &self,
         device_id: Uuid,
         timestamp: NaiveDateTime,
+        job_id: Uuid,
     ) -> Result<(), DatabaseError> {
-        self.engine.schedule_connection(device_id, timestamp).await
+        self.engine
+            .schedule_connection(device_id, timestamp, job_id)
+            .await
     }
 
     pub async fn get_scheduled_connections(
@@ -155,6 +158,7 @@ pub trait Engine: Debug + Send + Sync {
         &self,
         device_id: Uuid,
         timestamp: NaiveDateTime,
+        job_id: Uuid,
     ) -> Result<(), DatabaseError>;
     async fn get_scheduled_connections(&self) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError>;
 }

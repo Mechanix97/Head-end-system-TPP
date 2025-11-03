@@ -175,7 +175,7 @@ async fn handle_backdoor_ack_msg(
     scheduler
         .lock()
         .await
-        .schedule_wakeup_task(device.id)
+        .schedule_wakeup_job(device.id)
         .await?;
 
     Ok(())
