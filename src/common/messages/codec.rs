@@ -23,6 +23,7 @@ impl Decoder for MessageCodec {
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if buf.len() < MIN_MSG_LEN {
+            buf.clear();
             return Ok(None);
         }
 
