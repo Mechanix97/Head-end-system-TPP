@@ -43,51 +43,55 @@ pub async fn init_backdoor(
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         loop {
-            let Some(frame) = framed.next().await else {
-                warn!("Invalid codec conversion");
-                continue;
-            };
-
-            let Ok((msg, socket_addr)) = frame else {
-                warn!("Invalid codec conversion");
-                continue;
-            };
-            match msg.msg_type {
-                MsgType::RegisterRequest => {
-                    info!("RegisterRequest received");
-                    if msg.device_id == 0 {
-                        if let Err(err) = handle_backdoor_register_msg(
-                            &mut framed,
-                            msg,
-                            socket_addr,
-                            &scheduler_clone,
-                            ack_timeout_duration,
-                            database.clone(),
-                        )
-                        .await
-                        {
-                            error!("Error handle register request: {err}");
+            match framed.next().await {
+                Some(Ok((msg, socket_addr))) => {
+                    match msg.msg_type {
+                        MsgType::RegisterRequest => {
+                            info!("RegisterRequest received");
+                            if msg.device_id == 0 {
+                                if let Err(err) = handle_backdoor_register_msg(
+                                    &mut framed,
+                                    msg,
+                                    socket_addr,
+                                    &scheduler_clone,
+                                    ack_timeout_duration,
+                                    database.clone(),
+                                )
+                                .await
+                                {
+                                    error!("Error handle register request: {err}");
+                                }
+                            } else {
+                                // TODO handle ip change
+                            }
                         }
-                    } else {
-                        // TODO handle ip change
+                        MsgType::Ack => {
+                            info!("Ack received");
+                            if let Err(err) = handle_backdoor_ack_msg(
+                                &scheduler_clone,
+                                msg,
+                                socket_addr,
+                                database.clone(),
+                            )
+                            .await
+                            {
+                                error!("Error handle ack msg: {err}");
+                            }
+                        }
+
+                        _ => {
+                            warn!("Received incompatible msg in backdoor: {:?}", msg.msg_type);
+                        }
                     }
                 }
-                MsgType::Ack => {
-                    info!("Ack received");
-                    if let Err(err) = handle_backdoor_ack_msg(
-                        &scheduler_clone,
-                        msg,
-                        socket_addr,
-                        database.clone(),
-                    )
-                    .await
-                    {
-                        error!("Error handle ack msg: {err}");
-                    }
+                Some(Err(e)) => {
+                    warn!("Error during Invalid codec conversion {e}");
+                    continue;
                 }
 
-                _ => {
-                    warn!("Received incompatible msg in backdoor: {:?}", msg.msg_type);
+                None => {
+                    warn!("Invalid codec conversion");
+                    continue;
                 }
             }
         }
