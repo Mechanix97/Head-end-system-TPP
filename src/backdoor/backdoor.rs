@@ -85,7 +85,7 @@ pub async fn init_backdoor(
                     }
                 }
                 Some(Err(e)) => {
-                    warn!("Error during Invalid codec conversion {e}");
+                    warn!("Error during codec conversion {e}");
                     continue;
                 }
 
