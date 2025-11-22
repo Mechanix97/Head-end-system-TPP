@@ -8,12 +8,25 @@ use crate::database::postgres::PostgresConnectionArgs;
 use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
 use crate::device::Device;
 
+/// Database abstraction layer that supports multiple backend implementations.
+///
+/// This provides a unified interface for database operations regardless of whether
+/// we're using PostgreSQL (production) or an in-memory database (testing).
+///
+/// The actual database logic is delegated to an implementation of the `Engine` trait,
+/// which is stored as an `Arc<dyn Engine>` for thread-safe sharing across async tasks.
 #[derive(Debug, Clone)]
 pub struct Database {
     pub engine: Arc<dyn Engine>,
 }
 
 impl Database {
+    /// Creates a new database instance with the specified backend.
+    ///
+    /// For `DatabaseType::InMemory`, creates an in-memory database (useful for testing).
+    /// For `DatabaseType::Postgres`, connects to PostgreSQL using the provided connection args.
+    ///
+    /// Returns an error if Postgres is selected but no connection args are provided.
     pub async fn new(
         database_type: DatabaseType,
         postgres_args: Option<PostgresConnectionArgs>,
@@ -32,20 +45,28 @@ impl Database {
         }
     }
 
-    // Device
+    // ========== Device management ==========
+
+    /// Adds a new device to the database.
     pub async fn add_device(&self, device: &Device) -> Result<(), DatabaseError> {
         self.engine.add_device(device).await
     }
 
+    /// Retrieves device information by UUID.
     pub async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError> {
         self.engine.get_device(device_id).await
     }
 
+    /// Updates an existing device's information.
     pub async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError> {
         self.engine.modify_device(device).await
     }
 
-    // Device registration
+    // ========== Device registration flow ==========
+
+    /// Registers a new device in the system.
+    ///
+    /// This is the first step when a device connects to the backdoor server.
     pub async fn register_device(
         &self,
         device_id: Uuid,
@@ -54,6 +75,9 @@ impl Database {
         self.engine.register_device(device_id, timestamp).await
     }
 
+    /// Marks a device registration as acknowledged.
+    ///
+    /// Called when the device successfully receives and ACKs the registration response.
     pub async fn registration_ack(
         &self,
         device_id: Uuid,
@@ -62,6 +86,10 @@ impl Database {
         self.engine.registration_ack(device_id, timestamp).await
     }
 
+    /// Checks if registration has timed out and updates status accordingly.
+    ///
+    /// Returns `true` if the registration timed out (no ACK received),
+    /// `false` if it completed successfully.
     pub async fn registration_timeout(
         &self,
         device_id: Uuid,
@@ -70,7 +98,12 @@ impl Database {
         self.engine.registration_timeout(device_id, timestamp).await
     }
 
-    // buckets
+    // ========== Time-bucket scheduling ==========
+
+    /// Finds the bucket with the fewest devices for load balancing.
+    ///
+    /// The scheduler divides the 24-hour day into `total_buckets` time slots
+    /// and distributes devices evenly across them to avoid network congestion.
     pub async fn get_bucket_with_less_devices(
         &self,
         total_buckets: i32,
@@ -80,6 +113,7 @@ impl Database {
             .await
     }
 
+    /// Assigns a device to a specific time bucket.
     pub async fn add_device_to_bucket(
         &self,
         device_id: Uuid,
@@ -90,15 +124,22 @@ impl Database {
             .await
     }
 
+    /// Gets the bucket number assigned to a device.
     pub async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError> {
         self.engine.get_bucket_number(device_id).await
     }
 
+    /// Removes a device from its assigned bucket.
     pub async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError> {
         self.engine.remove_device_from_bucket(device_id).await
     }
 
-    // schedule connection
+    // ========== Connection scheduling ==========
+
+    /// Schedules a periodic connection for a device.
+    ///
+    /// The HES will connect to the device at the scheduled timestamp to collect
+    /// consumption data. The job_id links to the tokio-cron-scheduler job.
     pub async fn schedule_connection(
         &self,
         device_id: Uuid,
@@ -110,6 +151,7 @@ impl Database {
             .await
     }
 
+    /// Retrieves all scheduled connections for state restoration on HES restart.
     pub async fn get_scheduled_connections(
         &self,
     ) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError> {
@@ -117,14 +159,23 @@ impl Database {
     }
 }
 
+/// Database engine trait that defines the interface for database operations.
+///
+/// This trait is implemented by both `PostgresDB` (production) and `InMemoryDB` (testing).
+/// Using a trait allows the rest of the HES code to work with any database backend
+/// without needing to know which one is in use.
+///
+/// The `async_trait` macro is used because Rust doesn't natively support async methods
+/// in traits yet. It works by transforming async trait methods into regular methods that
+/// return `Pin<Box<dyn Future>>`.
 #[async_trait::async_trait]
 pub trait Engine: Debug + Send + Sync {
-    // Device
+    // ========== Device management ==========
     async fn add_device(&self, device: &Device) -> Result<(), DatabaseError>;
     async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError>;
     async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError>;
 
-    // Device registration
+    // ========== Device registration flow ==========
     async fn register_device(
         &self,
         device_id: Uuid,
@@ -135,15 +186,19 @@ pub trait Engine: Debug + Send + Sync {
         device_id: Uuid,
         timestamp: NaiveDateTime,
     ) -> Result<(), DatabaseError>;
-    /// This fn checks if the registration has been completed,
-    /// if not returns true and updates the db status to timeout
+
+    /// Checks if registration has timed out and updates status if needed.
+    ///
+    /// Returns `true` if the registration timed out (no ACK received).
+    /// Returns `false` if registration completed successfully.
+    /// If timed out, updates the database status to reflect the timeout.
     async fn registration_timeout(
         &self,
         device_id: Uuid,
         timestamp: NaiveDateTime,
     ) -> Result<bool, DatabaseError>;
 
-    // buckets
+    // ========== Time-bucket scheduling ==========
     async fn get_bucket_with_less_devices(&self, total_buckets: i32) -> Result<i32, DatabaseError>;
     async fn add_device_to_bucket(
         &self,
@@ -153,7 +208,7 @@ pub trait Engine: Debug + Send + Sync {
     async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError>;
     async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError>;
 
-    // schedule connection
+    // ========== Connection scheduling ==========
     async fn schedule_connection(
         &self,
         device_id: Uuid,
