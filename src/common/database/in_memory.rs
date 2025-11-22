@@ -4,7 +4,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::connection::{Connection, ConnectionStatus};
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
 use crate::device::Device;
@@ -17,9 +16,10 @@ pub struct InMemoryDB {
 
 #[derive(Default, Debug)]
 pub struct InnerDB {
-    connections: Vec<Connection>,
     devices: HashMap<Uuid, Device>,
     device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
+    buckets: HashMap<Uuid, i32>,
+    scheduled_connections: HashMap<Uuid, (NaiveDateTime, Uuid)>,
 }
 
 #[async_trait::async_trait]
@@ -109,55 +109,76 @@ impl Engine for InMemoryDB {
         Ok(false)
     }
 
-    async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
+    // buckets
+    async fn get_bucket_with_less_devices(&self, total_buckets: i32) -> Result<i32, DatabaseError> {
+        let inner = self.inner.lock().await;
+
+        let mut counts = vec![0usize; total_buckets as usize];
+
+        for &bucket in inner.buckets.values() {
+            let bucket_usize = bucket as usize;
+            if bucket >= 0 && bucket_usize < counts.len() {
+                counts[bucket_usize] += 1;
+            }
+        }
+
+        let min_count = *counts.iter().min().unwrap_or(&0);
+
+        let bucket = counts.iter().position(|&c| c == min_count).unwrap_or(0) as i32;
+        Ok(bucket)
+    }
+
+    async fn add_device_to_bucket(
+        &self,
+        device_id: Uuid,
+        bucket_number: i32,
+    ) -> Result<(), DatabaseError> {
+        self.inner
+            .lock()
+            .await
+            .buckets
+            .insert(device_id, bucket_number);
+        Ok(())
+    }
+
+    async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError> {
+        self.inner
+            .lock()
+            .await
+            .buckets
+            .get(&device_id)
+            .cloned()
+            .ok_or(DatabaseError::NoDataFound)
+    }
+
+    async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError> {
+        self.inner.lock().await.buckets.remove(&device_id);
+        Ok(())
+    }
+
+    // schedule connection
+    async fn schedule_connection(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+        job_id: Uuid,
+    ) -> Result<(), DatabaseError> {
+        let mut lock = self.inner.lock().await;
+        lock.scheduled_connections.remove(&device_id);
+        lock.scheduled_connections
+            .insert(device_id, (timestamp, job_id));
+        Ok(())
+    }
+
+    async fn get_scheduled_connections(&self) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError> {
         Ok(self
             .inner
             .lock()
             .await
-            .connections
+            .scheduled_connections
             .iter()
-            .filter(|&c| c.status == ConnectionStatus::Active)
-            .cloned()
+            .map(|(&device_id, &(time, _job_id))| (device_id, time))
             .collect())
-    }
-
-    async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        self.inner.lock().await.connections.push(connection.clone());
-        Ok(())
-    }
-
-    async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError> {
-        let lock = self.inner.lock().await;
-
-        let results: Vec<&Connection> = lock
-            .connections
-            .iter()
-            .filter(|c| c.device_id == device_id)
-            .collect();
-
-        if results.is_empty() {
-            return Err(DatabaseError::NoDataFound);
-        } else if results.len() > 1 {
-            return Err(DatabaseError::TooManyRows);
-        }
-
-        Ok(results[0].clone())
-    }
-
-    async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        let mut guard = self.inner.lock().await;
-
-        if let Some(pos) = guard
-            .connections
-            .iter()
-            .position(|c| c.device_id == connection.device_id)
-        {
-            guard.connections[pos] = connection.clone();
-        } else {
-            return Err(DatabaseError::NoDataFound);
-        }
-
-        Ok(())
     }
 }
 

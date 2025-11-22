@@ -8,16 +8,16 @@ pub struct Device {
     pub ipv4: Option<String>,
     pub ipv6: Option<String>,
     pub mac: Option<String>,
-    pub factory_id: Option<i32>,
-    pub batch_id: Option<i32>,
+    pub factory_id: Option<i64>,
+    pub batch_id: Option<i64>,
 }
 
 impl Device {
     pub fn new(
         socket: SocketAddr,
         mac: Option<String>,
-        factory_id: Option<i32>,
-        batch_id: Option<i32>,
+        factory_id: Option<i64>,
+        batch_id: Option<i64>,
     ) -> Self {
         let (ipv4, ipv6) = match socket {
             SocketAddr::V4(_) => (Some(socket.ip().to_string()), None),

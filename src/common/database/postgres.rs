@@ -1,13 +1,15 @@
+use std::collections::HashMap;
+
 use chrono::NaiveDateTime;
 use sqlx::Pool;
 use sqlx::Postgres;
+use sqlx::Row;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::query_as;
 use sqlx::query_scalar;
 use tracing::error;
 use uuid::Uuid;
 
-use crate::connection::Connection;
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
 use crate::device::Device;
@@ -108,9 +110,9 @@ impl Engine for PostgresDB {
     }
 
     async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError> {
-        let query = "UPDATE T_DEVICE 
+        let query = "UPDATE T_DEVICES
         SET IPv4 = $2, IPv6 = $3, MAC = $4, factory_id = $5, batch_id = $6
-        WHERE device_id = $1";
+        WHERE id = $1";
 
         sqlx::query(query)
             .bind(device.id)
@@ -241,98 +243,148 @@ impl Engine for PostgresDB {
         Ok(true)
     }
 
-    // others fns
-    async fn get_active_connections(&self) -> Result<Vec<Connection>, DatabaseError> {
-        let query = "SELECT device_id, ip, bucket, last_connection, next_wakeup, status 
-                     FROM T_ACTIVE_CONNECTIONS 
-                     WHERE status = 'active'";
+    // buckets
+    async fn get_bucket_with_less_devices(&self, total_buckets: i32) -> Result<i32, DatabaseError> {
+        let query = r#"
+            SELECT bucket, COUNT(*) as count FROM T_BUCKETS GROUP BY bucket
+        "#;
 
-        Ok(sqlx::query_as::<_, Connection>(query)
+        let rows = sqlx::query(query)
             .fetch_all(&self.pool)
             .await
-            .unwrap_or_else(|e| {
-                error!("Error fetching active connections: {e}");
-                vec![]
-            }))
-    }
-
-    async fn add_new_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        let query = "INSERT INTO T_ACTIVE_CONNECTIONS (device_id, ip, bucket, last_connection, next_wakeup, status) 
-                     VALUES ($1, $2, $3, $4, $5, $6)";
-
-        sqlx::query(query)
-            .bind(connection.device_id)
-            .bind(connection.ip.clone())
-            .bind(connection.bucket)
-            .bind(connection.last_connection)
-            .bind(connection.next_wakeup)
-            .bind(connection.status.clone())
-            .execute(&self.pool)
-            .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
-        Ok(())
-    }
+        let bucket_counts: HashMap<i32, i64> = rows
+            .into_iter()
+            .map(|row| {
+                let bucket: i32 = row
+                    .try_get("bucket")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let count: i64 = row
+                    .try_get("count")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                Ok((bucket, count))
+            })
+            .collect::<Result<HashMap<_, _>, DatabaseError>>()?;
 
-    async fn get_connection_data(&self, device_id: Uuid) -> Result<Connection, DatabaseError> {
-        let query_count = r#"
-            SELECT COUNT(*) 
-            FROM T_ACTIVE_CONNECTIONS 
-            WHERE device_id = $1
-        "#;
-
-        let count: i64 = query_scalar(query_count)
-            .bind(device_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| {
-                error!("Error counting connections for device {}: {}", device_id, e);
-                DatabaseError::QueryError(e.to_string())
-            })?;
-
-        if count < 1 {
-            return Err(DatabaseError::NoDataFound);
-        } else if count > 1 {
-            return Err(DatabaseError::TooManyRows);
+        let mut min_count = i64::MAX;
+        let mut min_bucket = 1;
+        for bucket in 0..total_buckets {
+            let count = *bucket_counts.get(&bucket).unwrap_or(&0);
+            if count < min_count {
+                min_count = count;
+                min_bucket = bucket;
+            } else if count == min_count && bucket < min_bucket {
+                min_bucket = bucket;
+            }
         }
 
-        let query = r#"
-            SELECT device_id, ip, bucket, last_connection, next_wakeup, status 
-            FROM T_ACTIVE_CONNECTIONS 
-            WHERE device_id = $1
-        "#;
+        if min_count == i64::MAX {
+            return Ok(0);
+        }
 
-        let connection = query_as::<_, Connection>(query)
-            .bind(device_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| {
-                error!(
-                    "Error fetching connection data for device {}: {}",
-                    device_id, e
-                );
-                DatabaseError::QueryError(e.to_string())
-            })?;
-
-        Ok(connection)
+        Ok(min_bucket)
     }
 
-    async fn update_connection(&self, connection: &Connection) -> Result<(), DatabaseError> {
-        let query = "UPDATE T_ACTIVE_CONNECTIONS 
-        SET ip = $2, bucket = $3, last_connection = $4, next_wakeup = $5, status = $6
-        WHERE device_id = $1";
+    async fn add_device_to_bucket(
+        &self,
+        device_id: Uuid,
+        bucket_number: i32,
+    ) -> Result<(), DatabaseError> {
+        let query = "DELETE FROM T_BUCKETS WHERE FK_DEVICE = $1";
 
         sqlx::query(query)
-            .bind(connection.device_id)
-            .bind(connection.ip.clone())
-            .bind(connection.bucket)
-            .bind(connection.last_connection)
-            .bind(connection.next_wakeup)
-            .bind(connection.status.clone())
+            .bind(device_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let query = "INSERT INTO T_BUCKETS
+                    (fk_device, bucket) 
+                    VALUES ($1, $2)";
+
+        sqlx::query(query)
+            .bind(device_id)
+            .bind(bucket_number)
             .execute(&self.pool)
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         Ok(())
+    }
+
+    async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError> {
+        let query = "SELECT bucket FROM T_BUCKETS
+            WHERE fk_device = $1";
+
+        let bucket = sqlx::query_scalar(query)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(bucket)
+    }
+
+    async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError> {
+        let query = "DELETE FROM T_BUCKETS WHERE FK_DEVICE = $1";
+
+        sqlx::query(query)
+            .bind(device_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+        Ok(())
+    }
+
+    // schedule connection
+    async fn schedule_connection(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+        job_id: Uuid,
+    ) -> Result<(), DatabaseError> {
+        let query = "INSERT INTO T_SCHEDULED_CONNECTIONS
+                    (fk_device, schedule_time, connection_time, status, job_id) 
+                    VALUES ($1, $2, NULL, 'awaiting', $3)";
+
+        sqlx::query(query)
+            .bind(device_id)
+            .bind(timestamp)
+            .bind(job_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_scheduled_connections(&self) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError> {
+        let query = r#"
+            SELECT fk_device, schedule_time
+            FROM T_SCHEDULED_CONNECTIONS
+            WHERE status = 'awaiting'
+            ORDER BY schedule_time ASC
+        "#;
+
+        let rows = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let scheduled = rows
+            .into_iter()
+            .map(|row| {
+                let device_id: Uuid = row
+                    .try_get("fk_device")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let schedule_time: NaiveDateTime = row
+                    .try_get("schedule_time")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                Ok((device_id, schedule_time))
+            })
+            .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+        Ok(scheduled)
     }
 }

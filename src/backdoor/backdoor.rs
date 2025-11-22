@@ -154,18 +154,13 @@ async fn handle_backdoor_ack_msg(
     socket_addr: SocketAddr,
     database: Database,
 ) -> Result<(), BackdoorError> {
-    let connection = scheduler
-        .lock()
-        .await
-        .database
-        .get_connection_data(Uuid::from_u128(msg.device_id))
-        .await?;
+    let device = database.get_device(Uuid::from_u128(msg.device_id)).await?;
 
-    if Some(socket_addr.ip().to_string()) != connection.ip {
+    if Some(socket_addr.ip().to_string()) != device.ipv4 {
         error!(
             "Invalid IP, expected {}, recvd {:?}",
             socket_addr.ip().to_string(),
-            connection.ip
+            device.ipv4
         );
         return Err(BackdoorError::InvalidIp);
     }
@@ -174,13 +169,14 @@ async fn handle_backdoor_ack_msg(
         .ok_or(BackdoorError::InvalidTimeStamp)?
         .naive_utc();
 
-    database
-        .registration_ack(Uuid::from_u128(msg.device_id), timestamp)
-        .await?;
+    database.registration_ack(device.id, timestamp).await?;
 
     info!("Adding new connection, device_id: {:#x}", msg.device_id);
-    let mut scheduler_lock = scheduler.lock().await;
-    scheduler_lock.start_task(connection).await?;
+    scheduler
+        .lock()
+        .await
+        .schedule_wakeup_job(device.id)
+        .await?;
 
     Ok(())
 }
