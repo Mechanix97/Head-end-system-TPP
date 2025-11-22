@@ -110,9 +110,9 @@ impl Engine for PostgresDB {
     }
 
     async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError> {
-        let query = "UPDATE T_DEVICE 
+        let query = "UPDATE T_DEVICES
         SET IPv4 = $2, IPv6 = $3, MAC = $4, factory_id = $5, batch_id = $6
-        WHERE device_id = $1";
+        WHERE id = $1";
 
         sqlx::query(query)
             .bind(device.id)
@@ -360,6 +360,31 @@ impl Engine for PostgresDB {
     }
 
     async fn get_scheduled_connections(&self) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError> {
-        Ok(vec![])
+        let query = r#"
+            SELECT fk_device, schedule_time
+            FROM T_SCHEDULED_CONNECTIONS
+            WHERE status = 'awaiting'
+            ORDER BY schedule_time ASC
+        "#;
+
+        let rows = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let scheduled = rows
+            .into_iter()
+            .map(|row| {
+                let device_id: Uuid = row
+                    .try_get("fk_device")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let schedule_time: NaiveDateTime = row
+                    .try_get("schedule_time")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                Ok((device_id, schedule_time))
+            })
+            .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+        Ok(scheduled)
     }
 }
