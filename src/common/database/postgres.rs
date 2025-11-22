@@ -15,11 +15,19 @@ use crate::database::api::Engine;
 use crate::device::Device;
 use crate::device::RegistrationStatus;
 
+/// PostgreSQL database implementation of the `Engine` trait.
+///
+/// Uses sqlx for async database operations with connection pooling.
+/// The database schema is defined in `init-db.sql` with tables for devices,
+/// registrations, buckets, and active connections.
 #[derive(Debug)]
 pub struct PostgresDB {
     pool: Pool<Postgres>,
 }
 
+/// Connection parameters for PostgreSQL database.
+///
+/// Used to build the connection string: `postgres://user:password@url:port/hes`
 pub struct PostgresConnectionArgs {
     pub user: String,
     pub password: String,
@@ -28,9 +36,17 @@ pub struct PostgresConnectionArgs {
 }
 
 impl PostgresDB {
+    /// Creates a new PostgreSQL database connection with a connection pool.
+    ///
+    /// The pool is configured with a maximum of 5 concurrent connections.
+    /// Connects to the `hes` database on the PostgreSQL server.
+    ///
+    /// # Errors
+    /// Returns an error if the database connection fails (wrong credentials, server down, etc.)
     pub async fn new(args: PostgresConnectionArgs) -> Result<Self, DatabaseError> {
         Ok(Self {
             pool: PgPoolOptions::new()
+                // TODO: Make max_connections configurable instead of hardcoding 5
                 .max_connections(5)
                 .connect(
                     format!(
@@ -67,9 +83,11 @@ impl Engine for PostgresDB {
     }
 
     async fn get_device(&self, device_id: Uuid) -> Result<Device, DatabaseError> {
+        // TODO: Optimize this - we're doing COUNT + SELECT which is inefficient.
+        // Instead, we could just try to fetch the device and handle the error cases.
         let query_count = r#"
-            SELECT COUNT(*) 
-            FROM T_DEVICES 
+            SELECT COUNT(*)
+            FROM T_DEVICES
             WHERE id = $1
         "#;
 
@@ -90,7 +108,7 @@ impl Engine for PostgresDB {
 
         let query = r#"
             SELECT id, IPv4, IPv6, MAC, factory_id, batch_id
-            FROM T_DEVICES 
+            FROM T_DEVICES
             WHERE id = $1
         "#;
 
@@ -243,7 +261,18 @@ impl Engine for PostgresDB {
         Ok(true)
     }
 
-    // buckets
+    // ========== Bucket management ==========
+
+    /// Finds the bucket with the fewest assigned devices for load balancing.
+    ///
+    /// This implements the time-bucket load balancing algorithm:
+    /// 1. Query the database to count devices in each bucket
+    /// 2. Find the bucket with the minimum device count
+    /// 3. If multiple buckets have the same minimum count, pick the lowest-numbered one
+    /// 4. If no buckets exist yet, return bucket 0
+    ///
+    /// The goal is to evenly distribute devices across time slots throughout the day
+    /// to avoid network congestion when many devices wake up simultaneously.
     async fn get_bucket_with_less_devices(&self, total_buckets: i32) -> Result<i32, DatabaseError> {
         let query = r#"
             SELECT bucket, COUNT(*) as count FROM T_BUCKETS GROUP BY bucket
@@ -254,6 +283,7 @@ impl Engine for PostgresDB {
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
+        // Build a map of bucket number → device count
         let bucket_counts: HashMap<i32, i64> = rows
             .into_iter()
             .map(|row| {
@@ -267,6 +297,7 @@ impl Engine for PostgresDB {
             })
             .collect::<Result<HashMap<_, _>, DatabaseError>>()?;
 
+        // Find the bucket with the minimum count
         let mut min_count = i64::MAX;
         let mut min_bucket = 1;
         for bucket in 0..total_buckets {
@@ -275,10 +306,12 @@ impl Engine for PostgresDB {
                 min_count = count;
                 min_bucket = bucket;
             } else if count == min_count && bucket < min_bucket {
+                // Tie-breaker: prefer lower bucket number
                 min_bucket = bucket;
             }
         }
 
+        // If no buckets have been created yet, start with bucket 0
         if min_count == i64::MAX {
             return Ok(0);
         }
