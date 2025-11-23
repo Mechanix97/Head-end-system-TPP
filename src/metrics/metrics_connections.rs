@@ -92,16 +92,10 @@ impl MetricsConns {
     /// connections_tracker{type="new_connection"} 42
     /// ```
     pub fn gather_metrics(&self) -> Result<String, MetricsError> {
-        let r = Registry::new();
-
-        r.register(Box::new(self.connections_tracker.clone()))
-            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-
-        r.register(Box::new(self.registration_ack_duration_seconds.clone()))
-            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-
+        // Use the global registry that contains all registered metrics
+        // This ensures metrics that were updated via .observe() are included in the output
         let encoder = TextEncoder::new();
-        let metric_families = r.gather();
+        let metric_families = PROMETHEUS_REGISTRY.gather();
 
         let mut buffer = Vec::new();
         encoder
