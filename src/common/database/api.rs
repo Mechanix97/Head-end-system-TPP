@@ -78,11 +78,12 @@ impl Database {
     /// Marks a device registration as acknowledged.
     ///
     /// Called when the device successfully receives and ACKs the registration response.
+    /// Returns the duration in seconds between registration request and ACK.
     pub async fn registration_ack(
         &self,
         device_id: Uuid,
         timestamp: NaiveDateTime,
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<f64, DatabaseError> {
         self.engine.registration_ack(device_id, timestamp).await
     }
 
@@ -185,7 +186,7 @@ pub trait Engine: Debug + Send + Sync {
         &self,
         device_id: Uuid,
         timestamp: NaiveDateTime,
-    ) -> Result<(), DatabaseError>;
+    ) -> Result<f64, DatabaseError>;
 
     /// Checks if registration has timed out and updates status if needed.
     ///
