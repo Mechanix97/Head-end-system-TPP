@@ -37,6 +37,13 @@ impl Decoder for MessageCodec {
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         // Wait for at least minimum message size
         if buf.len() < MIN_MSG_LEN {
+            // In UDP, each packet is complete. If the message is too short,
+            // it's malformed and won't receive more data. Discard it.
+            if !buf.is_empty() {
+                buf.clear();
+
+                return Err(MsgCodecError::InvalidLength);
+            }
             return Ok(None);
         }
 
@@ -52,13 +59,23 @@ impl Decoder for MessageCodec {
         // After extracting the header (30 bytes), buf.len() now represents only
         // the remaining data (payload + MAC), so we should calculate differently.
         // See todo-hes.md issue #2 for details.
-        let payload_len = buf.len() - MAC_SIZE;
+
+        // Prevent integer underflow: ensure we have at least MAC_SIZE bytes remaining
+        let payload_len = buf.len().checked_sub(MAC_SIZE).ok_or_else(|| {
+            buf.clear();
+            MsgCodecError::InvalidLength
+        })?;
+
         let payload_data = buf.split_to(payload_len).freeze();
         let mac = buf.get_u128();
 
         // Decode message type and payload
-        let msg_type = MsgType::from_code(msg_type_code)?;
-        let payload = MessagePayload::decode(msg_type_code, &payload_data)?;
+        let msg_type = MsgType::from_code(msg_type_code).inspect_err(|_| {
+            buf.clear();
+        })?;
+        let payload = MessagePayload::decode(msg_type_code, &payload_data).inspect_err(|_| {
+            buf.clear();
+        })?;
 
         Ok(Some(Message {
             version,
@@ -100,5 +117,93 @@ impl Encoder<Message> for MessageCodec {
         buf.put_u128(item.mac);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::BufMut;
+
+    // This test simulates the scenario where encoder skips msg_type byte (line 110)
+    // The decoder should discard the message and return an error instead of looping
+    #[test]
+    fn test_malformed_message_is_discarded() {
+        let mut codec = MessageCodec;
+        let mut buffer = BytesMut::new();
+
+        // Manually create a malformed message (45 bytes instead of 46)
+        // Missing the msg_type byte
+        buffer.put_u8(1); // version
+        // SKIP msg_type (simulating commented line 110)
+        buffer.put_u128(0); // device_id
+        buffer.put_u32(0); // seq
+        buffer.put_u64(1234567890); // timestamp
+        buffer.put_u128(0); // mac
+
+        assert_eq!(buffer.len(), 45); // Should be 45 bytes (missing 1 byte)
+
+        // Try to decode - should return error and clear buffer
+        let result = codec.decode(&mut buffer);
+
+        // Should return error
+        assert!(result.is_err());
+
+        // Buffer should be cleared to prevent infinite loop
+        assert_eq!(
+            buffer.len(),
+            0,
+            "Buffer should be cleared after detecting malformed message"
+        );
+    }
+
+    // Test that messages causing integer underflow are handled correctly
+    #[test]
+    fn test_message_with_underflow_is_discarded() {
+        let mut codec = MessageCodec;
+        let mut buffer = BytesMut::new();
+
+        // Create a message with valid header but not enough bytes for MAC
+        buffer.put_u8(1); // version
+        buffer.put_u8(0x02); // msg_type (RegisterRequest)
+        buffer.put_u128(0); // device_id
+        buffer.put_u32(0); // seq
+        buffer.put_u64(1234567890); // timestamp
+        // SKIP payload
+        // SKIP MAC (only put 10 bytes instead of 16)
+        buffer.put_u64(0);
+        buffer.put_u16(0);
+
+        assert_eq!(buffer.len(), 40); // 30 header + 10 partial MAC
+
+        // Try to decode
+        let result = codec.decode(&mut buffer);
+
+        // Should return error due to underflow
+        assert!(result.is_err());
+
+        // Buffer should be cleared
+        assert_eq!(buffer.len(), 0);
+    }
+
+    // Test that valid messages still work correctly
+    #[test]
+    fn test_valid_message_decodes_successfully() {
+        let mut codec = MessageCodec;
+        let mut encode_buffer = BytesMut::new();
+
+        // Create a valid message using the encoder
+        let msg = crate::messages::message::Message::new_register_request_message()
+            .expect("Failed to create message");
+
+        codec
+            .encode(msg, &mut encode_buffer)
+            .expect("Failed to encode message");
+
+        let result = codec.decode(&mut encode_buffer);
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_some());
+        assert_eq!(encode_buffer.len(), 0);
     }
 }
