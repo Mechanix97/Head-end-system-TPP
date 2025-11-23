@@ -179,11 +179,11 @@ impl Engine for PostgresDB {
         &self,
         device_id: Uuid,
         timestamp: NaiveDateTime,
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<f64, DatabaseError> {
         let query_count = r#"
-            SELECT COUNT(*) 
-            FROM T_DEVICE_REGISTRATION 
-            WHERE fk_device = $1 
+            SELECT COUNT(*)
+            FROM T_DEVICE_REGISTRATION
+            WHERE fk_device = $1
             AND "registration_status" = 'pending_ack'
         "#;
 
@@ -202,20 +202,25 @@ impl Engine for PostgresDB {
             return Err(DatabaseError::TooManyRows);
         }
 
-        let query = r#"UPDATE T_DEVICE_REGISTRATION 
-        SET registration_status = 'registered', 
-        registration_time = $2
-        WHERE fk_device = $1 
-            AND registration_status = 'pending_ack'"#;
+        // Update registration and calculate duration in a single query
+        // EXTRACT(EPOCH FROM ...) returns duration in seconds as f64
+        let query = r#"
+            UPDATE T_DEVICE_REGISTRATION
+            SET registration_status = 'registered',
+                registration_time = $2
+            WHERE fk_device = $1
+              AND registration_status = 'pending_ack'
+            RETURNING EXTRACT(EPOCH FROM ($2 - registration_time))::DOUBLE PRECISION
+        "#;
 
-        sqlx::query(query)
+        let duration_seconds: f64 = query_scalar(query)
             .bind(device_id)
             .bind(timestamp)
-            .execute(&self.pool)
+            .fetch_one(&self.pool)
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
-        Ok(())
+        Ok(duration_seconds)
     }
 
     async fn registration_timeout(

@@ -21,6 +21,7 @@ use common::device::Device;
 use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
 use common::messages::message::MsgType;
+use metrics::metrics_connections::METRICS_CONNECTIONS;
 use scheduler::scheduler::Scheduler;
 
 const ACK_TIMEOUT_DURATION_MS: u64 = 300000;
@@ -173,9 +174,19 @@ async fn handle_backdoor_ack_msg(
         .ok_or(BackdoorError::InvalidTimeStamp)?
         .naive_utc();
 
-    database.registration_ack(device.id, timestamp).await?;
+    // Record ACK and get registration duration in seconds
+    let duration_seconds = database.registration_ack(device.id, timestamp).await?;
 
-    info!("Adding new connection, device_id: {:#x}", msg.device_id);
+    // Report metrics
+    METRICS_CONNECTIONS
+        .registration_ack_duration_seconds
+        .with_label_values(&["success"])
+        .observe(duration_seconds);
+
+    info!(
+        "Adding new connection, device_id: {:#x}, registration_duration: {:.3}s",
+        msg.device_id, duration_seconds
+    );
     scheduler
         .lock()
         .await
