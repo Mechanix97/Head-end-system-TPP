@@ -3,6 +3,11 @@ use std::sync::LazyLock;
 
 use crate::MetricsError;
 
+/// Global shared Prometheus Registry for all metrics.
+/// This must be used when both registering AND gathering metrics to ensure
+/// the same registry instance is used throughout the application lifecycle.
+static PROMETHEUS_REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
+
 /// Global singleton instance of connection metrics.
 ///
 /// This uses `LazyLock` to initialize the metrics registry lazily on first access.
