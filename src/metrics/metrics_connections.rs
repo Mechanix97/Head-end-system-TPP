@@ -65,6 +65,15 @@ impl MetricsConns {
         )
         .expect("Invalid Prometheus histogram");
 
+        // Register both metrics in the global registry so they are included in /metrics endpoint
+        PROMETHEUS_REGISTRY
+            .register(Box::new(connections_tracker.clone()))
+            .expect("Failed to register connections_tracker");
+
+        PROMETHEUS_REGISTRY
+            .register(Box::new(registration_ack_duration_seconds.clone()))
+            .expect("Failed to register registration_ack_duration_seconds");
+
         MetricsConns {
             connections_tracker,
             registration_ack_duration_seconds,
