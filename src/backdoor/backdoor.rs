@@ -1,5 +1,4 @@
 use bytes::BytesMut;
-use chrono::DateTime;
 use chrono::Utc;
 use common::database::api::Database;
 use futures::sink::SinkExt;
@@ -123,10 +122,10 @@ async fn handle_backdoor_register_msg(
 
     scheduler.lock().await.register_device(&device).await?;
 
-    let timestamp = DateTime::from_timestamp(msg.timestamp as i64, 0)
-        .ok_or(BackdoorError::InvalidTimeStamp)?
-        .naive_utc();
-    database.register_device(device.id, timestamp).await?;
+    // Use HES server time (not device message timestamp) for accurate latency metrics
+    // This ensures we measure real network + processing latency from HES perspective
+    let hes_timestamp = Utc::now().naive_utc();
+    database.register_device(device.id, hes_timestamp).await?;
 
     let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
     if let Err(err) = (*framed).send((response, socket_addr)).await {
@@ -170,12 +169,11 @@ async fn handle_backdoor_ack_msg(
         return Err(BackdoorError::InvalidIp);
     }
 
-    let timestamp = DateTime::from_timestamp(msg.timestamp as i64, 0)
-        .ok_or(BackdoorError::InvalidTimeStamp)?
-        .naive_utc();
+    // Use HES server time (not device message timestamp) for accurate latency metrics
+    let hes_timestamp = Utc::now().naive_utc();
 
-    // Record ACK and get registration duration in seconds
-    let duration_seconds = database.registration_ack(device.id, timestamp).await?;
+    // Record ACK and get registration duration in seconds (measured by HES clock)
+    let duration_seconds = database.registration_ack(device.id, hes_timestamp).await?;
 
     // Report metrics
     METRICS_CONNECTIONS

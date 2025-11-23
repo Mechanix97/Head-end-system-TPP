@@ -87,12 +87,14 @@ impl Engine for InMemoryDB {
             return Err(DatabaseError::RegistrationError);
         }
 
-        // Calculate duration in seconds before updating
+        // Calculate duration in seconds
+        // timestamp = ACK timestamp, element.1 = original REGISTER_REQUEST timestamp
         let registration_time = element.1;
         let duration = timestamp.signed_duration_since(registration_time);
         let duration_seconds = duration.num_milliseconds() as f64 / 1000.0;
 
-        *element = (RegistrationStatus::Registered, timestamp);
+        // Update status but keep original registration_time
+        *element = (RegistrationStatus::Registered, registration_time);
         Ok(duration_seconds)
     }
 

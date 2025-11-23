@@ -202,12 +202,14 @@ impl Engine for PostgresDB {
             return Err(DatabaseError::TooManyRows);
         }
 
-        // Update registration and calculate duration in a single query
+        // Update registration status and calculate duration in a single query
+        // IMPORTANT: We don't update registration_time here - it should remain as the original
+        // REGISTER_REQUEST timestamp. We calculate duration using the ACK timestamp ($2)
+        // minus the original registration_time.
         // EXTRACT(EPOCH FROM ...) returns duration in seconds as f64
         let query = r#"
             UPDATE T_DEVICE_REGISTRATION
-            SET registration_status = 'registered',
-                registration_time = $2
+            SET registration_status = 'registered'
             WHERE fk_device = $1
               AND registration_status = 'pending_ack'
             RETURNING EXTRACT(EPOCH FROM ($2 - registration_time))::DOUBLE PRECISION
