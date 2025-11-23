@@ -70,13 +70,11 @@ impl Decoder for MessageCodec {
         let mac = buf.get_u128();
 
         // Decode message type and payload
-        let msg_type = MsgType::from_code(msg_type_code).map_err(|e| {
+        let msg_type = MsgType::from_code(msg_type_code).inspect_err(|_| {
             buf.clear();
-            e
         })?;
-        let payload = MessagePayload::decode(msg_type_code, &payload_data).map_err(|e| {
+        let payload = MessagePayload::decode(msg_type_code, &payload_data).inspect_err(|_| {
             buf.clear();
-            e
         })?;
 
         Ok(Some(Message {
