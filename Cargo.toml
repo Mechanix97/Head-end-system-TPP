@@ -5,6 +5,7 @@ members = [
     "src/common",
     "src/metrics",
     "tools/mock_registry",
+    "tools/malformed_registry",
 ]
 resolver = "2"
 

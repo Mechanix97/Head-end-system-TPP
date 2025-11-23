@@ -48,10 +48,14 @@ pub async fn init_backdoor(
                 continue;
             };
 
-            let Ok((msg, socket_addr)) = frame else {
-                warn!("Invalid codec conversion");
-                continue;
+            let (msg, socket_addr) = match frame {
+                Ok((msg, socket_addr)) => (msg, socket_addr),
+                Err(e) => {
+                    warn!("Invalid codec conversion: {e}");
+                    continue;
+                }
             };
+
             match msg.msg_type {
                 MsgType::RegisterRequest => {
                     info!("RegisterRequest received");
