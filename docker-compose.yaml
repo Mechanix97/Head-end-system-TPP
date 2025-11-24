@@ -21,6 +21,9 @@ services:
     network_mode: host
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./metrics/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./metrics/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./metrics/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
     environment:
