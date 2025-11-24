@@ -4,6 +4,7 @@ use chrono::Utc;
 use common::database::api::Database;
 use futures::sink::SinkExt;
 use futures_util::stream::StreamExt;
+use metrics::metrics_connections::METRICS_CONNECTIONS;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -173,9 +174,26 @@ async fn handle_backdoor_ack_msg(
         .ok_or(BackdoorError::InvalidTimeStamp)?
         .naive_utc();
 
-    database.registration_ack(device.id, timestamp).await?;
+    // registration_ack returns the response time in seconds
+    let duration_seconds = database.registration_ack(device.id, timestamp).await?;
+    let duration_ms = duration_seconds * 1000.0;
 
-    info!("Adding new connection, device_id: {:#x}", msg.device_id);
+    // Update metrics
+    METRICS_CONNECTIONS.ack_response_time_avg_ms.set(duration_ms);
+
+    // If response time exceeded the timeout, increment the timeout counter
+    if duration_ms > ACK_TIMEOUT_DURATION_MS as f64 {
+        METRICS_CONNECTIONS.ack_timeout_count.inc();
+        info!(
+            "ACK timeout detected for device {:#x}: {:.2}ms (threshold: {}ms)",
+            msg.device_id, duration_ms, ACK_TIMEOUT_DURATION_MS
+        );
+    }
+
+    info!(
+        "Adding new connection, device_id: {:#x}, ACK response time: {:.2}ms",
+        msg.device_id, duration_ms
+    );
     scheduler
         .lock()
         .await

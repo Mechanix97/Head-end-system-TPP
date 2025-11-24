@@ -1,4 +1,4 @@
-use prometheus::{Encoder, IntCounterVec, Opts, Registry, TextEncoder};
+use prometheus::{Encoder, Gauge, IntCounter, IntCounterVec, Opts, Registry, TextEncoder};
 use std::sync::LazyLock;
 
 use crate::MetricsError;
@@ -12,12 +12,18 @@ pub static METRICS_CONNECTIONS: LazyLock<MetricsConns> = LazyLock::new(MetricsCo
 
 /// Prometheus metrics for tracking device connections.
 ///
-/// Currently tracks a single counter: `connections_tracker` with label "type"
-/// to differentiate between different connection events (e.g., "new_connection").
+/// Tracks:
+/// - `connections_tracker`: Counter for connection events (e.g., "new_connection")
+/// - `ack_response_time_avg_ms`: Gauge for average ACK response time in milliseconds
+/// - `ack_timeout_count`: Counter for ACKs that exceeded the timeout threshold
 #[derive(Debug, Clone)]
 pub struct MetricsConns {
     /// Counter for tracking connection events, labeled by event type
     pub connections_tracker: IntCounterVec,
+    /// Gauge for average ACK response time in milliseconds
+    pub ack_response_time_avg_ms: Gauge,
+    /// Counter for ACKs that exceeded the configured timeout
+    pub ack_timeout_count: IntCounter,
 }
 
 impl Default for MetricsConns {
@@ -29,8 +35,10 @@ impl Default for MetricsConns {
 impl MetricsConns {
     /// Creates a new metrics collector with default counters initialized.
     ///
-    /// Registers the "connections_tracker" metric and initializes it with
-    /// a "new_connection" label set to 0.
+    /// Registers:
+    /// - "connections_tracker" counter with "new_connection" label
+    /// - "ack_response_time_avg_ms" gauge for average ACK response time
+    /// - "ack_timeout_count" counter for timeouts
     pub fn new() -> Self {
         let connections_tracker = IntCounterVec::new(
             Opts::new("connections_tracker", "Keeps track of all connections"),
@@ -43,8 +51,22 @@ impl MetricsConns {
             .with_label_values(&["new_connection"])
             .inc_by(0);
 
+        let ack_response_time_avg_ms = Gauge::new(
+            "ack_response_time_avg_ms",
+            "Average ACK response time in milliseconds",
+        )
+        .expect("Invalid Prometheus gauge");
+
+        let ack_timeout_count = IntCounter::new(
+            "ack_timeout_count",
+            "Count of ACKs that exceeded the timeout threshold",
+        )
+        .expect("Invalid Prometheus counter");
+
         MetricsConns {
             connections_tracker,
+            ack_response_time_avg_ms,
+            ack_timeout_count,
         }
     }
 
@@ -63,6 +85,12 @@ impl MetricsConns {
         let r = Registry::new();
 
         r.register(Box::new(self.connections_tracker.clone()))
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+
+        r.register(Box::new(self.ack_response_time_avg_ms.clone()))
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+
+        r.register(Box::new(self.ack_timeout_count.clone()))
             .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let encoder = TextEncoder::new();

@@ -76,7 +76,7 @@ impl Engine for InMemoryDB {
         &self,
         device_id: Uuid,
         timestamp: NaiveDateTime,
-    ) -> Result<(), DatabaseError> {
+    ) -> Result<f64, DatabaseError> {
         let mut lock = self.inner.lock().await;
 
         let element = lock
@@ -86,8 +86,16 @@ impl Engine for InMemoryDB {
         if element.0 != RegistrationStatus::PendingAck {
             return Err(DatabaseError::RegistrationError);
         }
-        *element = (RegistrationStatus::Registered, timestamp);
-        Ok(())
+
+        // Calculate duration in seconds
+        // timestamp = ACK timestamp, element.1 = original REGISTER_REQUEST timestamp
+        let registration_time = element.1;
+        let duration = timestamp.signed_duration_since(registration_time);
+        let duration_seconds = duration.num_milliseconds() as f64 / 1000.0;
+
+        // Update status but keep original registration_time
+        *element = (RegistrationStatus::Registered, registration_time);
+        Ok(duration_seconds)
     }
 
     async fn registration_timeout(
