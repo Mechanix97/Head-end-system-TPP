@@ -1,4 +1,3 @@
-use bytes::BytesMut;
 use chrono::DateTime;
 use chrono::Utc;
 use common::database::api::Database;
@@ -12,7 +11,6 @@ use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tokio_util::codec::Encoder;
 use tokio_util::udp::UdpFramed;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -118,17 +116,17 @@ async fn handle_backdoor_register_msg(
         return Err(BackdoorError::RegisterRequestInvalidId);
     }
 
+    // TODO: get info from payload
     let device = Device::new(socket_addr, None, None, None);
-    database.add_device(&device).await?;
-
-    scheduler.lock().await.register_device(&device).await?;
-
     // Convert milliseconds to seconds and nanoseconds
     let secs = (msg.timestamp / 1000) as i64;
     let nanos = ((msg.timestamp % 1000) * 1_000_000) as u32;
     let timestamp = DateTime::from_timestamp(secs, nanos)
         .ok_or(BackdoorError::InvalidTimeStamp)?
         .naive_utc();
+
+    database.add_device(&device).await?;
+    scheduler.lock().await.register_device(&device).await?;
     database.register_device(device.id, timestamp).await?;
 
     let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
@@ -137,18 +135,6 @@ async fn handle_backdoor_register_msg(
     }
 
     spawn_ack_timeout_task(database.clone(), ack_timeout_duration, device.id);
-
-    // TEMPORARY.
-    // REMOVE LATER
-    let ack_msg = Message::new_ack_message(device.id.as_u128(), 3)?;
-    let mut buffer: BytesMut = BytesMut::new();
-    let mut codec = MessageCodec;
-    codec
-        .encode(ack_msg, &mut buffer)
-        .expect("Error encoding msg");
-    info!("ACK Message expected: {}", hex::encode(&buffer));
-    // TEMPORARY.
-    // REMOVE LATER
 
     Ok(())
 }
@@ -180,28 +166,11 @@ async fn handle_backdoor_ack_msg(
         .ok_or(BackdoorError::InvalidTimeStamp)?
         .naive_utc();
 
-    // registration_ack returns the response time in seconds
-    let duration_seconds = database.registration_ack(device.id, timestamp).await?;
-    let duration_ms = duration_seconds * 1000.0;
+    let duration_ms = database.registration_ack(device.id, timestamp).await? * 1000.0;
 
-    info!(
-        "ACK timing - device {:#x}: {:.6}s = {:.3}ms",
-        msg.device_id, duration_seconds, duration_ms
-    );
-
-    // Update metrics
     METRICS_CONNECTIONS
         .ack_response_time_avg_ms
         .set(duration_ms);
-
-    // If response time exceeded the timeout, increment the timeout counter
-    if duration_ms > ACK_TIMEOUT_DURATION_MS as f64 {
-        METRICS_CONNECTIONS.ack_timeout_count.inc();
-        info!(
-            "ACK timeout detected for device {:#x}: {:.2}ms (threshold: {}ms)",
-            msg.device_id, duration_ms, ACK_TIMEOUT_DURATION_MS
-        );
-    }
 
     info!(
         "Adding new connection, device_id: {:#x}, ACK response time: {:.2}ms",
@@ -224,6 +193,7 @@ fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_
             .await
         {
             Ok(true) => {
+                METRICS_CONNECTIONS.ack_timeout_count.inc();
                 info!("Ack from {} not received", device_id);
             }
             Err(e) => {

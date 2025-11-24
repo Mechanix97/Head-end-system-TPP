@@ -197,6 +197,24 @@ impl Engine for PostgresDB {
             })?;
 
         if count < 1 {
+            let query_count = r#"
+                SELECT COUNT(*)
+                FROM T_DEVICE_REGISTRATION
+                WHERE fk_device = $1
+                AND "registration_status" = 'ack_timeout'
+            "#;
+
+            let count: i64 = query_scalar(query_count)
+                .bind(device_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| {
+                    error!("Error counting connections for device {}: {}", device_id, e);
+                    DatabaseError::QueryError(e.to_string())
+                })?;
+            if count == 1 {
+                return Err(DatabaseError::AckTimeout);
+            }
             return Err(DatabaseError::NoDataFound);
         } else if count > 1 {
             return Err(DatabaseError::TooManyRows);
