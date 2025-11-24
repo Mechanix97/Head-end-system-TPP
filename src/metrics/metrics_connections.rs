@@ -1,5 +1,6 @@
 use prometheus::{Encoder, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder};
-use std::sync::LazyLock;
+use std::collections::VecDeque;
+use std::sync::{LazyLock, Mutex};
 
 use crate::MetricsError;
 
@@ -15,17 +16,23 @@ static PROMETHEUS_REGISTRY: LazyLock<Registry> = LazyLock::new(Registry::new);
 /// pass around a metrics handle.
 pub static METRICS_CONNECTIONS: LazyLock<MetricsConns> = LazyLock::new(MetricsConns::default);
 
+/// Maximum number of raw measurements to keep in memory for histogram visualization
+const RAW_MEASUREMENTS_BUFFER_SIZE: usize = 1000;
+
 /// Prometheus metrics for tracking device connections.
 ///
 /// Tracks:
 /// - `connections_tracker`: Counter for connection events (e.g., "new_connection")
 /// - `registration_ack_duration_seconds`: Histogram of time between REGISTER_REQUEST and ACK
-#[derive(Debug, Clone)]
+/// - `raw_ack_durations`: Ring buffer of last N individual measurements for Grafana histogram visualization
+#[derive(Debug)]
 pub struct MetricsConns {
     /// Counter for tracking connection events, labeled by event type
     pub connections_tracker: IntCounterVec,
     /// Histogram for tracking registration ACK response time in seconds
     pub registration_ack_duration_seconds: HistogramVec,
+    /// Raw measurements buffer for Grafana histogram visualization (last 1000 measurements)
+    raw_ack_durations: Mutex<VecDeque<f64>>,
 }
 
 impl Default for MetricsConns {
@@ -77,7 +84,31 @@ impl MetricsConns {
         MetricsConns {
             connections_tracker,
             registration_ack_duration_seconds,
+            raw_ack_durations: Mutex::new(VecDeque::with_capacity(RAW_MEASUREMENTS_BUFFER_SIZE)),
         }
+    }
+
+    /// Records a raw ACK duration measurement.
+    ///
+    /// This stores the individual measurement in a ring buffer for Grafana histogram visualization.
+    /// The buffer keeps the last 1000 measurements, automatically dropping oldest ones.
+    pub fn record_raw_ack_duration(&self, duration_seconds: f64) {
+        let mut buffer = self.raw_ack_durations.lock().expect("Mutex poisoned");
+
+        // If buffer is full, remove oldest measurement
+        if buffer.len() >= RAW_MEASUREMENTS_BUFFER_SIZE {
+            buffer.pop_front();
+        }
+
+        buffer.push_back(duration_seconds);
+    }
+
+    /// Returns all raw ACK duration measurements for Grafana histogram visualization.
+    ///
+    /// Returns a snapshot of the last N measurements (up to 1000).
+    pub fn get_raw_ack_durations(&self) -> Vec<f64> {
+        let buffer = self.raw_ack_durations.lock().expect("Mutex poisoned");
+        buffer.iter().copied().collect()
     }
 
     /// Gathers all metrics and encodes them in Prometheus text format.

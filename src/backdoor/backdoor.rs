@@ -181,6 +181,9 @@ async fn handle_backdoor_ack_msg(
         .with_label_values(&["success"])
         .observe(duration_seconds);
 
+    // Store raw measurement for Grafana histogram visualization
+    METRICS_CONNECTIONS.record_raw_ack_duration(duration_seconds);
+
     info!(
         "Adding new connection, device_id: {:#x}, registration_duration: {:.3}s",
         msg.device_id, duration_seconds
