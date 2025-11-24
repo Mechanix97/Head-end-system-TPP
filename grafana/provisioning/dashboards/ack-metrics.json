@@ -1,0 +1,141 @@
+{
+  "dashboard": {
+    "title": "Registration ACK Metrics",
+    "tags": ["hes", "metrics", "ack"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "5s",
+    "panels": [
+      {
+        "id": 1,
+        "type": "stat",
+        "title": "Summary Statistics",
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 24,
+          "h": 4
+        },
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "HES Raw Metrics"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "type": "json",
+            "source": "url",
+            "format": "table",
+            "url": "/metrics/raw",
+            "method": "GET",
+            "root_selector": "measurements"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "reduce",
+            "options": {
+              "reducers": ["mean", "min", "max", "count"]
+            }
+          }
+        ],
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["mean", "min", "max", "count"]
+          },
+          "orientation": "horizontal",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "decimals": 3
+          }
+        }
+      },
+      {
+        "id": 2,
+        "type": "histogram",
+        "title": "ACK Duration Distribution (Last 1000)",
+        "gridPos": {
+          "x": 0,
+          "y": 4,
+          "w": 16,
+          "h": 8
+        },
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "HES Raw Metrics"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "type": "json",
+            "source": "url",
+            "format": "table",
+            "url": "/metrics/raw",
+            "method": "GET",
+            "root_selector": "measurements"
+          }
+        ],
+        "options": {
+          "bucketOffset": 0,
+          "bucketSize": 0.05
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 3,
+        "type": "timeseries",
+        "title": "Prometheus Percentiles (p50, p95, p99)",
+        "gridPos": {
+          "x": 16,
+          "y": 4,
+          "w": 8,
+          "h": 8
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "Prometheus"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "histogram_quantile(0.5, rate(registration_ack_duration_seconds_bucket[5m]))",
+            "legendFormat": "p50"
+          },
+          {
+            "refId": "B",
+            "expr": "histogram_quantile(0.95, rate(registration_ack_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95"
+          },
+          {
+            "refId": "C",
+            "expr": "histogram_quantile(0.99, rate(registration_ack_duration_seconds_bucket[5m]))",
+            "legendFormat": "p99"
+          },
+          {
+            "refId": "D",
+            "expr": "rate(registration_ack_duration_seconds_sum[5m]) / rate(registration_ack_duration_seconds_count[5m])",
+            "legendFormat": "avg"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "lineWidth": 2
+            }
+          }
+        }
+      }
+    ]
+  },
+  "overwrite": true
+}
