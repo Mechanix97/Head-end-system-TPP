@@ -24,7 +24,7 @@ use common::messages::message::Message;
 use common::messages::message::MsgType;
 use scheduler::scheduler::Scheduler;
 
-const ACK_TIMEOUT_DURATION_MS: u64 = 300000;
+const ACK_TIMEOUT_DURATION_MS: u64 = 30000;
 
 pub async fn init_backdoor(
     scheduler: Arc<Mutex<Scheduler>>,
@@ -184,7 +184,9 @@ async fn handle_backdoor_ack_msg(
     );
 
     // Update metrics
-    METRICS_CONNECTIONS.ack_response_time_avg_ms.set(duration_ms);
+    METRICS_CONNECTIONS
+        .ack_response_time_avg_ms
+        .set(duration_ms);
 
     // If response time exceeded the timeout, increment the timeout counter
     if duration_ms > ACK_TIMEOUT_DURATION_MS as f64 {
