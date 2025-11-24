@@ -123,7 +123,10 @@ async fn handle_backdoor_register_msg(
 
     scheduler.lock().await.register_device(&device).await?;
 
-    let timestamp = DateTime::from_timestamp(msg.timestamp as i64, 0)
+    // Convert milliseconds to seconds and nanoseconds
+    let secs = (msg.timestamp / 1000) as i64;
+    let nanos = ((msg.timestamp % 1000) * 1_000_000) as u32;
+    let timestamp = DateTime::from_timestamp(secs, nanos)
         .ok_or(BackdoorError::InvalidTimeStamp)?
         .naive_utc();
     database.register_device(device.id, timestamp).await?;
@@ -170,7 +173,10 @@ async fn handle_backdoor_ack_msg(
         return Err(BackdoorError::InvalidIp);
     }
 
-    let timestamp = DateTime::from_timestamp(msg.timestamp as i64, 0)
+    // Convert milliseconds to seconds and nanoseconds
+    let secs = (msg.timestamp / 1000) as i64;
+    let nanos = ((msg.timestamp % 1000) * 1_000_000) as u32;
+    let timestamp = DateTime::from_timestamp(secs, nanos)
         .ok_or(BackdoorError::InvalidTimeStamp)?
         .naive_utc();
 

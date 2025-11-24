@@ -55,7 +55,7 @@ impl Message {
             msg_type: MsgType::RegisterRequest,
             device_id: 0,
             seq: 0,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
             payload: MessagePayload::RegistryResponse(RegistryResponseMessage {}),
             mac: 0,
         };
@@ -74,7 +74,7 @@ impl Message {
             msg_type: MsgType::RegisterResponse,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
             payload: MessagePayload::RegistryResponse(RegistryResponseMessage {}),
             mac: 0,
         };
@@ -93,7 +93,7 @@ impl Message {
             msg_type: MsgType::Ack,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
             payload: MessagePayload::Ack,
             mac: 0,
         };
