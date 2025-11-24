@@ -1,4 +1,5 @@
 use bytes::BytesMut;
+use chrono::DateTime;
 use chrono::Utc;
 use common::database::api::Database;
 use futures::sink::SinkExt;
@@ -20,7 +21,6 @@ use common::device::Device;
 use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
 use common::messages::message::MsgType;
-use metrics::metrics_connections::METRICS_CONNECTIONS;
 use scheduler::scheduler::Scheduler;
 
 const ACK_TIMEOUT_DURATION_MS: u64 = 300000;
@@ -122,10 +122,10 @@ async fn handle_backdoor_register_msg(
 
     scheduler.lock().await.register_device(&device).await?;
 
-    // Use HES server time (not device message timestamp) for accurate latency metrics
-    // This ensures we measure real network + processing latency from HES perspective
-    let hes_timestamp = Utc::now().naive_utc();
-    database.register_device(device.id, hes_timestamp).await?;
+    let timestamp = DateTime::from_timestamp(msg.timestamp as i64, 0)
+        .ok_or(BackdoorError::InvalidTimeStamp)?
+        .naive_utc();
+    database.register_device(device.id, timestamp).await?;
 
     let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
     if let Err(err) = (*framed).send((response, socket_addr)).await {
@@ -169,22 +169,13 @@ async fn handle_backdoor_ack_msg(
         return Err(BackdoorError::InvalidIp);
     }
 
-    // Use HES server time (not device message timestamp) for accurate latency metrics
-    let hes_timestamp = Utc::now().naive_utc();
+    let timestamp = DateTime::from_timestamp(msg.timestamp as i64, 0)
+        .ok_or(BackdoorError::InvalidTimeStamp)?
+        .naive_utc();
 
-    // Record ACK and get registration duration in seconds (measured by HES clock)
-    let duration_seconds = database.registration_ack(device.id, hes_timestamp).await?;
+    database.registration_ack(device.id, timestamp).await?;
 
-    // Report metrics
-    METRICS_CONNECTIONS
-        .registration_ack_duration_seconds
-        .with_label_values(&["success"])
-        .observe(duration_seconds);
-
-    info!(
-        "Adding new connection, device_id: {:#x}, registration_duration: {:.3}s",
-        msg.device_id, duration_seconds
-    );
+    info!("Adding new connection, device_id: {:#x}", msg.device_id);
     scheduler
         .lock()
         .await

