@@ -73,11 +73,11 @@
               },
               {
                 "color": "yellow",
-                "value": 100
+                "value": 500
               },
               {
                 "color": "red",
-                "value": 300000
+                "value": 800
               }
             ]
           },
@@ -341,7 +341,7 @@
             "mode": "thresholds"
           },
           "mappings": [],
-          "max": 300000,
+          "max": 1000,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
@@ -352,11 +352,11 @@
               },
               {
                 "color": "yellow",
-                "value": 150000
+                "value": 500
               },
               {
                 "color": "red",
-                "value": 250000
+                "value": 800
               }
             ]
           },
