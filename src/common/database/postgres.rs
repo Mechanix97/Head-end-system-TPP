@@ -180,44 +180,35 @@ impl Engine for PostgresDB {
         device_id: Uuid,
         timestamp: NaiveDateTime,
     ) -> Result<f64, DatabaseError> {
-        let query_count = r#"
-            SELECT COUNT(*)
+        // Single query to check status and count rows
+        let query_check = r#"
+            SELECT registration_status
             FROM T_DEVICE_REGISTRATION
             WHERE fk_device = $1
-            AND "registration_status" = 'pending_ack'
         "#;
 
-        let count: i64 = query_scalar(query_count)
+        let rows: Vec<(String,)> = sqlx::query_as(query_check)
             .bind(device_id)
-            .fetch_one(&self.pool)
+            .fetch_all(&self.pool)
             .await
             .map_err(|e| {
-                error!("Error counting connections for device {}: {}", device_id, e);
+                error!("Error fetching registration status for device {}: {}", device_id, e);
                 DatabaseError::QueryError(e.to_string())
             })?;
 
-        if count < 1 {
-            let query_count = r#"
-                SELECT COUNT(*)
-                FROM T_DEVICE_REGISTRATION
-                WHERE fk_device = $1
-                AND "registration_status" = 'ack_timeout'
-            "#;
-
-            let count: i64 = query_scalar(query_count)
-                .bind(device_id)
-                .fetch_one(&self.pool)
-                .await
-                .map_err(|e| {
-                    error!("Error counting connections for device {}: {}", device_id, e);
-                    DatabaseError::QueryError(e.to_string())
-                })?;
-            if count == 1 {
-                return Err(DatabaseError::AckTimeout);
+        // Validate row count and status
+        match rows.len() {
+            0 => return Err(DatabaseError::NoDataFound),
+            1 => {
+                let status = &rows[0].0;
+                if status == "ack_timeout" {
+                    return Err(DatabaseError::AckTimeout);
+                } else if status != "pending_ack" {
+                    error!("Unexpected registration status '{}' for device {}", status, device_id);
+                    return Err(DatabaseError::RegistrationError);
+                }
             }
-            return Err(DatabaseError::NoDataFound);
-        } else if count > 1 {
-            return Err(DatabaseError::TooManyRows);
+            _ => return Err(DatabaseError::TooManyRows),
         }
 
         // Update registration status and calculate duration in a single query
