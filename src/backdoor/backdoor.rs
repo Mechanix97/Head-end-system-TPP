@@ -178,6 +178,11 @@ async fn handle_backdoor_ack_msg(
     let duration_seconds = database.registration_ack(device.id, timestamp).await?;
     let duration_ms = duration_seconds * 1000.0;
 
+    info!(
+        "ACK timing - device {:#x}: {:.6}s = {:.3}ms",
+        msg.device_id, duration_seconds, duration_ms
+    );
+
     // Update metrics
     METRICS_CONNECTIONS.ack_response_time_avg_ms.set(duration_ms);
 
