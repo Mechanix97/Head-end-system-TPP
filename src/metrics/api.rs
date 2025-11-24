@@ -1,14 +1,25 @@
 use crate::MetricsError;
-use axum::{Router, routing::get};
+use axum::{Json, Router, routing::get};
+use serde::Serialize;
 use tracing::{error, info};
 
 use crate::metrics_connections::METRICS_CONNECTIONS;
 
+/// JSON response structure for raw metrics endpoint
+#[derive(Serialize)]
+pub(crate) struct RawMetricsResponse {
+    /// Individual ACK duration measurements in seconds
+    measurements: Vec<f64>,
+    /// Number of measurements in the buffer
+    count: usize,
+}
+
 /// Starts the Prometheus metrics HTTP server.
 ///
 /// This launches an Axum web server on the specified address and port that exposes
-/// two endpoints:
+/// three endpoints:
 /// - `GET /metrics` - Returns Prometheus metrics in OpenMetrics format
+/// - `GET /metrics/raw` - Returns raw measurement data as JSON for Grafana histogram
 /// - `GET /health` - Simple health check endpoint that returns "Service Up"
 ///
 /// The server runs in a background tokio task and Prometheus can scrape the
@@ -29,6 +40,7 @@ pub async fn start_prometheus_metrics_api(
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         let app = Router::new()
             .route("/metrics", get(get_metrics))
+            .route("/metrics/raw", get(get_raw_metrics))
             .route("/health", get(|| async { "Service Up" }));
 
         let listener = tokio::net::TcpListener::bind(&format!("{address}:{port}"))
@@ -53,4 +65,26 @@ pub(crate) async fn get_metrics() -> String {
             String::new()
         }
     }
+}
+
+/// HTTP handler for the `/metrics/raw` endpoint.
+///
+/// Returns raw ACK duration measurements as JSON for Grafana histogram visualization.
+/// Returns the last N measurements (up to 1000) stored in the ring buffer.
+///
+/// Response format:
+/// ```json
+/// {
+///   "measurements": [0.123, 0.456, 0.789, ...],
+///   "count": 1000
+/// }
+/// ```
+pub(crate) async fn get_raw_metrics() -> Json<RawMetricsResponse> {
+    let measurements = METRICS_CONNECTIONS.get_raw_ack_durations();
+    let count = measurements.len();
+
+    Json(RawMetricsResponse {
+        measurements,
+        count,
+    })
 }
