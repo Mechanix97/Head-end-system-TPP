@@ -7,7 +7,8 @@ use uuid::Uuid;
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
 use crate::device::Device;
-use crate::device::RegistrationStatus;
+use crate::registration_status::DeviceRegistration;
+use crate::registration_status::RegistrationStatus;
 
 #[derive(Default, Debug)]
 pub struct InMemoryDB {
@@ -187,6 +188,49 @@ impl Engine for InMemoryDB {
             .iter()
             .map(|(&device_id, &(time, _job_id))| (device_id, time))
             .collect())
+    }
+
+    async fn get_device_registration(
+        &self,
+        device_id: Uuid,
+    ) -> Result<DeviceRegistration, DatabaseError> {
+        let lock = self.inner.lock().await;
+
+        let (status, time) = lock
+            .device_registration
+            .get(&device_id)
+            .cloned()
+            .ok_or(DatabaseError::NoDataFound)?;
+
+        Ok(DeviceRegistration {
+            fk_device: device_id,
+            registration_status: status,
+            registration_time: time,
+        })
+    }
+
+    async fn update_device_registration(
+        &self,
+        device_id: Uuid,
+        status: Option<RegistrationStatus>,
+        timestamp: Option<NaiveDateTime>,
+    ) -> Result<(), DatabaseError> {
+        let mut lock = self.inner.lock().await;
+
+        let element = lock
+            .device_registration
+            .get_mut(&device_id)
+            .ok_or(DatabaseError::NoDataFound)?;
+
+        if let Some(new_status) = status {
+            element.0 = new_status;
+        }
+
+        if let Some(new_time) = timestamp {
+            element.1 = new_time;
+        }
+
+        Ok(())
     }
 }
 

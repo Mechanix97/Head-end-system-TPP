@@ -7,6 +7,7 @@ use crate::database::DatabaseError;
 use crate::database::postgres::PostgresConnectionArgs;
 use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
 use crate::device::Device;
+use crate::registration_status::DeviceRegistration;
 
 /// Database abstraction layer that supports multiple backend implementations.
 ///
@@ -97,6 +98,32 @@ impl Database {
         timestamp: NaiveDateTime,
     ) -> Result<bool, DatabaseError> {
         self.engine.registration_timeout(device_id, timestamp).await
+    }
+
+    /// Retrieves the registration status and details for a specific device.
+    ///
+    /// Returns the complete DeviceRegistration struct containing:
+    /// - fk_device: The device UUID
+    /// - registration_status: Current registration state (Registered, PendingAck, AckTimeout)
+    /// - registration_time: Timestamp of when registration started
+    pub async fn get_device_registration(
+        &self,
+        device_id: Uuid,
+    ) -> Result<DeviceRegistration, DatabaseError> {
+        self.engine.get_device_registration(device_id).await
+    }
+
+    /// Updates the registration status and/or timestamp for a device.
+    ///
+    /// Allows partial updates - you can update just the status, just the timestamp,
+    /// or both depending on your use case.
+    pub async fn update_device_registration(
+        &self,
+        device_id: Uuid,
+        status: Option<crate::registration_status::RegistrationStatus>,
+        timestamp: Option<NaiveDateTime>,
+    ) -> Result<(), DatabaseError> {
+        self.engine.update_device_registration(device_id, status, timestamp).await
     }
 
     // ========== Time-bucket scheduling ==========
@@ -198,6 +225,25 @@ pub trait Engine: Debug + Send + Sync {
         device_id: Uuid,
         timestamp: NaiveDateTime,
     ) -> Result<bool, DatabaseError>;
+
+    /// Retrieves the complete registration information for a device.
+    async fn get_device_registration(
+        &self,
+        device_id: Uuid,
+    ) -> Result<DeviceRegistration, DatabaseError>;
+
+    /// Updates the registration status and/or timestamp for a device.
+    ///
+    /// Allows flexible updates:
+    /// - If `status` is Some, updates the registration_status field
+    /// - If `timestamp` is Some, updates the registration_time field
+    /// - If both are Some, updates both fields
+    async fn update_device_registration(
+        &self,
+        device_id: Uuid,
+        status: Option<crate::registration_status::RegistrationStatus>,
+        timestamp: Option<NaiveDateTime>,
+    ) -> Result<(), DatabaseError>;
 
     // ========== Time-bucket scheduling ==========
     async fn get_bucket_with_less_devices(&self, total_buckets: i32) -> Result<i32, DatabaseError>;
