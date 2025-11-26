@@ -176,65 +176,6 @@ impl Engine for PostgresDB {
         Ok(())
     }
 
-    async fn registration_ack(
-        &self,
-        device_id: Uuid,
-        timestamp: NaiveDateTime,
-    ) -> Result<f64, DatabaseError> {
-        // Single query to check status and count rows
-        let query_check = r#"
-            SELECT registration_status
-            FROM T_DEVICE_REGISTRATION
-            WHERE fk_device = $1
-        "#;
-
-        let rows: Vec<(String,)> = sqlx::query_as(query_check)
-            .bind(device_id)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| {
-                error!("Error fetching registration status for device {}: {}", device_id, e);
-                DatabaseError::QueryError(e.to_string())
-            })?;
-
-        // Validate row count and status
-        match rows.len() {
-            0 => return Err(DatabaseError::NoDataFound),
-            1 => {
-                let status = &rows[0].0;
-                if status == "ack_timeout" {
-                    return Err(DatabaseError::AckTimeout);
-                } else if status != "pending_ack" {
-                    error!("Unexpected registration status '{}' for device {}", status, device_id);
-                    return Err(DatabaseError::RegistrationError);
-                }
-            }
-            _ => return Err(DatabaseError::TooManyRows),
-        }
-
-        // Update registration status and calculate duration in a single query
-        // IMPORTANT: We don't update registration_time here - it should remain as the original
-        // REGISTER_REQUEST timestamp. We calculate duration using the ACK timestamp ($2)
-        // minus the original registration_time.
-        // EXTRACT(EPOCH FROM ...) returns duration in seconds as f64
-        let query = r#"
-            UPDATE T_DEVICE_REGISTRATION
-            SET registration_status = 'registered'
-            WHERE fk_device = $1
-                AND registration_status = 'pending_ack'
-            RETURNING EXTRACT(EPOCH FROM ($2 - registration_time))::DOUBLE PRECISION
-        "#;
-
-        let duration_seconds: f64 = query_scalar(query)
-            .bind(device_id)
-            .bind(timestamp)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
-        Ok(duration_seconds)
-    }
-
     async fn registration_timeout(
         &self,
         device_id: Uuid,

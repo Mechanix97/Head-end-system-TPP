@@ -168,26 +168,48 @@ async fn handle_backdoor_ack_msg(
         .naive_utc();
 
     // registration_ack returns the response time in seconds
-    let registration_status = database.get_device_registration(device.id).await?;
+    let mut device_registration = database.get_device_registration(device.id).await?;
 
-    let duration_seconds = database.registration_ack(device.id, timestamp).await?;
-    let duration_ms = duration_seconds * 1000.0;
+    match device_registration.registration_status {
+        RegistrationStatus::AckTimeout => {
+            // TODO send NACK to device
+            return Ok(());
+        }
+        RegistrationStatus::Registered => {
+            // TODO send NACK to device
+            return Ok(());
+        }
+        RegistrationStatus::PendingAck => {
+            let registration_duration =
+                (timestamp - device_registration.registration_time).num_milliseconds();
+            METRICS_CONNECTIONS
+                .ack_response_time_avg_ms
+                .set(registration_duration as f64);
 
-    METRICS_CONNECTIONS
-        .ack_response_time_avg_ms
-        .set(duration_ms);
+            info!(
+                "Adding new connection, device_id: {:#x}, ACK response time: {:.2}ms",
+                msg.device_id, registration_duration
+            );
+            device_registration.registration_status = RegistrationStatus::Registered;
+            device_registration.registration_time = timestamp;
 
-    info!(
-        "Adding new connection, device_id: {:#x}, ACK response time: {:.2}ms",
-        msg.device_id, duration_ms
-    );
-    scheduler
-        .lock()
-        .await
-        .schedule_wakeup_job(device.id)
-        .await?;
+            database
+                .update_device_registration(
+                    device.id,
+                    Some(RegistrationStatus::Registered),
+                    Some(timestamp),
+                )
+                .await?;
 
-    Ok(())
+            scheduler
+                .lock()
+                .await
+                .schedule_wakeup_job(device.id)
+                .await?;
+
+            return Ok(());
+        }
+    }
 }
 
 fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_id: Uuid) {
