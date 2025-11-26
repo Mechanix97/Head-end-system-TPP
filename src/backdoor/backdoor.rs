@@ -20,6 +20,7 @@ use common::device::Device;
 use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
 use common::messages::message::MsgType;
+use common::registration_status::RegistrationStatus;
 use scheduler::scheduler::Scheduler;
 
 const ACK_TIMEOUT_DURATION_MS: u64 = 30000;
@@ -166,7 +167,11 @@ async fn handle_backdoor_ack_msg(
         .ok_or(BackdoorError::InvalidTimeStamp)?
         .naive_utc();
 
-    let duration_ms = database.registration_ack(device.id, timestamp).await? * 1000.0;
+    // registration_ack returns the response time in seconds
+    let registration_status = database.get_device_registration(device.id).await?;
+
+    let duration_seconds = database.registration_ack(device.id, timestamp).await?;
+    let duration_ms = duration_seconds * 1000.0;
 
     METRICS_CONNECTIONS
         .ack_response_time_avg_ms
