@@ -173,11 +173,9 @@ async fn handle_backdoor_ack_msg(
     match device_registration.registration_status {
         RegistrationStatus::AckTimeout => {
             // TODO send NACK to device
-            return Ok(());
         }
         RegistrationStatus::Registered => {
             // TODO send NACK to device
-            return Ok(());
         }
         RegistrationStatus::PendingAck => {
             let registration_duration =
@@ -206,10 +204,9 @@ async fn handle_backdoor_ack_msg(
                 .await
                 .schedule_wakeup_job(device.id)
                 .await?;
-
-            return Ok(());
         }
     }
+    Ok(())
 }
 
 fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_id: Uuid) {
