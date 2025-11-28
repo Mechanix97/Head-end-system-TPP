@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
 use tokio_cron_scheduler::{Job, JobScheduler};
@@ -70,7 +72,6 @@ impl Scheduler {
             .connections_tracker
             .with_label_values(&["new_connection"])
             .inc();
-
         let bucket_number = self.get_bucket_number().await;
         let next_wake_up = self.get_next_schedule(bucket_number);
 
@@ -88,36 +89,28 @@ impl Scheduler {
     /// Restores scheduled connections from the database after HES restart.
     ///
     /// This checks for any previously scheduled connections and reschedules them
-    /// if their next wake-up time hasn't expired yet (with a 5-minute safety margin).
-    ///
-    /// Currently disabled (code commented out) - needs to be re-implemented after
-    /// database schema changes.
+    /// if their next wake-up time hasn't expired yet (with a 5-minute safety margin).from_secs
     async fn load_active_connections(&mut self) -> Result<(), SchedulerError> {
         // TODO: Re-implement this after finalizing database schema
         // Currently commented out due to schema changes in progress
-        // let active_connections = self.database.get_active_connections().await?;
-        // for mut conn in active_connections {
-        //     info!("Loading connection from db {:#x}", conn.device_id);
+        let scheduled_connections = self.database.get_scheduled_connections().await?;
 
-        //     let next_wakeup = conn.next_wakeup.ok_or(SchedulerError::NoScheduleDefined)?;
-        //     if next_wakeup < Utc::now().naive_local() + Duration::from_secs(300) {
-        //         info!(
-        //             "Connection {:#x} expired, changing status to lost in db",
-        //             conn.device_id
-        //         );
-        //         // conn.status = ConnectionStatus::Lost;
-        //         // self.database.update_connection(&conn).await?;
-        //         continue;
-        //     }
-
-        //     METRICS_CONNECTIONS
-        //         .connections_tracker
-        //         .with_label_values(&["new_connection"])
-        //         .inc();
-
-        //     self.schedule_wakeup_job(conn.device_id).await?;
-        // }
-
+        for (device_id, scheduled_time) in scheduled_connections {
+            info!("Loading connection from db {:#x}", device_id);
+            if scheduled_time < Utc::now().naive_local() + Duration::from_secs(300) {
+                info!(
+                    "Connection {:#x} expired, changing status to lost in db",
+                    device_id
+                );
+                //self.database.update_scheduled_connection_status(device_id,lost ).await?;
+                continue;
+            }
+            self.schedule_next_wakeup_job(device_id).await?;
+            METRICS_CONNECTIONS
+                .connections_tracker
+                .with_label_values(&["new_connection"])
+                .inc();
+        }
         Ok(())
     }
 
