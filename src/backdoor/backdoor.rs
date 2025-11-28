@@ -1,4 +1,3 @@
-use chrono::DateTime;
 use chrono::Utc;
 use common::database::api::Database;
 use futures::sink::SinkExt;
@@ -158,13 +157,6 @@ async fn handle_backdoor_ack_msg(
         return Err(BackdoorError::InvalidIp);
     }
 
-    // Convert milliseconds to seconds and nanoseconds
-    let secs = (msg.timestamp / 1000) as i64;
-    let nanos = ((msg.timestamp % 1000) * 1_000_000) as u32;
-    let timestamp = DateTime::from_timestamp(secs, nanos)
-        .ok_or(BackdoorError::InvalidTimeStamp)?
-        .naive_utc();
-
     // registration_ack returns the response time in seconds
     let mut device_registration = database.get_device_registration(device.id).await?;
 
@@ -177,7 +169,7 @@ async fn handle_backdoor_ack_msg(
         }
         RegistrationStatus::PendingAck => {
             let registration_duration =
-                (timestamp - device_registration.registration_time).num_milliseconds();
+                (msg.get_timestamp()? - device_registration.registration_time).num_milliseconds();
             METRICS_CONNECTIONS
                 .ack_response_time_avg_ms
                 .set(registration_duration as f64);
@@ -187,13 +179,15 @@ async fn handle_backdoor_ack_msg(
                 msg.device_id, registration_duration
             );
             device_registration.registration_status = RegistrationStatus::Registered;
-            device_registration.registration_time = timestamp;
+            device_registration.registration_time = msg.get_timestamp()?;
 
+            // There is a small chance that the ack timeout is trigered between
+            // the the db read and the db update, may do both operations at once
             database
                 .update_device_registration(
                     device.id,
                     Some(RegistrationStatus::Registered),
-                    Some(timestamp),
+                    Some(msg.get_timestamp()?),
                 )
                 .await?;
 
