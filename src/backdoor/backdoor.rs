@@ -194,7 +194,7 @@ async fn handle_backdoor_ack_msg(
             scheduler
                 .lock()
                 .await
-                .schedule_wakeup_job(device.id)
+                .schedule_next_wakeup_job(device.id)
                 .await?;
         }
     }
@@ -275,7 +275,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -301,7 +301,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -322,7 +322,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -342,7 +342,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -370,7 +370,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -401,7 +401,7 @@ mod tests {
             let connecitons_number = scheduler
                 .lock()
                 .await
-                .get_active_connections()
+                .get_scheduled_connections()
                 .await
                 .unwrap()
                 .len();
@@ -426,7 +426,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -456,7 +456,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -478,7 +478,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -521,7 +521,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();

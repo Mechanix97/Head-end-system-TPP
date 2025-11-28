@@ -121,7 +121,10 @@ impl Scheduler {
         Ok(())
     }
 
-    pub async fn schedule_wakeup_job(&mut self, device_id: Uuid) -> Result<(), SchedulerError> {
+    pub async fn schedule_next_wakeup_job(
+        &mut self,
+        device_id: Uuid,
+    ) -> Result<(), SchedulerError> {
         let bucket_number = self.database.get_bucket_number(device_id).await?;
 
         let next_wake_up = self.get_next_schedule(bucket_number as usize);
@@ -134,13 +137,15 @@ impl Scheduler {
                 },
             )?;
 
+        let db_clone = self.database.clone();
         let job_id = self
             .job_scheduler
             .add(Job::new_async(
                 next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
                 move |_uuid, _l| {
+                    let db_clone = db_clone.clone();
                     Box::pin(async move {
-                        periodically_task(device_id).await;
+                        periodically_task(device_id, db_clone).await;
                     })
                 },
             )?)
@@ -154,8 +159,6 @@ impl Scheduler {
             "[Job id {}]Scheduled next connetion to divice {:#x} at {}",
             job_id, device_id, next_wake_up
         );
-
-        // self.database.update_connection(&connection).await?;
 
         Ok(())
     }
@@ -203,13 +206,13 @@ impl Scheduler {
 
         // Convert total seconds to (sec, min, hour)
         (
-            slot_in_secs % 3600 % 60,   // Seconds component
-            slot_in_secs % 3600 / 60,   // Minutes component
-            slot_in_secs / 3600,        // Hours component
+            slot_in_secs % 3600 % 60, // Seconds component
+            slot_in_secs % 3600 / 60, // Minutes component
+            slot_in_secs / 3600,      // Hours component
         )
     }
 
-    pub async fn get_active_connections(
+    pub async fn get_scheduled_connections(
         &self,
     ) -> Result<Vec<(Uuid, NaiveDateTime)>, SchedulerError> {
         self.database
@@ -263,6 +266,6 @@ fn get_date_from_hour(hour: usize) -> (usize, usize, usize) {
 /// 5. Close connection with ACK
 ///
 /// Currently this just logs the device ID as a placeholder.
-async fn periodically_task(device_id: Uuid) {
+async fn periodically_task(device_id: Uuid, _database: Database) {
     info!("Conection ID: {}", device_id);
 }
