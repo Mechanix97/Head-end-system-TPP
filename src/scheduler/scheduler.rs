@@ -43,7 +43,7 @@ impl Scheduler {
             database,
         };
 
-        scheduler.load_active_connections().await?;
+        scheduler.reload_active_connections().await?;
 
         Ok(scheduler)
     }
@@ -90,7 +90,7 @@ impl Scheduler {
     ///
     /// This checks for any previously scheduled connections and reschedules them
     /// if their next wake-up time hasn't expired yet (with a 5-minute safety margin).from_secs
-    async fn load_active_connections(&mut self) -> Result<(), SchedulerError> {
+    async fn reload_active_connections(&mut self) -> Result<(), SchedulerError> {
         // TODO: Re-implement this after finalizing database schema
         // Currently commented out due to schema changes in progress
         let scheduled_connections = self.database.get_scheduled_connections().await?;
@@ -133,8 +133,9 @@ impl Scheduler {
         let db_clone = self.database.clone();
         let job_id = self
             .job_scheduler
-            .add(Job::new_async(
+            .add(Job::new_async_tz(
                 next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
+                chrono_tz::UTC,
                 move |_uuid, _l| {
                     let db_clone = db_clone.clone();
                     Box::pin(async move {

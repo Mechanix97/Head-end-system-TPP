@@ -68,12 +68,3 @@ CREATE TABLE IF NOT EXISTS T_SCHEDULED_CONNECTIONS (
     status scheduledstatus NOT NULL default 'awaiting',
     job_id UUID
 );
-
-CREATE TABLE IF NOT EXISTS T_ACTIVE_CONNECTIONS (
-    device_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    ip TEXT,  
-    bucket INTEGER,
-    last_connection TIMESTAMP NOT NULL DEFAULT NOW(),
-    next_wakeup TIMESTAMP,
-    status connectionstatus NOT NULL DEFAULT 'active'
-);

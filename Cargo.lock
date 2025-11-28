@@ -1658,6 +1658,7 @@ name = "scheduler"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "common",
  "metrics",
  "thiserror 2.0.17",
