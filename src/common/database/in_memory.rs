@@ -9,6 +9,7 @@ use crate::database::api::Engine;
 use crate::device::Device;
 use crate::registration_status::DeviceRegistration;
 use crate::registration_status::RegistrationStatus;
+use crate::scheduled_connection::{ScheduledConnection, ScheduledStatus};
 
 #[derive(Default, Debug)]
 pub struct InMemoryDB {
@@ -20,7 +21,7 @@ pub struct InnerDB {
     devices: HashMap<Uuid, Device>,
     device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
     buckets: HashMap<Uuid, i32>,
-    scheduled_connections: HashMap<Uuid, (NaiveDateTime, Uuid)>,
+    scheduled_connections: HashMap<Uuid, ScheduledConnection>,
 }
 
 #[async_trait::async_trait]
@@ -148,20 +149,38 @@ impl Engine for InMemoryDB {
     ) -> Result<(), DatabaseError> {
         let mut lock = self.inner.lock().await;
         lock.scheduled_connections.remove(&device_id);
-        lock.scheduled_connections
-            .insert(device_id, (timestamp, job_id));
+        lock.scheduled_connections.insert(
+            device_id,
+            ScheduledConnection {
+                fk_device: device_id,
+                schedule_time: timestamp,
+                connection_time: None,
+                status: ScheduledStatus::Awaiting,
+                job_id: Some(job_id),
+            },
+        );
         Ok(())
     }
 
-    async fn get_scheduled_connections(&self) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError> {
+    async fn get_scheduled_connections(&self) -> Result<Vec<ScheduledConnection>, DatabaseError> {
         Ok(self
             .inner
             .lock()
             .await
             .scheduled_connections
-            .iter()
-            .map(|(&device_id, &(time, _job_id))| (device_id, time))
+            .values()
+            .cloned()
             .collect())
+    }
+
+    async fn update_scheduled_connection(
+        &self,
+        connection: &ScheduledConnection,
+    ) -> Result<(), DatabaseError> {
+        let mut lock = self.inner.lock().await;
+        lock.scheduled_connections
+            .insert(connection.fk_device, connection.clone());
+        Ok(())
     }
 
     async fn get_device_registration(

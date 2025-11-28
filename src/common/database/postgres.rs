@@ -15,6 +15,7 @@ use crate::database::api::Engine;
 use crate::device::Device;
 use crate::registration_status::DeviceRegistration;
 use crate::registration_status::RegistrationStatus;
+use crate::scheduled_connection::ScheduledConnection;
 
 /// PostgreSQL database implementation of the `Engine` trait.
 ///
@@ -350,9 +351,9 @@ impl Engine for PostgresDB {
         Ok(())
     }
 
-    async fn get_scheduled_connections(&self) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError> {
+    async fn get_scheduled_connections(&self) -> Result<Vec<ScheduledConnection>, DatabaseError> {
         let query = r#"
-            SELECT fk_device, schedule_time
+            SELECT fk_device, schedule_time, connection_time, status, job_id
             FROM T_SCHEDULED_CONNECTIONS
             WHERE status = 'awaiting'
             ORDER BY schedule_time ASC
@@ -366,17 +367,59 @@ impl Engine for PostgresDB {
         let scheduled = rows
             .into_iter()
             .map(|row| {
-                let device_id: Uuid = row
+                let fk_device: Uuid = row
                     .try_get("fk_device")
                     .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
                 let schedule_time: NaiveDateTime = row
                     .try_get("schedule_time")
                     .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                Ok((device_id, schedule_time))
+                let connection_time: Option<NaiveDateTime> = row
+                    .try_get("connection_time")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let status = row
+                    .try_get("status")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let job_id: Option<Uuid> = row
+                    .try_get("job_id")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+                Ok(ScheduledConnection {
+                    fk_device,
+                    schedule_time,
+                    connection_time,
+                    status,
+                    job_id,
+                })
             })
             .collect::<Result<Vec<_>, DatabaseError>>()?;
 
         Ok(scheduled)
+    }
+
+    async fn update_scheduled_connection(
+        &self,
+        connection: &ScheduledConnection,
+    ) -> Result<(), DatabaseError> {
+        let query = r#"
+            UPDATE T_SCHEDULED_CONNECTIONS
+            SET schedule_time = $1,
+                connection_time = $2,
+                status = $3,
+                job_id = $4
+            WHERE fk_device = $5
+        "#;
+
+        sqlx::query(query)
+            .bind(&connection.schedule_time)
+            .bind(&connection.connection_time)
+            .bind(&connection.status)
+            .bind(&connection.job_id)
+            .bind(&connection.fk_device)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
     }
 
     async fn get_device_registration(

@@ -11,6 +11,8 @@ use crate::error::SchedulerError;
 use crate::schedule::Schedule;
 use common::database::api::Database;
 use common::device::Device;
+use common::scheduled_connection::ScheduledConnection;
+use common::scheduled_connection::ScheduledStatus;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
 /// Manages scheduled connections to IoT devices using a time-bucket algorithm.
@@ -95,17 +97,44 @@ impl Scheduler {
         // Currently commented out due to schema changes in progress
         let scheduled_connections = self.database.get_scheduled_connections().await?;
 
-        for (device_id, scheduled_time) in scheduled_connections {
-            info!("Loading connection from db {:#x}", device_id);
-            if scheduled_time < Utc::now().naive_local() + Duration::from_secs(300) {
+        for mut connection in scheduled_connections {
+            info!("Loading connection from db {:#x}", connection.fk_device);
+            if connection.schedule_time < Utc::now().naive_local() + Duration::from_secs(300) {
                 info!(
                     "Connection {:#x} expired, changing status to lost in db",
-                    device_id
+                    connection.fk_device
                 );
-                //self.database.update_scheduled_connection_status(device_id,lost ).await?;
+                connection.status = ScheduledStatus::Lost;
+                connection.job_id = None;
+                self.database
+                    .update_scheduled_connection(&connection)
+                    .await?;
                 continue;
             }
-            self.schedule_next_wakeup_job(device_id).await?;
+
+            let next_wake_up = connection.schedule_time;
+            let db_clone = self.database.clone();
+
+            let job_id = self
+                .job_scheduler
+                .add(Job::new_async_tz(
+                    next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
+                    chrono_tz::UTC,
+                    move |job_id, _l| {
+                        let db_clone = db_clone.clone();
+                        Box::pin(async move {
+                            periodically_task(job_id, connection.fk_device, db_clone).await;
+                        })
+                    },
+                )?)
+                .await?;
+
+            connection.job_id = Some(job_id);
+
+            self.database
+                .update_scheduled_connection(&connection)
+                .await?;
+
             METRICS_CONNECTIONS
                 .connections_tracker
                 .with_label_values(&["new_connection"])
@@ -136,10 +165,10 @@ impl Scheduler {
             .add(Job::new_async_tz(
                 next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
                 chrono_tz::UTC,
-                move |_uuid, _l| {
+                move |job_id, _l| {
                     let db_clone = db_clone.clone();
                     Box::pin(async move {
-                        periodically_task(device_id, db_clone).await;
+                        periodically_task(job_id, device_id, db_clone).await;
                     })
                 },
             )?)
@@ -208,7 +237,7 @@ impl Scheduler {
 
     pub async fn get_scheduled_connections(
         &self,
-    ) -> Result<Vec<(Uuid, NaiveDateTime)>, SchedulerError> {
+    ) -> Result<Vec<ScheduledConnection>, SchedulerError> {
         self.database
             .get_scheduled_connections()
             .await
@@ -260,6 +289,6 @@ fn get_date_from_hour(hour: usize) -> (usize, usize, usize) {
 /// 5. Close connection with ACK
 ///
 /// Currently this just logs the device ID as a placeholder.
-async fn periodically_task(device_id: Uuid, _database: Database) {
-    info!("Conection ID: {}", device_id);
+async fn periodically_task(job_id: Uuid, device_id: Uuid, _database: Database) {
+    info!("[Job id: {:#x}] Conection ID: {}", job_id, device_id);
 }

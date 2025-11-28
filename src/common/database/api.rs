@@ -8,6 +8,7 @@ use crate::database::postgres::PostgresConnectionArgs;
 use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
 use crate::device::Device;
 use crate::registration_status::DeviceRegistration;
+use crate::scheduled_connection::ScheduledConnection;
 
 /// Database abstraction layer that supports multiple backend implementations.
 ///
@@ -172,8 +173,16 @@ impl Database {
     /// Retrieves all scheduled connections for state restoration on HES restart.
     pub async fn get_scheduled_connections(
         &self,
-    ) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError> {
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
         self.engine.get_scheduled_connections().await
+    }
+
+    /// Updates an existing scheduled connection with new information.
+    pub async fn update_scheduled_connection(
+        &self,
+        connection: &ScheduledConnection,
+    ) -> Result<(), DatabaseError> {
+        self.engine.update_scheduled_connection(connection).await
     }
 }
 
@@ -247,5 +256,9 @@ pub trait Engine: Debug + Send + Sync {
         timestamp: NaiveDateTime,
         job_id: Uuid,
     ) -> Result<(), DatabaseError>;
-    async fn get_scheduled_connections(&self) -> Result<Vec<(Uuid, NaiveDateTime)>, DatabaseError>;
+    async fn get_scheduled_connections(&self) -> Result<Vec<ScheduledConnection>, DatabaseError>;
+    async fn update_scheduled_connection(
+        &self,
+        connection: &ScheduledConnection,
+    ) -> Result<(), DatabaseError>;
 }
