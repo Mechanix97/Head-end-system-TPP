@@ -44,7 +44,7 @@ impl Scheduler {
             job_scheduler: JobScheduler::new().await?,
             database,
         };
-
+        scheduler.start().await?;
         scheduler.reload_active_connections().await?;
 
         Ok(scheduler)

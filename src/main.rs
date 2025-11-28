@@ -115,7 +115,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let scheduler = Arc::new(Mutex::new(
         Scheduler::new(args.buckets_number, db.clone()).await?,
     ));
-    scheduler.lock().await.start().await?;
 
     let backdoor_joinhandle = init_backdoor(
         scheduler.clone(),
