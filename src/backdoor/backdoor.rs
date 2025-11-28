@@ -42,6 +42,7 @@ pub async fn init_backdoor(
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
+        // TODO have multiple threads receiving requests, maybe a threadpool
         loop {
             let Some(frame) = framed.next().await else {
                 warn!("Invalid codec conversion");
@@ -119,18 +120,15 @@ async fn handle_backdoor_register_msg(
 
     // TODO: get info from payload
     let device = Device::new(socket_addr, None, None, None);
-    // Convert milliseconds to seconds and nanoseconds
-    let secs = (msg.timestamp / 1000) as i64;
-    let nanos = ((msg.timestamp % 1000) * 1_000_000) as u32;
-    let timestamp = DateTime::from_timestamp(secs, nanos)
-        .ok_or(BackdoorError::InvalidTimeStamp)?
-        .naive_utc();
 
     database.add_device(&device).await?;
     scheduler.lock().await.register_device(&device).await?;
-    database.register_device(device.id, timestamp).await?;
+    database
+        .register_device(device.id, msg.get_timestamp()?)
+        .await?;
 
     let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
+
     if let Err(err) = (*framed).send((response, socket_addr)).await {
         error!("Error sending response: {err}");
     }

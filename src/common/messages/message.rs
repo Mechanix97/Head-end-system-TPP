@@ -11,6 +11,8 @@ use crate::messages::registry::{RegistryRequestMessage, RegistryResponseMessage}
 use crate::messages::write::{WriteRequestMessage, WriteResponseMessage};
 
 use bytes::BufMut;
+use chrono::DateTime;
+use chrono::NaiveDateTime;
 
 const CURRENT_PROTOCOL_VERSION: u8 = 1;
 
@@ -109,6 +111,16 @@ impl Message {
     fn calculate_mac(&mut self) {
         // TODO: calculate mac #9
         self.mac = 0;
+    }
+
+    pub fn get_timestamp(&self) -> Result<NaiveDateTime, MessageError> {
+        // Convert milliseconds to seconds and nanoseconds
+        let secs = (self.timestamp / 1000) as i64;
+        let nanos = ((self.timestamp % 1000) * 1_000_000) as u32;
+
+        Ok(DateTime::from_timestamp(secs, nanos)
+            .ok_or(MessageError::InvalidTimeStamp)?
+            .naive_utc())
     }
 }
 
