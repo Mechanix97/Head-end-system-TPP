@@ -410,11 +410,11 @@ impl Engine for PostgresDB {
         "#;
 
         sqlx::query(query)
-            .bind(&connection.schedule_time)
-            .bind(&connection.connection_time)
+            .bind(connection.schedule_time)
+            .bind(connection.connection_time)
             .bind(&connection.status)
-            .bind(&connection.job_id)
-            .bind(&connection.fk_device)
+            .bind(connection.job_id)
+            .bind(connection.fk_device)
             .execute(&self.pool)
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
