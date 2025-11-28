@@ -1,5 +1,3 @@
-use bytes::BytesMut;
-use chrono::DateTime;
 use chrono::Utc;
 use common::database::api::Database;
 use futures::sink::SinkExt;
@@ -12,7 +10,6 @@ use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tokio_util::codec::Encoder;
 use tokio_util::udp::UdpFramed;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -22,6 +19,7 @@ use common::device::Device;
 use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
 use common::messages::message::MsgType;
+use common::registration_status::RegistrationStatus;
 use scheduler::scheduler::Scheduler;
 
 const ACK_TIMEOUT_DURATION_MS: u64 = 30000;
@@ -43,6 +41,7 @@ pub async fn init_backdoor(
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
+        // TODO have multiple threads receiving requests, maybe a threadpool
         loop {
             let Some(frame) = framed.next().await else {
                 warn!("Invalid codec conversion");
@@ -118,37 +117,22 @@ async fn handle_backdoor_register_msg(
         return Err(BackdoorError::RegisterRequestInvalidId);
     }
 
+    // TODO: get info from payload
     let device = Device::new(socket_addr, None, None, None);
+
     database.add_device(&device).await?;
-
     scheduler.lock().await.register_device(&device).await?;
-
-    // Convert milliseconds to seconds and nanoseconds
-    let secs = (msg.timestamp / 1000) as i64;
-    let nanos = ((msg.timestamp % 1000) * 1_000_000) as u32;
-    let timestamp = DateTime::from_timestamp(secs, nanos)
-        .ok_or(BackdoorError::InvalidTimeStamp)?
-        .naive_utc();
-    database.register_device(device.id, timestamp).await?;
+    database
+        .register_device(device.id, msg.get_timestamp()?)
+        .await?;
 
     let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
+
     if let Err(err) = (*framed).send((response, socket_addr)).await {
         error!("Error sending response: {err}");
     }
 
     spawn_ack_timeout_task(database.clone(), ack_timeout_duration, device.id);
-
-    // TEMPORARY.
-    // REMOVE LATER
-    let ack_msg = Message::new_ack_message(device.id.as_u128(), 3)?;
-    let mut buffer: BytesMut = BytesMut::new();
-    let mut codec = MessageCodec;
-    codec
-        .encode(ack_msg, &mut buffer)
-        .expect("Error encoding msg");
-    info!("ACK Message expected: {}", hex::encode(&buffer));
-    // TEMPORARY.
-    // REMOVE LATER
 
     Ok(())
 }
@@ -173,46 +157,47 @@ async fn handle_backdoor_ack_msg(
         return Err(BackdoorError::InvalidIp);
     }
 
-    // Convert milliseconds to seconds and nanoseconds
-    let secs = (msg.timestamp / 1000) as i64;
-    let nanos = ((msg.timestamp % 1000) * 1_000_000) as u32;
-    let timestamp = DateTime::from_timestamp(secs, nanos)
-        .ok_or(BackdoorError::InvalidTimeStamp)?
-        .naive_utc();
-
     // registration_ack returns the response time in seconds
-    let duration_seconds = database.registration_ack(device.id, timestamp).await?;
-    let duration_ms = duration_seconds * 1000.0;
+    let mut device_registration = database.get_device_registration(device.id).await?;
 
-    info!(
-        "ACK timing - device {:#x}: {:.6}s = {:.3}ms",
-        msg.device_id, duration_seconds, duration_ms
-    );
+    match device_registration.registration_status {
+        RegistrationStatus::AckTimeout => {
+            // TODO send NACK to device
+        }
+        RegistrationStatus::Registered => {
+            // TODO send NACK to device
+        }
+        RegistrationStatus::PendingAck => {
+            let registration_duration =
+                (msg.get_timestamp()? - device_registration.registration_time).num_milliseconds();
+            METRICS_CONNECTIONS
+                .ack_response_time_avg_ms
+                .set(registration_duration as f64);
 
-    // Update metrics
-    METRICS_CONNECTIONS
-        .ack_response_time_avg_ms
-        .set(duration_ms);
+            info!(
+                "Adding new connection, device_id: {:#x}, ACK response time: {:.2}ms",
+                msg.device_id, registration_duration
+            );
+            device_registration.registration_status = RegistrationStatus::Registered;
+            device_registration.registration_time = msg.get_timestamp()?;
 
-    // If response time exceeded the timeout, increment the timeout counter
-    if duration_ms > ACK_TIMEOUT_DURATION_MS as f64 {
-        METRICS_CONNECTIONS.ack_timeout_count.inc();
-        info!(
-            "ACK timeout detected for device {:#x}: {:.2}ms (threshold: {}ms)",
-            msg.device_id, duration_ms, ACK_TIMEOUT_DURATION_MS
-        );
+            // There is a small chance that the ack timeout is trigered between
+            // the the db read and the db update, may do both operations at once
+            database
+                .update_device_registration(
+                    device.id,
+                    Some(RegistrationStatus::Registered),
+                    Some(msg.get_timestamp()?),
+                )
+                .await?;
+
+            scheduler
+                .lock()
+                .await
+                .schedule_next_wakeup_job(device.id)
+                .await?;
+        }
     }
-
-    info!(
-        "Adding new connection, device_id: {:#x}, ACK response time: {:.2}ms",
-        msg.device_id, duration_ms
-    );
-    scheduler
-        .lock()
-        .await
-        .schedule_wakeup_job(device.id)
-        .await?;
-
     Ok(())
 }
 
@@ -224,6 +209,7 @@ fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_
             .await
         {
             Ok(true) => {
+                METRICS_CONNECTIONS.ack_timeout_count.inc();
                 info!("Ack from {} not received", device_id);
             }
             Err(e) => {
@@ -289,7 +275,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -315,7 +301,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -336,7 +322,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -356,7 +342,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -384,7 +370,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -415,7 +401,7 @@ mod tests {
             let connecitons_number = scheduler
                 .lock()
                 .await
-                .get_active_connections()
+                .get_scheduled_connections()
                 .await
                 .unwrap()
                 .len();
@@ -440,7 +426,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -470,7 +456,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -492,7 +478,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();
@@ -535,7 +521,7 @@ mod tests {
         let connecitons_number = scheduler
             .lock()
             .await
-            .get_active_connections()
+            .get_scheduled_connections()
             .await
             .unwrap()
             .len();

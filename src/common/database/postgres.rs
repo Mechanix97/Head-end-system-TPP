@@ -13,7 +13,8 @@ use uuid::Uuid;
 use crate::database::DatabaseError;
 use crate::database::api::Engine;
 use crate::device::Device;
-use crate::device::RegistrationStatus;
+use crate::registration_status::DeviceRegistration;
+use crate::registration_status::RegistrationStatus;
 
 /// PostgreSQL database implementation of the `Engine` trait.
 ///
@@ -173,56 +174,6 @@ impl Engine for PostgresDB {
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         Ok(())
-    }
-
-    async fn registration_ack(
-        &self,
-        device_id: Uuid,
-        timestamp: NaiveDateTime,
-    ) -> Result<f64, DatabaseError> {
-        let query_count = r#"
-            SELECT COUNT(*)
-            FROM T_DEVICE_REGISTRATION
-            WHERE fk_device = $1
-            AND "registration_status" = 'pending_ack'
-        "#;
-
-        let count: i64 = query_scalar(query_count)
-            .bind(device_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| {
-                error!("Error counting connections for device {}: {}", device_id, e);
-                DatabaseError::QueryError(e.to_string())
-            })?;
-
-        if count < 1 {
-            return Err(DatabaseError::NoDataFound);
-        } else if count > 1 {
-            return Err(DatabaseError::TooManyRows);
-        }
-
-        // Update registration status and calculate duration in a single query
-        // IMPORTANT: We don't update registration_time here - it should remain as the original
-        // REGISTER_REQUEST timestamp. We calculate duration using the ACK timestamp ($2)
-        // minus the original registration_time.
-        // EXTRACT(EPOCH FROM ...) returns duration in seconds as f64
-        let query = r#"
-            UPDATE T_DEVICE_REGISTRATION
-            SET registration_status = 'registered'
-            WHERE fk_device = $1
-                AND registration_status = 'pending_ack'
-            RETURNING EXTRACT(EPOCH FROM ($2 - registration_time))::DOUBLE PRECISION
-        "#;
-
-        let duration_seconds: f64 = query_scalar(query)
-            .bind(device_id)
-            .bind(timestamp)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
-        Ok(duration_seconds)
     }
 
     async fn registration_timeout(
@@ -426,5 +377,98 @@ impl Engine for PostgresDB {
             .collect::<Result<Vec<_>, DatabaseError>>()?;
 
         Ok(scheduled)
+    }
+
+    async fn get_device_registration(
+        &self,
+        device_id: Uuid,
+    ) -> Result<DeviceRegistration, DatabaseError> {
+        let query = r#"
+            SELECT fk_device, registration_status, registration_time
+            FROM T_DEVICE_REGISTRATION
+            WHERE fk_device = $1
+        "#;
+
+        let device_reg = query_as::<_, DeviceRegistration>(query)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                error!(
+                    "Error fetching device registration for device {}: {}",
+                    device_id, e
+                );
+                DatabaseError::QueryError(e.to_string())
+            })?;
+
+        Ok(device_reg)
+    }
+
+    async fn update_device_registration(
+        &self,
+        device_id: Uuid,
+        status: Option<RegistrationStatus>,
+        timestamp: Option<NaiveDateTime>,
+    ) -> Result<(), DatabaseError> {
+        // Check if the device registration exists
+        let query_count = r#"
+            SELECT COUNT(*)
+            FROM T_DEVICE_REGISTRATION
+            WHERE fk_device = $1
+        "#;
+
+        let count: i64 = query_scalar(query_count)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        if count < 1 {
+            return Err(DatabaseError::NoDataFound);
+        }
+
+        // Build dynamic UPDATE query based on what needs updating
+        match (status, timestamp) {
+            (Some(s), Some(t)) => {
+                let query = "UPDATE T_DEVICE_REGISTRATION
+                            SET registration_status = $1, registration_time = $2
+                            WHERE fk_device = $3";
+                sqlx::query(query)
+                    .bind(s)
+                    .bind(t)
+                    .bind(device_id)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+            }
+            (Some(s), None) => {
+                let query = "UPDATE T_DEVICE_REGISTRATION
+                            SET registration_status = $1
+                            WHERE fk_device = $2";
+                sqlx::query(query)
+                    .bind(s)
+                    .bind(device_id)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+            }
+            (None, Some(t)) => {
+                let query = "UPDATE T_DEVICE_REGISTRATION
+                            SET registration_time = $1
+                            WHERE fk_device = $2";
+                sqlx::query(query)
+                    .bind(t)
+                    .bind(device_id)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+            }
+            (None, None) => {
+                // Nothing to update
+                return Ok(());
+            }
+        }
+
+        Ok(())
     }
 }

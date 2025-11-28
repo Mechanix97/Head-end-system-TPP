@@ -26,4 +26,6 @@ pub enum DatabaseError {
     SqlxError(#[from] sqlx::error::Error),
     #[error("Error during registration")]
     RegistrationError,
+    #[error("Error ACK timeout")]
+    AckTimeout,
 }

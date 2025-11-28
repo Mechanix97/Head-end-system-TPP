@@ -27,4 +27,6 @@ pub enum MessageError {
     IoError(#[from] std::io::Error),
     #[error("SystemTimeError: {0}")]
     SystemTimeError(#[from] std::time::SystemTimeError),
+    #[error("Error: Invalid TimeStamp")]
+    InvalidTimeStamp,
 }
