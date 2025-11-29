@@ -9,6 +9,7 @@ metrics.workspace = true
 
 tracing.workspace = true
 tokio-cron-scheduler.workspace = true
+tokio.workspace = true
 thiserror.workspace = true
 chrono.workspace = true
 uuid.workspace = true

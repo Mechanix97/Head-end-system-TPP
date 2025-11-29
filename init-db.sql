@@ -66,5 +66,6 @@ CREATE TABLE IF NOT EXISTS T_SCHEDULED_CONNECTIONS (
     schedule_time TIMESTAMP NOT NULL,
     connection_time TIMESTAMP,
     status scheduledstatus NOT NULL default 'awaiting',
-    job_id UUID
+    job_id UUID,
+    renewable BOOLEAN NOT NULL DEFAULT true
 );

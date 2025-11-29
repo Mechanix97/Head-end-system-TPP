@@ -157,6 +157,7 @@ impl Engine for InMemoryDB {
                 connection_time: None,
                 status: ScheduledStatus::Awaiting,
                 job_id: Some(job_id),
+                renewable: true,
             },
         );
         Ok(())
@@ -171,6 +172,17 @@ impl Engine for InMemoryDB {
             .values()
             .cloned()
             .collect())
+    }
+
+    async fn get_scheduled_connection(
+        &self,
+        device_id: Uuid,
+    ) -> Result<ScheduledConnection, DatabaseError> {
+        let lock = self.inner.lock().await;
+        lock.scheduled_connections
+            .get(&device_id)
+            .cloned()
+            .ok_or(DatabaseError::NoDataFound)
     }
 
     async fn update_scheduled_connection(

@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::error::SchedulerError;
 use crate::schedule::Schedule;
+use crate::task::wake_up_device::wake_up_device;
 use common::database::api::Database;
 use common::device::Device;
 use common::scheduled_connection::ScheduledConnection;
@@ -113,20 +114,8 @@ impl Scheduler {
             }
 
             let next_wake_up = connection.schedule_time;
-            let db_clone = self.database.clone();
-
             let job_id = self
-                .job_scheduler
-                .add(Job::new_async_tz(
-                    next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
-                    chrono_tz::UTC,
-                    move |job_id, _l| {
-                        let db_clone = db_clone.clone();
-                        Box::pin(async move {
-                            periodically_task(job_id, connection.fk_device, db_clone).await;
-                        })
-                    },
-                )?)
+                .create_wakeup_job(connection.fk_device, next_wake_up)
                 .await?;
 
             connection.job_id = Some(job_id);
@@ -159,20 +148,7 @@ impl Scheduler {
                 },
             )?;
 
-        let db_clone = self.database.clone();
-        let job_id = self
-            .job_scheduler
-            .add(Job::new_async_tz(
-                next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
-                chrono_tz::UTC,
-                move |job_id, _l| {
-                    let db_clone = db_clone.clone();
-                    Box::pin(async move {
-                        periodically_task(job_id, device_id, db_clone).await;
-                    })
-                },
-            )?)
-            .await?;
+        let job_id = self.create_wakeup_job(device_id, next_wake_up).await?;
 
         self.database
             .schedule_connection(device_id, next_wake_up, job_id)
@@ -243,6 +219,56 @@ impl Scheduler {
             .await
             .map_err(SchedulerError::DatabaseError)
     }
+
+    async fn create_wakeup_job(
+        &mut self,
+        device_id: Uuid,
+        next_wake_up: NaiveDateTime,
+    ) -> Result<Uuid, SchedulerError> {
+        let db_clone = self.database.clone();
+
+        let job = Job::new_async_tz(
+            next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
+            chrono_tz::UTC,
+            move |job_id, _l| {
+                let db_clone = db_clone.clone();
+                Box::pin(async move {
+                    if let Err(e) = wake_up_device(job_id, device_id, db_clone.clone()).await {
+                        error!("[Job {:#x}] Wake up device failed: {}", job_id, e);
+
+                        let mut connection = db_clone
+                            .get_scheduled_connection(device_id)
+                            .await
+                            .inspect_err(|e| error!("[Job {:#x}] Failed to get scheduled connection: {}", job_id, e))
+                            .ok();
+
+                        if let Some(conn) = &mut connection {
+                            conn.status = ScheduledStatus::Lost;
+                            conn.renewable = false;
+                            conn.job_id = None;
+
+                            db_clone
+                                .update_scheduled_connection(conn)
+                                .await
+                                .inspect_err(|e| error!("[Job {:#x}] Failed to update connection status: {}", job_id, e))
+                                .ok();
+                        }
+                    }
+                })
+            },
+        )
+        .map_err(|e| {
+            error!("Failed to create job: {}", e);
+            SchedulerError::JobSchedulerError(e)
+        })?;
+
+        let job_id = self.job_scheduler.add(job).await.map_err(|e| {
+            error!("Failed to add job to scheduler: {}", e);
+            SchedulerError::JobSchedulerError(e)
+        })?;
+
+        Ok(job_id)
+    }
 }
 
 /// Determines the date (day/month/year) for a scheduled wake-up based on the hour.
@@ -277,18 +303,4 @@ fn get_date_from_hour(hour: usize) -> (usize, usize, usize) {
         tomorrow.month() as usize,
         tomorrow.year() as usize,
     )
-}
-
-/// Periodic task executed when a device's scheduled wake-up time arrives.
-///
-/// TODO: Implement the actual connection logic:
-/// 1. Connect to device's IPv6:port as UDP client
-/// 2. Send HANDSHAKE message
-/// 3. Send READ_REQUEST for consumption data (OBIS codes)
-/// 4. Send WRITE_REQUEST to update next wake time
-/// 5. Close connection with ACK
-///
-/// Currently this just logs the device ID as a placeholder.
-async fn periodically_task(job_id: Uuid, device_id: Uuid, _database: Database) {
-    info!("[Job id: {:#x}] Conection ID: {}", job_id, device_id);
 }

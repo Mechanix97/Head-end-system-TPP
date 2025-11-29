@@ -177,6 +177,14 @@ impl Database {
         self.engine.get_scheduled_connections().await
     }
 
+    /// Retrieves a single scheduled connection by device ID.
+    pub async fn get_scheduled_connection(
+        &self,
+        device_id: Uuid,
+    ) -> Result<ScheduledConnection, DatabaseError> {
+        self.engine.get_scheduled_connection(device_id).await
+    }
+
     /// Updates an existing scheduled connection with new information.
     pub async fn update_scheduled_connection(
         &self,
@@ -257,6 +265,10 @@ pub trait Engine: Debug + Send + Sync {
         job_id: Uuid,
     ) -> Result<(), DatabaseError>;
     async fn get_scheduled_connections(&self) -> Result<Vec<ScheduledConnection>, DatabaseError>;
+    async fn get_scheduled_connection(
+        &self,
+        device_id: Uuid,
+    ) -> Result<ScheduledConnection, DatabaseError>;
     async fn update_scheduled_connection(
         &self,
         connection: &ScheduledConnection,
