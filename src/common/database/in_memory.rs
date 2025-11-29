@@ -174,6 +174,17 @@ impl Engine for InMemoryDB {
             .collect())
     }
 
+    async fn get_scheduled_connection(
+        &self,
+        device_id: Uuid,
+    ) -> Result<ScheduledConnection, DatabaseError> {
+        let lock = self.inner.lock().await;
+        lock.scheduled_connections
+            .get(&device_id)
+            .cloned()
+            .ok_or(DatabaseError::NoDataFound)
+    }
+
     async fn update_scheduled_connection(
         &self,
         connection: &ScheduledConnection,

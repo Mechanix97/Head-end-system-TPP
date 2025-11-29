@@ -400,6 +400,51 @@ impl Engine for PostgresDB {
         Ok(scheduled)
     }
 
+    async fn get_scheduled_connection(
+        &self,
+        device_id: Uuid,
+    ) -> Result<ScheduledConnection, DatabaseError> {
+        let query = r#"
+            SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+            FROM T_SCHEDULED_CONNECTIONS
+            WHERE fk_device = $1
+        "#;
+
+        let row = sqlx::query(query)
+            .bind(device_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let fk_device: Uuid = row
+            .try_get("fk_device")
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+        let schedule_time: NaiveDateTime = row
+            .try_get("schedule_time")
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+        let connection_time: Option<NaiveDateTime> = row
+            .try_get("connection_time")
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+        let status = row
+            .try_get("status")
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+        let job_id: Option<Uuid> = row
+            .try_get("job_id")
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+        let renewable: bool = row
+            .try_get("renewable")
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(ScheduledConnection {
+            fk_device,
+            schedule_time,
+            connection_time,
+            status,
+            job_id,
+            renewable,
+        })
+    }
+
     async fn update_scheduled_connection(
         &self,
         connection: &ScheduledConnection,
