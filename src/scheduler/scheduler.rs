@@ -124,7 +124,9 @@ impl Scheduler {
                     move |job_id, _l| {
                         let db_clone = db_clone.clone();
                         Box::pin(async move {
-                            wake_up_device(job_id, connection.fk_device, db_clone).await;
+                            wake_up_device(job_id, connection.fk_device, db_clone)
+                                .await
+                                .unwrap();
                         })
                     },
                 )?)
@@ -169,7 +171,7 @@ impl Scheduler {
                 move |job_id, _l| {
                     let db_clone = db_clone.clone();
                     Box::pin(async move {
-                        wake_up_device(job_id, device_id, db_clone).await;
+                        wake_up_device(job_id, device_id, db_clone).await.unwrap();
                     })
                 },
             )?)
