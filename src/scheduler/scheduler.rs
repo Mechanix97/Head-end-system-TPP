@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
 use tokio_cron_scheduler::{Job, JobScheduler};
@@ -9,6 +11,8 @@ use crate::error::SchedulerError;
 use crate::schedule::Schedule;
 use common::database::api::Database;
 use common::device::Device;
+use common::scheduled_connection::ScheduledConnection;
+use common::scheduled_connection::ScheduledStatus;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
 /// Manages scheduled connections to IoT devices using a time-bucket algorithm.
@@ -40,8 +44,8 @@ impl Scheduler {
             job_scheduler: JobScheduler::new().await?,
             database,
         };
-
-        scheduler.load_active_connections().await?;
+        scheduler.start().await?;
+        scheduler.reload_active_connections().await?;
 
         Ok(scheduler)
     }
@@ -70,7 +74,6 @@ impl Scheduler {
             .connections_tracker
             .with_label_values(&["new_connection"])
             .inc();
-
         let bucket_number = self.get_bucket_number().await;
         let next_wake_up = self.get_next_schedule(bucket_number);
 
@@ -88,36 +91,55 @@ impl Scheduler {
     /// Restores scheduled connections from the database after HES restart.
     ///
     /// This checks for any previously scheduled connections and reschedules them
-    /// if their next wake-up time hasn't expired yet (with a 5-minute safety margin).
-    ///
-    /// Currently disabled (code commented out) - needs to be re-implemented after
-    /// database schema changes.
-    async fn load_active_connections(&mut self) -> Result<(), SchedulerError> {
+    /// if their next wake-up time hasn't expired yet (with a 5-minute safety margin).from_secs
+    async fn reload_active_connections(&mut self) -> Result<(), SchedulerError> {
         // TODO: Re-implement this after finalizing database schema
         // Currently commented out due to schema changes in progress
-        // let active_connections = self.database.get_active_connections().await?;
-        // for mut conn in active_connections {
-        //     info!("Loading connection from db {:#x}", conn.device_id);
+        let scheduled_connections = self.database.get_scheduled_connections().await?;
 
-        //     let next_wakeup = conn.next_wakeup.ok_or(SchedulerError::NoScheduleDefined)?;
-        //     if next_wakeup < Utc::now().naive_local() + Duration::from_secs(300) {
-        //         info!(
-        //             "Connection {:#x} expired, changing status to lost in db",
-        //             conn.device_id
-        //         );
-        //         // conn.status = ConnectionStatus::Lost;
-        //         // self.database.update_connection(&conn).await?;
-        //         continue;
-        //     }
+        for mut connection in scheduled_connections {
+            info!("Loading connection from db {:#x}", connection.fk_device);
+            if connection.schedule_time < Utc::now().naive_local() + Duration::from_secs(300) {
+                info!(
+                    "Connection {:#x} expired, changing status to lost in db",
+                    connection.fk_device
+                );
+                connection.status = ScheduledStatus::Lost;
+                connection.job_id = None;
+                self.database
+                    .update_scheduled_connection(&connection)
+                    .await?;
+                continue;
+            }
 
-        //     METRICS_CONNECTIONS
-        //         .connections_tracker
-        //         .with_label_values(&["new_connection"])
-        //         .inc();
+            let next_wake_up = connection.schedule_time;
+            let db_clone = self.database.clone();
 
-        //     self.schedule_wakeup_job(conn.device_id).await?;
-        // }
+            let job_id = self
+                .job_scheduler
+                .add(Job::new_async_tz(
+                    next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
+                    chrono_tz::UTC,
+                    move |job_id, _l| {
+                        let db_clone = db_clone.clone();
+                        Box::pin(async move {
+                            periodically_task(job_id, connection.fk_device, db_clone).await;
+                        })
+                    },
+                )?)
+                .await?;
 
+            connection.job_id = Some(job_id);
+
+            self.database
+                .update_scheduled_connection(&connection)
+                .await?;
+
+            METRICS_CONNECTIONS
+                .connections_tracker
+                .with_label_values(&["new_connection"])
+                .inc();
+        }
         Ok(())
     }
 
@@ -140,12 +162,13 @@ impl Scheduler {
         let db_clone = self.database.clone();
         let job_id = self
             .job_scheduler
-            .add(Job::new_async(
+            .add(Job::new_async_tz(
                 next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
-                move |_uuid, _l| {
+                chrono_tz::UTC,
+                move |job_id, _l| {
                     let db_clone = db_clone.clone();
                     Box::pin(async move {
-                        periodically_task(device_id, db_clone).await;
+                        periodically_task(job_id, device_id, db_clone).await;
                     })
                 },
             )?)
@@ -214,7 +237,7 @@ impl Scheduler {
 
     pub async fn get_scheduled_connections(
         &self,
-    ) -> Result<Vec<(Uuid, NaiveDateTime)>, SchedulerError> {
+    ) -> Result<Vec<ScheduledConnection>, SchedulerError> {
         self.database
             .get_scheduled_connections()
             .await
@@ -266,6 +289,6 @@ fn get_date_from_hour(hour: usize) -> (usize, usize, usize) {
 /// 5. Close connection with ACK
 ///
 /// Currently this just logs the device ID as a placeholder.
-async fn periodically_task(device_id: Uuid, _database: Database) {
-    info!("Conection ID: {}", device_id);
+async fn periodically_task(job_id: Uuid, device_id: Uuid, _database: Database) {
+    info!("[Job id: {:#x}] Conection ID: {}", job_id, device_id);
 }

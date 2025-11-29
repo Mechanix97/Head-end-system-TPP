@@ -12,6 +12,7 @@ tokio-cron-scheduler.workspace = true
 thiserror.workspace = true
 chrono.workspace = true
 uuid.workspace = true
+chrono-tz.workspace = true
 
 [lib]
 path = "./mod.rs"
