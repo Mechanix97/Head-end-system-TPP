@@ -1,5 +1,5 @@
 use tokio::net::UdpSocket;
-use tokio::time::{Duration, sleep};
+use tokio::time::{Duration, sleep, timeout};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -10,6 +10,7 @@ use crate::error::TaskError;
 const DEVICE_UDP_PORT: u16 = 6060;
 const MAX_RETRIES: u32 = 5;
 const RETRY_DELAY_SECS: u64 = 60;
+const RESPONSE_TIMEOUT_SECS: u64 = 30;
 
 /// Connects to a device at its scheduled wake-up time to collect consumption data.
 pub async fn wake_up_device(
@@ -70,8 +71,21 @@ pub async fn wake_up_device(
 }
 
 async fn try_connect(remote_addr: &str) -> Result<UdpSocket, TaskError> {
-    // open a socket on any available port
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     socket.connect(remote_addr).await?;
+
+    // UDP connect() doesn't verify if device is listening
+    // Send test packet and wait for response to confirm device is awake
+    let test_message = [0u8; 1];
+    socket.send(&test_message).await?;
+
+    let mut buf = [0u8; 1024];
+    timeout(
+        Duration::from_secs(RESPONSE_TIMEOUT_SECS),
+        socket.recv(&mut buf),
+    )
+    .await
+    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Device did not respond"))??;
+
     Ok(socket)
 }
