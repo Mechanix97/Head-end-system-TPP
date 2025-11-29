@@ -4,7 +4,6 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use common::database::api::Database;
-use common::scheduled_connection::ScheduledStatus;
 
 use crate::error::TaskError;
 
@@ -66,12 +65,6 @@ pub async fn wake_up_device(
         "[Job {:#x}] Failed to connect after {} attempts, marking as lost",
         job_id, MAX_RETRIES
     );
-
-    let mut connection = database.get_scheduled_connection(device_id).await?;
-    connection.status = ScheduledStatus::Lost;
-    connection.renewable = false;
-    connection.job_id = None;
-    database.update_scheduled_connection(&connection).await?;
 
     Err(TaskError::MaxRetriesExceeded)
 }
