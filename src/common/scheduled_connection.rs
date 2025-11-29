@@ -18,4 +18,5 @@ pub struct ScheduledConnection {
     pub connection_time: Option<NaiveDateTime>,
     pub status: ScheduledStatus,
     pub job_id: Option<Uuid>,
+    pub renewable: bool,
 }

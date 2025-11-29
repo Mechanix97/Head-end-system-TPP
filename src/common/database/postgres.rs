@@ -337,8 +337,8 @@ impl Engine for PostgresDB {
         job_id: Uuid,
     ) -> Result<(), DatabaseError> {
         let query = "INSERT INTO T_SCHEDULED_CONNECTIONS
-                    (fk_device, schedule_time, connection_time, status, job_id) 
-                    VALUES ($1, $2, NULL, 'awaiting', $3)";
+                    (fk_device, schedule_time, connection_time, status, job_id, renewable)
+                    VALUES ($1, $2, NULL, 'awaiting', $3, true)";
 
         sqlx::query(query)
             .bind(device_id)
@@ -353,7 +353,7 @@ impl Engine for PostgresDB {
 
     async fn get_scheduled_connections(&self) -> Result<Vec<ScheduledConnection>, DatabaseError> {
         let query = r#"
-            SELECT fk_device, schedule_time, connection_time, status, job_id
+            SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
             FROM T_SCHEDULED_CONNECTIONS
             WHERE status = 'awaiting'
             ORDER BY schedule_time ASC
@@ -382,6 +382,9 @@ impl Engine for PostgresDB {
                 let job_id: Option<Uuid> = row
                     .try_get("job_id")
                     .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let renewable: bool = row
+                    .try_get("renewable")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
                 Ok(ScheduledConnection {
                     fk_device,
@@ -389,6 +392,7 @@ impl Engine for PostgresDB {
                     connection_time,
                     status,
                     job_id,
+                    renewable,
                 })
             })
             .collect::<Result<Vec<_>, DatabaseError>>()?;
@@ -405,8 +409,9 @@ impl Engine for PostgresDB {
             SET schedule_time = $1,
                 connection_time = $2,
                 status = $3,
-                job_id = $4
-            WHERE fk_device = $5
+                job_id = $4,
+                renewable = $5
+            WHERE fk_device = $6
         "#;
 
         sqlx::query(query)
@@ -414,6 +419,7 @@ impl Engine for PostgresDB {
             .bind(connection.connection_time)
             .bind(&connection.status)
             .bind(connection.job_id)
+            .bind(connection.renewable)
             .bind(connection.fk_device)
             .execute(&self.pool)
             .await

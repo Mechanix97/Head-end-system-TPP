@@ -157,6 +157,7 @@ impl Engine for InMemoryDB {
                 connection_time: None,
                 status: ScheduledStatus::Awaiting,
                 job_id: Some(job_id),
+                renewable: true,
             },
         );
         Ok(())
