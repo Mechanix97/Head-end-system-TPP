@@ -85,6 +85,25 @@ impl Message {
         Ok(msg)
     }
 
+    /// Creates a HANDSHAKE message to initiate a session with a device.
+    ///
+    /// The HES sends this when connecting to a device at its scheduled wake time.
+    /// The device should respond with a HANDSHAKE_RESPONSE.
+    pub fn new_handshake_message(device_id: u128, seq: u32) -> Result<Self, MessageError> {
+        let mut msg = Message {
+            version: CURRENT_PROTOCOL_VERSION,
+            msg_type: MsgType::Handshake,
+            device_id,
+            seq,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            payload: MessagePayload::Handshake(HandshakeMessage {}),
+            mac: 0,
+        };
+
+        msg.calculate_mac();
+        Ok(msg)
+    }
+
     /// Creates an ACK message to confirm successful message reception.
     ///
     /// Used to close sessions and confirm operations. The device uses this to

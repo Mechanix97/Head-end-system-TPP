@@ -1,4 +1,5 @@
 use common::database::DatabaseError;
+use common::messages::{MessageError, MsgCodecError};
 use thiserror::Error;
 use tokio_cron_scheduler::JobSchedulerError;
 
@@ -34,4 +35,8 @@ pub enum TaskError {
     IoError(#[from] std::io::Error),
     #[error("Max connection retries exceeded")]
     MaxRetriesExceeded,
+    #[error("Message error: {0}")]
+    MessageError(#[from] MessageError),
+    #[error("Message codec error: {0}")]
+    MsgCodecError(#[from] MsgCodecError),
 }

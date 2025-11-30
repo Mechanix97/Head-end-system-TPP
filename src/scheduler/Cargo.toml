@@ -10,10 +10,12 @@ metrics.workspace = true
 tracing.workspace = true
 tokio-cron-scheduler.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 thiserror.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 chrono-tz.workspace = true
+bytes.workspace = true
 
 [lib]
 path = "./mod.rs"

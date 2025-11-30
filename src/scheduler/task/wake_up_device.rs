@@ -1,9 +1,13 @@
+use bytes::BytesMut;
 use tokio::net::UdpSocket;
 use tokio::time::{Duration, sleep, timeout};
+use tokio_util::codec::Encoder;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use common::database::api::Database;
+use common::messages::codec::MessageCodec;
+use common::messages::message::Message;
 
 use crate::error::TaskError;
 
@@ -36,9 +40,9 @@ pub async fn wake_up_device(
             job_id, attempt, MAX_RETRIES, remote_addr
         );
 
-        match try_connect(&remote_addr).await {
+        match try_connect(&remote_addr, device_id).await {
             Ok(_socket) => {
-                info!("[Job {:#x}] Connected successfully", job_id);
+                info!("[Job {:#x}] Device responded to HANDSHAKE", job_id);
 
                 // TODO: Send HANDSHAKE message
                 // TODO: Receive HANDSHAKE_RESPONSE
@@ -70,22 +74,35 @@ pub async fn wake_up_device(
     Err(TaskError::MaxRetriesExceeded)
 }
 
-async fn try_connect(remote_addr: &str) -> Result<UdpSocket, TaskError> {
+async fn try_connect(remote_addr: &str, device_id: Uuid) -> Result<UdpSocket, TaskError> {
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     socket.connect(remote_addr).await?;
 
-    // UDP connect() doesn't verify if device is listening
-    // Send test packet and wait for response to confirm device is awake
-    let test_message = [0u8; 1];
-    socket.send(&test_message).await?;
+    // Send HANDSHAKE message as per protocol specification
+    let handshake = Message::new_handshake_message(device_id.as_u128(), 0)?;
 
-    let mut buf = [0u8; 1024];
-    timeout(
+    let mut buf = BytesMut::new();
+    let mut codec = MessageCodec;
+    codec.encode(handshake, &mut buf)?;
+
+    socket.send(&buf).await?;
+
+    // Wait for HANDSHAKE_RESPONSE from device
+    let mut response_buf = [0u8; 1024];
+    let n = timeout(
         Duration::from_secs(RESPONSE_TIMEOUT_SECS),
-        socket.recv(&mut buf),
+        socket.recv(&mut response_buf),
     )
     .await
     .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Device did not respond"))??;
+
+    // TODO: Decode and validate HANDSHAKE_RESPONSE
+    // For now, just check that we got some data back
+    if n == 0 {
+        return Err(
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Empty response").into(),
+        );
+    }
 
     Ok(socket)
 }
