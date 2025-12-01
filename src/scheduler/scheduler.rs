@@ -128,6 +128,7 @@ impl Scheduler {
                     connection.fk_device
                 );
                 connection.status = ScheduledStatus::Lost;
+                connection.renewable = false;
                 connection.job_id = None;
                 self.database
                     .update_scheduled_connection(&connection)
