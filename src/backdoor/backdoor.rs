@@ -207,7 +207,7 @@ async fn handle_backdoor_register_msg(
     let device = Device::new(socket_addr, None, None, None);
 
     database.add_device(&device).await?;
-    device_manager
+    let next_wake_up = device_manager
         .write()
         .await
         .register_device(&device)
@@ -216,7 +216,8 @@ async fn handle_backdoor_register_msg(
         .register_device(device.id, msg.get_timestamp()?)
         .await?;
 
-    let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
+    let next_wake_time = next_wake_up.and_utc().timestamp() as u64;
+    let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1, next_wake_time)?;
 
     let mut buf = BytesMut::new();
     match MessageCodec.encode(response, &mut buf) {

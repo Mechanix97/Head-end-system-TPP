@@ -28,7 +28,7 @@ const CURRENT_PROTOCOL_VERSION: u8 = 1;
 ///
 /// Messages are secured with HMAC-SHA256 authentication and include sequence numbers
 /// for replay protection.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Message {
     /// Protocol version (currently 1)
     pub version: u8,
@@ -58,7 +58,12 @@ impl Message {
             device_id: 0,
             seq: 0,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
-            payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
+            payload: MessagePayload::RegistryRequest(RegistryRequestMessage::new(
+                12345,
+                67890,
+                "fe80::1".to_string(),
+                "00:11:22:33:44:55".to_string(),
+            )),
             mac: 0,
         };
 
@@ -70,14 +75,17 @@ impl Message {
     ///
     /// The HES sends this after validating the registration request, assigning a UUID
     /// and scheduling the device in a time bucket.
-    pub fn new_register_response_message(device_id: u128, seq: u32) -> Result<Self, MessageError> {
+    pub fn new_register_response_message(device_id: u128, seq: u32, next_wake_time: u64) -> Result<Self, MessageError> {
         let mut msg = Message {
             version: CURRENT_PROTOCOL_VERSION,
             msg_type: MsgType::RegisterResponse,
             device_id,
             seq,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
-            payload: MessagePayload::RegistryResponse(RegistryResponseMessage {}),
+            payload: MessagePayload::RegistryResponse(RegistryResponseMessage::new(
+                device_id,
+                next_wake_time,
+            )),
             mac: 0,
         };
 
@@ -89,14 +97,14 @@ impl Message {
     ///
     /// The HES sends this when connecting to a device at its scheduled wake time.
     /// The device should respond with a HANDSHAKE_RESPONSE.
-    pub fn new_handshake_message(device_id: u128, seq: u32) -> Result<Self, MessageError> {
+    pub fn new_handshake_message(device_id: u128, seq: u32, nonce: Vec<u8>) -> Result<Self, MessageError> {
         let mut msg = Message {
             version: CURRENT_PROTOCOL_VERSION,
             msg_type: MsgType::Handshake,
             device_id,
             seq,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
-            payload: MessagePayload::Handshake(HandshakeMessage {}),
+            payload: MessagePayload::Handshake(HandshakeMessage::new(nonce)),
             mac: 0,
         };
 
@@ -224,7 +232,7 @@ impl MsgType {
 ///
 /// Each message type has its own payload structure. Some messages like ACK
 /// have no payload data.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum MessagePayload {
     Handshake(HandshakeMessage),
     HandshakeResponse(HandshakeResponseMessage),

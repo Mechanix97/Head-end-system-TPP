@@ -75,7 +75,7 @@ impl Scheduler {
     ///
     /// Note: This only stores the assignment in the database. The actual job is
     /// scheduled later when the device sends an ACK.
-    pub async fn register_device(&mut self, device: &Device) -> Result<(), SchedulerError> {
+    pub async fn register_device(&mut self, device: &Device) -> Result<NaiveDateTime, SchedulerError> {
         METRICS_CONNECTIONS
             .connections_tracker
             .with_label_values(&["new_connection"])
@@ -98,7 +98,10 @@ impl Scheduler {
             "Device id: {:#x} in bucket {} next wake scheduled at {}",
             device.id, bucket_number, next_wake_up
         );
-        Ok(())
+        NaiveDateTime::try_from(&next_wake_up).map_err(|e| {
+            error!("Error building NaiveDateTime from Schedule: {}", e);
+            SchedulerError::ParseError(e)
+        })
     }
 
     /// Restores scheduled connections from the database after HES restart.

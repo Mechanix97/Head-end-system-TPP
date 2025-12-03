@@ -85,7 +85,9 @@ async fn try_connect(remote_addr: &str, device_id: Uuid) -> Result<UdpSocket, Ta
     socket.connect(remote_addr).await?;
 
     // Send HANDSHAKE message as per protocol specification
-    let handshake = Message::new_handshake_message(device_id.as_u128(), 0)?;
+    // TODO: Generate cryptographically secure random nonce
+    let nonce = vec![0u8; 32];  // Temporary: use 32-byte zero nonce
+    let handshake = Message::new_handshake_message(device_id.as_u128(), 0, nonce)?;
 
     let mut buf = BytesMut::new();
     let mut codec = MessageCodec;
