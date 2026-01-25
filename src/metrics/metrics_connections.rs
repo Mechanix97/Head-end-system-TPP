@@ -1,4 +1,4 @@
-use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec, Opts, Registry, TextEncoder};
+use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
 use std::sync::LazyLock;
 
 use crate::MetricsError;
@@ -10,12 +10,17 @@ use crate::MetricsError;
 /// pass around a metrics handle.
 pub static METRICS_CONNECTIONS: LazyLock<MetricsConns> = LazyLock::new(MetricsConns::default);
 
-/// Prometheus metrics for tracking device connections.
+/// Prometheus metrics for tracking HES operations.
 ///
 /// Tracks:
 /// - `connections_tracker`: Counter for connection events (e.g., "new_connection")
 /// - `ack_response_time_ms`: Histogram for ACK response time distribution in milliseconds
 /// - `ack_timeout_count`: Counter for ACKs that exceeded the timeout threshold
+/// - `scheduled_devices_total`: Gauge for total number of scheduled devices
+/// - `devices_per_bucket`: Gauge for devices in each scheduler bucket
+/// - `scheduler_jobs_active`: Gauge for active scheduler jobs
+/// - `errors_total`: Counter for errors by component and type
+/// - `messages_total`: Counter for messages by type and direction
 #[derive(Debug)]
 pub struct MetricsConns {
     /// Prometheus registry - created once and reused
@@ -27,6 +32,22 @@ pub struct MetricsConns {
     pub ack_response_time_ms: Histogram,
     /// Counter for ACKs that exceeded the configured timeout
     pub ack_timeout_count: IntCounter,
+
+    // Scheduler metrics
+    /// Total number of devices with scheduled connections
+    pub scheduled_devices_total: IntGauge,
+    /// Number of devices assigned to each bucket (label: bucket)
+    pub devices_per_bucket: IntGaugeVec,
+    /// Number of active scheduler jobs
+    pub scheduler_jobs_active: IntGauge,
+
+    // Error metrics
+    /// Total errors by component and error type (labels: component, error_type)
+    pub errors_total: IntCounterVec,
+
+    // Message metrics
+    /// Total messages by type and direction (labels: msg_type, direction)
+    pub messages_total: IntCounterVec,
 }
 
 impl Default for MetricsConns {
@@ -78,6 +99,39 @@ impl MetricsConns {
         )
         .expect("Invalid Prometheus counter");
 
+        // Scheduler metrics
+        let scheduled_devices_total = IntGauge::new(
+            "scheduled_devices_total",
+            "Total number of devices with scheduled connections",
+        )
+        .expect("Invalid Prometheus gauge");
+
+        let devices_per_bucket = IntGaugeVec::new(
+            Opts::new("devices_per_bucket", "Number of devices assigned to each scheduler bucket"),
+            &["bucket"],
+        )
+        .expect("Invalid Prometheus gauge vec");
+
+        let scheduler_jobs_active = IntGauge::new(
+            "scheduler_jobs_active",
+            "Number of active scheduler jobs",
+        )
+        .expect("Invalid Prometheus gauge");
+
+        // Error metrics
+        let errors_total = IntCounterVec::new(
+            Opts::new("errors_total", "Total errors by component and type"),
+            &["component", "error_type"],
+        )
+        .expect("Invalid Prometheus counter vec");
+
+        // Message metrics
+        let messages_total = IntCounterVec::new(
+            Opts::new("messages_total", "Total messages by type and direction"),
+            &["msg_type", "direction"],
+        )
+        .expect("Invalid Prometheus counter vec");
+
         // Register all metrics once at creation time
         registry
             .register(Box::new(connections_tracker.clone()))
@@ -88,12 +142,32 @@ impl MetricsConns {
         registry
             .register(Box::new(ack_timeout_count.clone()))
             .expect("Failed to register ack_timeout_count");
+        registry
+            .register(Box::new(scheduled_devices_total.clone()))
+            .expect("Failed to register scheduled_devices_total");
+        registry
+            .register(Box::new(devices_per_bucket.clone()))
+            .expect("Failed to register devices_per_bucket");
+        registry
+            .register(Box::new(scheduler_jobs_active.clone()))
+            .expect("Failed to register scheduler_jobs_active");
+        registry
+            .register(Box::new(errors_total.clone()))
+            .expect("Failed to register errors_total");
+        registry
+            .register(Box::new(messages_total.clone()))
+            .expect("Failed to register messages_total");
 
         MetricsConns {
             registry,
             connections_tracker,
             ack_response_time_ms,
             ack_timeout_count,
+            scheduled_devices_total,
+            devices_per_bucket,
+            scheduler_jobs_active,
+            errors_total,
+            messages_total,
         }
     }
 
