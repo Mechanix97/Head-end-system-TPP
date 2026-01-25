@@ -171,8 +171,8 @@ async fn handle_backdoor_ack_msg(
             let registration_duration =
                 (msg.get_timestamp()? - device_registration.registration_time).num_milliseconds();
             METRICS_CONNECTIONS
-                .ack_response_time_avg_ms
-                .set(registration_duration as f64);
+                .ack_response_time_ms
+                .observe(registration_duration as f64);
 
             info!(
                 "Adding new connection, device_id: {:#x}, ACK response time: {:.2}ms",
