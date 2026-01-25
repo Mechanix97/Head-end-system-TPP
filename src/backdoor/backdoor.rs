@@ -404,7 +404,7 @@ mod tests {
         assert_eq!(connecitons_number, 0);
 
         // 2. receives registration response msg
-        buffer = BytesMut::new();
+        buffer = BytesMut::with_capacity(1024);
         device_socket.recv_buf(&mut buffer).await.unwrap();
         let response = codec.decode(&mut buffer).unwrap().unwrap();
 
@@ -471,7 +471,7 @@ mod tests {
         assert_eq!(connecitons_number, 0);
 
         // 2. receives registration response msg
-        buffer = BytesMut::new();
+        buffer = BytesMut::with_capacity(1024);
         device_socket.recv_buf(&mut buffer).await.unwrap();
         let response = codec.decode(&mut buffer).unwrap().unwrap();
 
@@ -530,7 +530,7 @@ mod tests {
             assert_eq!(connecitons_number, i);
 
             // 2. receives registration response msg
-            buffer = BytesMut::new();
+            buffer = BytesMut::with_capacity(1024);
             device_socket.recv_buf(&mut buffer).await.unwrap();
             let response = codec.decode(&mut buffer).unwrap().unwrap();
 
@@ -986,12 +986,12 @@ mod tests {
         assert_eq!(connecitons_number, 0);
 
         // 2a. receives registration response msg
-        buffer = BytesMut::new();
+        buffer = BytesMut::with_capacity(1024);
         device_socket_a.recv_buf(&mut buffer).await.unwrap();
         let response_a = codec.decode(&mut buffer).unwrap().unwrap();
 
         // 2b. receives registration response msg
-        buffer = BytesMut::new();
+        buffer = BytesMut::with_capacity(1024);
         device_socket_b.recv_buf(&mut buffer).await.unwrap();
         let response_b = codec.decode(&mut buffer).unwrap().unwrap();
 
