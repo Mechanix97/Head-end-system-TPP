@@ -82,6 +82,13 @@ impl Scheduler {
             .add_device_to_bucket(device.id, bucket_number as i32)
             .await?;
 
+        // Update scheduler metrics
+        METRICS_CONNECTIONS.scheduled_devices_total.inc();
+        METRICS_CONNECTIONS
+            .devices_per_bucket
+            .with_label_values(&[&bucket_number.to_string()])
+            .inc();
+
         info!(
             "Device id: {:#x} in bucket {} next wake scheduled at {}",
             device.id, bucket_number, next_wake_up

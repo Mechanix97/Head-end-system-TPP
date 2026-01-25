@@ -1,4 +1,4 @@
-use prometheus::{Encoder, Gauge, IntCounter, IntCounterVec, Opts, Registry, TextEncoder};
+use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
 use std::sync::LazyLock;
 
 use crate::MetricsError;
@@ -10,20 +10,44 @@ use crate::MetricsError;
 /// pass around a metrics handle.
 pub static METRICS_CONNECTIONS: LazyLock<MetricsConns> = LazyLock::new(MetricsConns::default);
 
-/// Prometheus metrics for tracking device connections.
+/// Prometheus metrics for tracking HES operations.
 ///
 /// Tracks:
 /// - `connections_tracker`: Counter for connection events (e.g., "new_connection")
-/// - `ack_response_time_avg_ms`: Gauge for average ACK response time in milliseconds
+/// - `ack_response_time_ms`: Histogram for ACK response time distribution in milliseconds
 /// - `ack_timeout_count`: Counter for ACKs that exceeded the timeout threshold
-#[derive(Debug, Clone)]
+/// - `scheduled_devices_total`: Gauge for total number of scheduled devices
+/// - `devices_per_bucket`: Gauge for devices in each scheduler bucket
+/// - `scheduler_jobs_active`: Gauge for active scheduler jobs
+/// - `errors_total`: Counter for errors by component and type
+/// - `messages_total`: Counter for messages by type and direction
+#[derive(Debug)]
 pub struct MetricsConns {
+    /// Prometheus registry - created once and reused
+    registry: Registry,
     /// Counter for tracking connection events, labeled by event type
     pub connections_tracker: IntCounterVec,
-    /// Gauge for average ACK response time in milliseconds
-    pub ack_response_time_avg_ms: Gauge,
+    /// Histogram for ACK response time distribution in milliseconds
+    /// Provides percentiles (p50, p95, p99), count, and sum
+    pub ack_response_time_ms: Histogram,
     /// Counter for ACKs that exceeded the configured timeout
     pub ack_timeout_count: IntCounter,
+
+    // Scheduler metrics
+    /// Total number of devices with scheduled connections
+    pub scheduled_devices_total: IntGauge,
+    /// Number of devices assigned to each bucket (label: bucket)
+    pub devices_per_bucket: IntGaugeVec,
+    /// Number of active scheduler jobs
+    pub scheduler_jobs_active: IntGauge,
+
+    // Error metrics
+    /// Total errors by component and error type (labels: component, error_type)
+    pub errors_total: IntCounterVec,
+
+    // Message metrics
+    /// Total messages by type and direction (labels: msg_type, direction)
+    pub messages_total: IntCounterVec,
 }
 
 impl Default for MetricsConns {
@@ -33,13 +57,18 @@ impl Default for MetricsConns {
 }
 
 impl MetricsConns {
-    /// Creates a new metrics collector with default counters initialized.
+    /// Creates a new metrics collector with a global registry.
     ///
     /// Registers:
     /// - "connections_tracker" counter with "new_connection" label
-    /// - "ack_response_time_avg_ms" gauge for average ACK response time
+    /// - "ack_response_time_ms" histogram for ACK response time distribution
     /// - "ack_timeout_count" counter for timeouts
+    ///
+    /// The registry is created once and reused for all gather operations,
+    /// avoiding the overhead of re-registering metrics on every scrape.
     pub fn new() -> Self {
+        let registry = Registry::new();
+
         let connections_tracker = IntCounterVec::new(
             Opts::new("connections_tracker", "Keeps track of all connections"),
             &["type"],
@@ -51,11 +80,18 @@ impl MetricsConns {
             .with_label_values(&["new_connection"])
             .inc_by(0);
 
-        let ack_response_time_avg_ms = Gauge::new(
-            "ack_response_time_avg_ms",
-            "Average ACK response time in milliseconds",
+        // Histogram buckets for latency in milliseconds
+        // Covers range from 10ms to 10s with meaningful breakpoints
+        let latency_buckets = vec![10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0, 10000.0];
+
+        let ack_response_time_ms = Histogram::with_opts(
+            HistogramOpts::new(
+                "ack_response_time_ms",
+                "ACK response time distribution in milliseconds",
+            )
+            .buckets(latency_buckets),
         )
-        .expect("Invalid Prometheus gauge");
+        .expect("Invalid Prometheus histogram");
 
         let ack_timeout_count = IntCounter::new(
             "ack_timeout_count",
@@ -63,10 +99,75 @@ impl MetricsConns {
         )
         .expect("Invalid Prometheus counter");
 
+        // Scheduler metrics
+        let scheduled_devices_total = IntGauge::new(
+            "scheduled_devices_total",
+            "Total number of devices with scheduled connections",
+        )
+        .expect("Invalid Prometheus gauge");
+
+        let devices_per_bucket = IntGaugeVec::new(
+            Opts::new("devices_per_bucket", "Number of devices assigned to each scheduler bucket"),
+            &["bucket"],
+        )
+        .expect("Invalid Prometheus gauge vec");
+
+        let scheduler_jobs_active = IntGauge::new(
+            "scheduler_jobs_active",
+            "Number of active scheduler jobs",
+        )
+        .expect("Invalid Prometheus gauge");
+
+        // Error metrics
+        let errors_total = IntCounterVec::new(
+            Opts::new("errors_total", "Total errors by component and type"),
+            &["component", "error_type"],
+        )
+        .expect("Invalid Prometheus counter vec");
+
+        // Message metrics
+        let messages_total = IntCounterVec::new(
+            Opts::new("messages_total", "Total messages by type and direction"),
+            &["msg_type", "direction"],
+        )
+        .expect("Invalid Prometheus counter vec");
+
+        // Register all metrics once at creation time
+        registry
+            .register(Box::new(connections_tracker.clone()))
+            .expect("Failed to register connections_tracker");
+        registry
+            .register(Box::new(ack_response_time_ms.clone()))
+            .expect("Failed to register ack_response_time_ms");
+        registry
+            .register(Box::new(ack_timeout_count.clone()))
+            .expect("Failed to register ack_timeout_count");
+        registry
+            .register(Box::new(scheduled_devices_total.clone()))
+            .expect("Failed to register scheduled_devices_total");
+        registry
+            .register(Box::new(devices_per_bucket.clone()))
+            .expect("Failed to register devices_per_bucket");
+        registry
+            .register(Box::new(scheduler_jobs_active.clone()))
+            .expect("Failed to register scheduler_jobs_active");
+        registry
+            .register(Box::new(errors_total.clone()))
+            .expect("Failed to register errors_total");
+        registry
+            .register(Box::new(messages_total.clone()))
+            .expect("Failed to register messages_total");
+
         MetricsConns {
+            registry,
             connections_tracker,
-            ack_response_time_avg_ms,
+            ack_response_time_ms,
             ack_timeout_count,
+            scheduled_devices_total,
+            devices_per_bucket,
+            scheduler_jobs_active,
+            errors_total,
+            messages_total,
         }
     }
 
@@ -75,26 +176,22 @@ impl MetricsConns {
     /// This is called by the `/metrics` HTTP endpoint to return metrics
     /// in the OpenMetrics format that Prometheus can scrape.
     ///
+    /// Uses the pre-registered global registry for efficient gathering.
+    ///
     /// Returns a string containing metrics in the format:
     /// ```text
     /// # HELP connections_tracker Keeps track of all connections
     /// # TYPE connections_tracker counter
     /// connections_tracker{type="new_connection"} 42
+    /// # HELP ack_response_time_ms ACK response time distribution in milliseconds
+    /// # TYPE ack_response_time_ms histogram
+    /// ack_response_time_ms_bucket{le="10"} 5
+    /// ack_response_time_ms_bucket{le="25"} 12
+    /// ...
     /// ```
     pub fn gather_metrics(&self) -> Result<String, MetricsError> {
-        let r = Registry::new();
-
-        r.register(Box::new(self.connections_tracker.clone()))
-            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-
-        r.register(Box::new(self.ack_response_time_avg_ms.clone()))
-            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-
-        r.register(Box::new(self.ack_timeout_count.clone()))
-            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-
         let encoder = TextEncoder::new();
-        let metric_families = r.gather();
+        let metric_families = self.registry.gather();
 
         let mut buffer = Vec::new();
         encoder

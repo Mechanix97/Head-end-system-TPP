@@ -59,6 +59,10 @@ pub async fn init_backdoor(
             match msg.msg_type {
                 MsgType::RegisterRequest => {
                     info!("RegisterRequest received");
+                    METRICS_CONNECTIONS
+                        .messages_total
+                        .with_label_values(&["register_request", "inbound"])
+                        .inc();
                     if msg.device_id == 0 {
                         if let Err(err) = handle_backdoor_register_msg(
                             &mut framed,
@@ -71,6 +75,10 @@ pub async fn init_backdoor(
                         .await
                         {
                             error!("Error handle register request: {err}");
+                            METRICS_CONNECTIONS
+                                .errors_total
+                                .with_label_values(&["backdoor", "register_request"])
+                                .inc();
                         }
                     } else {
                         // TODO handle ip change
@@ -78,6 +86,10 @@ pub async fn init_backdoor(
                 }
                 MsgType::Ack => {
                     info!("Ack received");
+                    METRICS_CONNECTIONS
+                        .messages_total
+                        .with_label_values(&["ack", "inbound"])
+                        .inc();
                     if let Err(err) = handle_backdoor_ack_msg(
                         &scheduler_clone,
                         msg,
@@ -87,11 +99,19 @@ pub async fn init_backdoor(
                     .await
                     {
                         error!("Error handle ack msg: {err}");
+                        METRICS_CONNECTIONS
+                            .errors_total
+                            .with_label_values(&["backdoor", "ack_handler"])
+                            .inc();
                     }
                 }
 
                 _ => {
                     warn!("Received incompatible msg in backdoor: {:?}", msg.msg_type);
+                    METRICS_CONNECTIONS
+                        .errors_total
+                        .with_label_values(&["backdoor", "invalid_msg_type"])
+                        .inc();
                 }
             }
         }
@@ -130,6 +150,15 @@ async fn handle_backdoor_register_msg(
 
     if let Err(err) = (*framed).send((response, socket_addr)).await {
         error!("Error sending response: {err}");
+        METRICS_CONNECTIONS
+            .errors_total
+            .with_label_values(&["backdoor", "send_response"])
+            .inc();
+    } else {
+        METRICS_CONNECTIONS
+            .messages_total
+            .with_label_values(&["register_response", "outbound"])
+            .inc();
     }
 
     spawn_ack_timeout_task(database.clone(), ack_timeout_duration, device.id);
@@ -171,8 +200,8 @@ async fn handle_backdoor_ack_msg(
             let registration_duration =
                 (msg.get_timestamp()? - device_registration.registration_time).num_milliseconds();
             METRICS_CONNECTIONS
-                .ack_response_time_avg_ms
-                .set(registration_duration as f64);
+                .ack_response_time_ms
+                .observe(registration_duration as f64);
 
             info!(
                 "Adding new connection, device_id: {:#x}, ACK response time: {:.2}ms",
