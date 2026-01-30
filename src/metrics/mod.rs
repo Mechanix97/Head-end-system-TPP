@@ -1,5 +1,6 @@
 pub mod api;
 pub mod metrics_connections;
+pub mod metrics_cluster;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetricsError {

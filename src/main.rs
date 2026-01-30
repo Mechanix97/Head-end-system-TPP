@@ -7,7 +7,8 @@ use tokio::{
 use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
-use common::database::{DatabaseType, api::Database, postgres::PostgresConnectionArgs};
+use cluster::{ClusterConfig, ClusterManager};
+use common::database::{api::Database, postgres::PostgresConnectionArgs, DatabaseType};
 use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
 
@@ -89,6 +90,54 @@ struct Args {
     /// Postgres port
     #[arg(long = "postgres-port", default_value = "5432", help = "Postgres port")]
     postgres_port: String,
+
+    /// Enable cluster mode
+    #[arg(long = "enable-cluster", default_value = "false", help = "Enable cluster mode")]
+    enable_cluster: bool,
+
+    /// Cluster node name
+    #[arg(long = "node-name", help = "Cluster node name (defaults to hostname)")]
+    node_name: Option<String>,
+
+    /// Cluster communication port
+    #[arg(long = "cluster-port", default_value = "6570", help = "Cluster communication port")]
+    cluster_port: u16,
+
+    /// Cluster bind IP
+    #[arg(long = "cluster-ip", default_value = "0.0.0.0", help = "Cluster bind IP")]
+    cluster_ip: String,
+
+    /// Cluster seed nodes
+    #[arg(long = "cluster-seeds", help = "Seed nodes for cluster join (comma-separated, e.g., '127.0.0.1:6570,127.0.0.1:6571')")]
+    cluster_seeds: Option<String>,
+}
+
+/// Initializes the cluster manager and synchronizes it with the scheduler.
+async fn initialize_cluster(
+    args: &Args,
+    database: &Database,
+    scheduler: &Arc<Mutex<Scheduler>>,
+) -> Result<ClusterManager, Box<dyn Error>> {
+    // Create cluster configuration from CLI args
+    let config = ClusterConfig::from_cli_args(
+        args.node_name.clone(),
+        args.cluster_ip.clone(),
+        args.cluster_port,
+        args.backdoor_port.parse().unwrap_or(6565),
+        args.buckets_number as i32,
+        args.cluster_seeds.clone(),
+    )?;
+
+    // Initialize and start cluster manager
+    let mut manager = ClusterManager::new(config, database.clone()).await?;
+    manager.start().await?;
+
+    // Sync scheduler with cluster-owned buckets
+    let owned_buckets = manager.get_owned_buckets().await;
+    scheduler.lock().await.enable_cluster_mode(owned_buckets);
+
+    info!("Cluster mode enabled");
+    Ok(manager)
 }
 
 #[tokio::main]
@@ -101,10 +150,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let db_params = if args.database_type == DatabaseType::Postgres {
         Some(PostgresConnectionArgs {
-            user: args.postgres_user,
-            password: args.postgres_password,
-            url: args.postgres_url,
-            port: args.postgres_port,
+            user: args.postgres_user.clone(),
+            password: args.postgres_password.clone(),
+            url: args.postgres_url.clone(),
+            port: args.postgres_port.clone(),
         })
     } else {
         None
@@ -115,6 +164,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let scheduler = Arc::new(Mutex::new(
         Scheduler::new(args.buckets_number, db.clone()).await?,
     ));
+
+    // Initialize cluster if enabled
+    let cluster_manager = if args.enable_cluster {
+        Some(initialize_cluster(&args, &db, &scheduler).await?)
+    } else {
+        info!("Running in single-node mode");
+        None
+    };
 
     let backdoor_joinhandle = init_backdoor(
         scheduler.clone(),
@@ -141,6 +198,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 info!("Shutting down.");
                 break;
             }
+        }
+    }
+
+    // Graceful shutdown
+    if let Some(cluster_manager) = cluster_manager {
+        info!("Initiating cluster graceful shutdown...");
+        if let Err(e) = cluster_manager.shutdown().await {
+            tracing::warn!("Error during cluster shutdown: {}", e);
         }
     }
 

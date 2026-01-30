@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let mut buffer = BytesMut::new();
 
         let mut codec = MessageCodec;
-        codec.encode(register_request.clone(), &mut buffer)?;
+        codec.encode(register_request, &mut buffer)?;
 
         device_socket
             .send_to(
@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let ack_msg = Message::new_ack_message(response.device_id, response.seq + 1)?;
 
         buffer = BytesMut::new();
-        codec.encode(ack_msg.clone(), &mut buffer)?;
+        codec.encode(ack_msg, &mut buffer)?;
 
         device_socket
             .send_to(

@@ -22,6 +22,8 @@ pub struct InnerDB {
     device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
     buckets: HashMap<Uuid, i32>,
     scheduled_connections: HashMap<Uuid, ScheduledConnection>,
+    cluster_nodes: HashMap<Uuid, (String, String, i32, i32, String)>, // node_name, ip, cluster_port, backdoor_port, status
+    bucket_assignments: HashMap<i32, Uuid>, // bucket_number -> owner_node_id
 }
 
 #[async_trait::async_trait]
@@ -235,6 +237,97 @@ impl Engine for InMemoryDB {
             element.1 = new_time;
         }
 
+        Ok(())
+    }
+
+    // ========== Cluster management ==========
+
+    async fn register_cluster_node(
+        &self,
+        node_id: Uuid,
+        node_name: String,
+        cluster_ip: String,
+        cluster_port: i32,
+        backdoor_port: i32,
+    ) -> Result<(), DatabaseError> {
+        self.inner
+            .lock()
+            .await
+            .cluster_nodes
+            .insert(node_id, (node_name, cluster_ip, cluster_port, backdoor_port, "active".to_string()));
+        Ok(())
+    }
+
+    async fn get_active_cluster_nodes(&self) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError> {
+        let lock = self.inner.lock().await;
+        Ok(lock
+            .cluster_nodes
+            .iter()
+            .filter(|(_, (_, _, _, _, status))| status == "active" || status == "starting")
+            .map(|(id, (name, ip, cluster_port, backdoor_port, _))| {
+                (*id, name.clone(), ip.clone(), *cluster_port, *backdoor_port)
+            })
+            .collect())
+    }
+
+    async fn update_cluster_node_status(&self, node_id: Uuid, status: &str) -> Result<(), DatabaseError> {
+        let mut lock = self.inner.lock().await;
+        if let Some(node) = lock.cluster_nodes.get_mut(&node_id) {
+            node.4 = status.to_string();
+        }
+        Ok(())
+    }
+
+    async fn update_cluster_node_last_seen(&self, _node_id: Uuid) -> Result<(), DatabaseError> {
+        // In-memory DB doesn't track last_seen
+        Ok(())
+    }
+
+    async fn remove_cluster_node(&self, node_id: Uuid) -> Result<(), DatabaseError> {
+        self.inner.lock().await.cluster_nodes.remove(&node_id);
+        Ok(())
+    }
+
+    async fn assign_bucket(&self, bucket_number: i32, owner_node_id: Uuid) -> Result<(), DatabaseError> {
+        self.inner
+            .lock()
+            .await
+            .bucket_assignments
+            .insert(bucket_number, owner_node_id);
+        Ok(())
+    }
+
+    async fn get_bucket_assignments(&self) -> Result<Vec<(i32, Uuid)>, DatabaseError> {
+        let lock = self.inner.lock().await;
+        Ok(lock
+            .bucket_assignments
+            .iter()
+            .map(|(bucket, owner)| (*bucket, *owner))
+            .collect())
+    }
+
+    async fn get_buckets_by_node(&self, node_id: Uuid) -> Result<Vec<i32>, DatabaseError> {
+        let lock = self.inner.lock().await;
+        Ok(lock
+            .bucket_assignments
+            .iter()
+            .filter(|(_, owner)| **owner == node_id)
+            .map(|(bucket, _)| *bucket)
+            .collect())
+    }
+
+    async fn get_devices_in_bucket(&self, bucket_number: i32) -> Result<Vec<Uuid>, DatabaseError> {
+        let lock = self.inner.lock().await;
+        Ok(lock
+            .buckets
+            .iter()
+            .filter(|(_, bucket)| **bucket == bucket_number)
+            .map(|(device_id, _)| *device_id)
+            .collect())
+    }
+
+    async fn remove_bucket_assignment(&self, bucket_number: i32) -> Result<(), DatabaseError> {
+        self.inner.lock().await.bucket_assignments.remove(&bucket_number);
         Ok(())
     }
 }

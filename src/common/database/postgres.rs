@@ -565,4 +565,191 @@ impl Engine for PostgresDB {
 
         Ok(())
     }
+
+    // ========== Cluster management ==========
+
+    async fn register_cluster_node(
+        &self,
+        node_id: Uuid,
+        node_name: String,
+        cluster_ip: String,
+        cluster_port: i32,
+        backdoor_port: i32,
+    ) -> Result<(), DatabaseError> {
+        let query = r#"
+            INSERT INTO T_NODES (node_id, node_name, cluster_ip, cluster_port, backdoor_port, status, started_at, last_seen)
+            VALUES ($1, $2, $3, $4, $5, 'active', NOW(), NOW())
+            ON CONFLICT (node_id)
+            DO UPDATE SET
+                cluster_ip = $3,
+                cluster_port = $4,
+                backdoor_port = $5,
+                last_seen = NOW()
+        "#;
+
+        sqlx::query(query)
+            .bind(node_id)
+            .bind(node_name)
+            .bind(cluster_ip)
+            .bind(cluster_port)
+            .bind(backdoor_port)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_active_cluster_nodes(&self) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError> {
+        let query = r#"
+            SELECT node_id, node_name, cluster_ip, cluster_port, backdoor_port
+            FROM T_NODES
+            WHERE status IN ('active', 'starting')
+            ORDER BY node_name
+        "#;
+
+        let rows = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let nodes = rows
+            .into_iter()
+            .map(|row| {
+                let node_id: Uuid = row
+                    .try_get("node_id")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let node_name: String = row
+                    .try_get("node_name")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let cluster_ip: String = row
+                    .try_get("cluster_ip")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let cluster_port: i32 = row
+                    .try_get("cluster_port")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let backdoor_port: i32 = row
+                    .try_get("backdoor_port")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                Ok((node_id, node_name, cluster_ip, cluster_port, backdoor_port))
+            })
+            .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+        Ok(nodes)
+    }
+
+    async fn update_cluster_node_status(&self, node_id: Uuid, status: &str) -> Result<(), DatabaseError> {
+        let query = "UPDATE T_NODES SET status = $1, last_seen = NOW() WHERE node_id = $2";
+
+        sqlx::query(query)
+            .bind(status)
+            .bind(node_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn update_cluster_node_last_seen(&self, node_id: Uuid) -> Result<(), DatabaseError> {
+        let query = "UPDATE T_NODES SET last_seen = NOW() WHERE node_id = $1";
+
+        sqlx::query(query)
+            .bind(node_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn remove_cluster_node(&self, node_id: Uuid) -> Result<(), DatabaseError> {
+        let query = "DELETE FROM T_NODES WHERE node_id = $1";
+
+        sqlx::query(query)
+            .bind(node_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn assign_bucket(&self, bucket_number: i32, owner_node_id: Uuid) -> Result<(), DatabaseError> {
+        let query = r#"
+            INSERT INTO T_BUCKET_ASSIGNMENTS (bucket_number, owner_node_id, assigned_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (bucket_number)
+            DO UPDATE SET owner_node_id = $2, assigned_at = NOW()
+        "#;
+
+        sqlx::query(query)
+            .bind(bucket_number)
+            .bind(owner_node_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_bucket_assignments(&self) -> Result<Vec<(i32, Uuid)>, DatabaseError> {
+        let query = "SELECT bucket_number, owner_node_id FROM T_BUCKET_ASSIGNMENTS WHERE owner_node_id IS NOT NULL";
+
+        let rows = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let assignments = rows
+            .into_iter()
+            .map(|row| {
+                let bucket: i32 = row
+                    .try_get("bucket_number")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let owner: Uuid = row
+                    .try_get("owner_node_id")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                Ok((bucket, owner))
+            })
+            .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+        Ok(assignments)
+    }
+
+    async fn get_buckets_by_node(&self, node_id: Uuid) -> Result<Vec<i32>, DatabaseError> {
+        let query = "SELECT bucket_number FROM T_BUCKET_ASSIGNMENTS WHERE owner_node_id = $1";
+
+        let buckets: Vec<i32> = sqlx::query_scalar(query)
+            .bind(node_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(buckets)
+    }
+
+    async fn get_devices_in_bucket(&self, bucket_number: i32) -> Result<Vec<Uuid>, DatabaseError> {
+        let query = "SELECT FK_DEVICE FROM T_BUCKETS WHERE bucket = $1";
+
+        let devices: Vec<Uuid> = sqlx::query_scalar(query)
+            .bind(bucket_number)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(devices)
+    }
+
+    async fn remove_bucket_assignment(&self, bucket_number: i32) -> Result<(), DatabaseError> {
+        let query = "DELETE FROM T_BUCKET_ASSIGNMENTS WHERE bucket_number = $1";
+
+        sqlx::query(query)
+            .bind(bucket_number)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
 }

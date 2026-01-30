@@ -1,0 +1,25 @@
+[package]
+name = "cluster"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../common" }
+metrics = { path = "../metrics" }
+
+tracing.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+tokio-util.workspace = true
+uuid.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+rand.workspace = true
+hostname = "0.4"
+
+[lib]
+path = "./mod.rs"
+
+[lints.clippy]
+unwrap_used = "deny"

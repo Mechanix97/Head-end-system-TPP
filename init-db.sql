@@ -67,5 +67,25 @@ CREATE TABLE IF NOT EXISTS T_SCHEDULED_CONNECTIONS (
     connection_time TIMESTAMP,
     status scheduledstatus NOT NULL default 'awaiting',
     job_id UUID,
-    renewable BOOLEAN NOT NULL DEFAULT true
+    renewable BOOLEAN NOT NULL DEFAULT true,
+    owner_node_id UUID
+);
+
+CREATE TABLE IF NOT EXISTS T_NODES (
+    node_id UUID PRIMARY KEY,
+    node_name VARCHAR(255) NOT NULL UNIQUE,
+    cluster_ip VARCHAR(45) NOT NULL,
+    cluster_port INTEGER NOT NULL DEFAULT 6570,
+    backdoor_port INTEGER NOT NULL DEFAULT 6565,
+    status VARCHAR(20) NOT NULL DEFAULT 'starting',
+    started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    last_seen TIMESTAMP NOT NULL DEFAULT NOW(),
+    bucket_count INTEGER DEFAULT 0,
+    device_count INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS T_BUCKET_ASSIGNMENTS (
+    bucket_number INTEGER PRIMARY KEY,
+    owner_node_id UUID REFERENCES T_NODES(node_id) ON DELETE SET NULL,
+    assigned_at TIMESTAMP DEFAULT NOW()
 );
