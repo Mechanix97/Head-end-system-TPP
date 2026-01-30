@@ -46,6 +46,11 @@ impl BucketManager {
         }
     }
 
+    /// Gets the local node ID.
+    pub fn local_node_id(&self) -> Uuid {
+        self.local_node_id
+    }
+
     /// Gets the buckets owned by this node.
     pub fn owned_buckets(&self) -> &HashSet<i32> {
         &self.owned_buckets
@@ -299,6 +304,12 @@ impl BucketManager {
     /// Gets buckets to delegate when shutting down.
     pub fn buckets_for_shutdown(&self) -> Vec<i32> {
         self.owned_buckets.iter().copied().collect()
+    }
+
+    /// Test-only method to directly add a bucket without database operations.
+    #[cfg(test)]
+    pub fn test_add_bucket(&mut self, bucket: i32) {
+        self.owned_buckets.insert(bucket);
     }
 }
 

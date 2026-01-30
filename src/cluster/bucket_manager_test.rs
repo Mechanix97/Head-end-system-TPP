@@ -6,7 +6,6 @@ mod tests {
     use super::super::membership::MembershipList;
     use super::super::node::*;
     use common::database::{api::Database, DatabaseType};
-    use std::collections::HashSet;
     use std::sync::Arc;
     use tokio::sync::RwLock;
     use uuid::Uuid;
@@ -51,7 +50,7 @@ mod tests {
         assert!(!manager.owns_bucket(5));
 
         // Manually add a bucket
-        manager.owned_buckets.insert(5);
+        manager.test_add_bucket(5);
 
         assert!(!manager.owns_bucket(0));
         assert!(manager.owns_bucket(5));
@@ -126,9 +125,9 @@ mod tests {
         let (mut manager, _, _) = create_test_setup().await;
 
         // Add buckets
-        manager.owned_buckets.insert(1);
-        manager.owned_buckets.insert(2);
-        manager.owned_buckets.insert(3);
+        manager.test_add_bucket(1);
+        manager.test_add_bucket(2);
+        manager.test_add_bucket(3);
         assert_eq!(manager.bucket_count(), 3);
 
         // Release some
@@ -144,9 +143,9 @@ mod tests {
     async fn test_buckets_for_shutdown() {
         let (mut manager, _, _) = create_test_setup().await;
 
-        manager.owned_buckets.insert(1);
-        manager.owned_buckets.insert(5);
-        manager.owned_buckets.insert(9);
+        manager.test_add_bucket(1);
+        manager.test_add_bucket(5);
+        manager.test_add_bucket(9);
 
         let buckets = manager.buckets_for_shutdown();
 
@@ -162,10 +161,10 @@ mod tests {
 
         // Set up local node with all buckets
         for i in 0..10 {
-            db.assign_bucket(i, manager.local_node_id)
+            db.assign_bucket(i, manager.local_node_id())
                 .await
                 .expect("Should assign");
-            manager.owned_buckets.insert(i);
+            manager.test_add_bucket(i);
         }
         assert_eq!(manager.bucket_count(), 10);
 
@@ -175,8 +174,20 @@ mod tests {
             m.set_local_status(NodeStatus::Active);
         }
 
-        // New node joins
+        // New node joins - add to membership first
         let new_node_id = Uuid::new_v4();
+        {
+            let mut m = membership.write().await;
+            let mut new_node = NodeInfo::new_local(
+                new_node_id,
+                "new-node".to_string(),
+                "127.0.0.1:6571".parse().unwrap(),
+                6565,
+            );
+            new_node.status = NodeStatus::Active;
+            m.add_or_update_node(new_node);
+        }
+
         let given = manager
             .assign_buckets_on_join(new_node_id)
             .await
@@ -200,10 +211,10 @@ mod tests {
 
         // Give manager 8 buckets
         for i in 0..8 {
-            db.assign_bucket(i, manager.local_node_id)
+            db.assign_bucket(i, manager.local_node_id())
                 .await
                 .expect("Should assign");
-            manager.owned_buckets.insert(i);
+            manager.test_add_bucket(i);
         }
 
         // Set up 3 total active nodes (local + 2 others)
@@ -330,13 +341,13 @@ mod tests {
         let (mut manager, _, db) = create_test_setup().await;
 
         // Pre-populate database with bucket assignments
-        db.assign_bucket(1, manager.local_node_id)
+        db.assign_bucket(1, manager.local_node_id())
             .await
             .expect("Should assign");
-        db.assign_bucket(3, manager.local_node_id)
+        db.assign_bucket(3, manager.local_node_id())
             .await
             .expect("Should assign");
-        db.assign_bucket(7, manager.local_node_id)
+        db.assign_bucket(7, manager.local_node_id())
             .await
             .expect("Should assign");
 
