@@ -40,7 +40,7 @@ pub use node::{ClusterConfig, NodeInfo, NodeStatus};
 mod node_test;
 #[cfg(test)]
 mod membership_test;
-#[cfg(test)]
-mod device_manager_test;
+// #[cfg(test)]
+// mod device_manager_test;  // TODO: Create tests for DeviceManager
 #[cfg(test)]
 mod integration_tests;

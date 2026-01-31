@@ -265,7 +265,7 @@ mod tests {
     async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<Scheduler>> {
         let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
         let scheduler: Arc<RwLock<Scheduler>> =
-            Arc::new(Mutex::new(Scheduler::new(1, db.clone()).await.unwrap()));
+            Arc::new(RwLock::new(Scheduler::new(1, db.clone()).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
@@ -302,7 +302,7 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -328,7 +328,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -349,7 +349,7 @@ mod tests {
         let scheduler = set_up_hes(backdoor_port).await;
 
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -369,7 +369,7 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -397,7 +397,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -428,7 +428,7 @@ mod tests {
                 .expect("Failed to send RegisterRequest");
             sleep(Duration::from_millis(100)).await;
             let connecitons_number = scheduler
-                .lock()
+                .read()
                 .await
                 .get_scheduled_connections()
                 .await
@@ -453,7 +453,7 @@ mod tests {
             sleep(Duration::from_millis(100)).await;
         }
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -483,7 +483,7 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -505,7 +505,7 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -548,7 +548,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await

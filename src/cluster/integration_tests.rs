@@ -84,11 +84,19 @@ mod tests {
         let mut codec = ClusterMessageCodec;
         let node_id = Uuid::new_v4();
 
-        let buckets: Vec<i32> = (0..100).collect(); // 100 buckets
+        // Create 100 devices for delegation
+        let devices: Vec<DelegatedDevicePayload> = (0..100)
+            .map(|i| DelegatedDevicePayload {
+                device_id: Uuid::new_v4(),
+                ipv4: Some(format!("192.168.1.{}", i % 255)),
+                ipv6: None,
+                schedule_time: 1234567890 + i as i64,
+            })
+            .collect();
+
         let payload = DelegateRequestPayload {
-            buckets,
+            devices,
             reason: DelegationReason::Rebalance,
-            device_count: 5000,
         };
 
         let msg = ClusterMessage::delegate_request(node_id, 10, payload);
@@ -102,11 +110,10 @@ mod tests {
             .expect("Should have message");
 
         if let ClusterPayload::DelegateRequest(p) = decoded.payload {
-            assert_eq!(p.buckets.len(), 100);
-            assert_eq!(p.buckets[0], 0);
-            assert_eq!(p.buckets[99], 99);
+            assert_eq!(p.devices.len(), 100);
+            assert_eq!(p.devices[0].ipv4, Some("192.168.1.0".to_string()));
+            assert_eq!(p.devices[99].schedule_time, 1234567890 + 99);
             assert_eq!(p.reason, DelegationReason::Rebalance);
-            assert_eq!(p.device_count, 5000);
         } else {
             panic!("Expected DelegateRequest payload");
         }
@@ -183,16 +190,22 @@ mod tests {
                 node_id,
                 7,
                 DelegateRequestPayload {
-                    buckets: vec![1, 2, 3],
+                    devices: vec![
+                        DelegatedDevicePayload {
+                            device_id: Uuid::new_v4(),
+                            ipv4: Some("192.168.1.1".to_string()),
+                            ipv6: None,
+                            schedule_time: 1234567890,
+                        },
+                    ],
                     reason: DelegationReason::Shutdown,
-                    device_count: 50,
                 },
             ),
             ClusterMessage::delegate_accept(
                 node_id,
                 8,
                 DelegateAcceptPayload {
-                    buckets: vec![1, 2, 3],
+                    accepted_device_ids: vec![Uuid::new_v4()],
                 },
             ),
             ClusterMessage::delegate_reject(node_id, 9, "Overloaded".to_string()),
@@ -309,9 +322,13 @@ mod tests {
             let node_id = Uuid::new_v4();
 
             let payload = DelegateRequestPayload {
-                buckets: vec![1],
+                devices: vec![DelegatedDevicePayload {
+                    device_id: Uuid::new_v4(),
+                    ipv4: Some("192.168.1.1".to_string()),
+                    ipv6: None,
+                    schedule_time: 1234567890,
+                }],
                 reason,
-                device_count: 10,
             };
 
             let msg = ClusterMessage::delegate_request(node_id, 1, payload);

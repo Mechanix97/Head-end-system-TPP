@@ -345,7 +345,6 @@ impl DeviceManager {
 mod tests {
     use super::*;
     use common::database::{DatabaseType, api::Database};
-    use std::net::SocketAddr;
 
     #[tokio::test]
     async fn test_device_manager_creation() {
