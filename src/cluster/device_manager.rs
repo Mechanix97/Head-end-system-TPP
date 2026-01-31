@@ -121,7 +121,7 @@ impl DeviceManager {
         // Calculate fair share
         let active_node_count = {
             let membership = self.membership.read().await;
-            membership.active_node_count() as usize
+            membership.active_node_count()
         };
 
         if active_node_count <= 1 {
