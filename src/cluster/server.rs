@@ -10,7 +10,7 @@ use tokio_util::codec::Decoder;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::bucket_manager::BucketManager;
+use crate::device_manager::DeviceManager;
 use crate::delegation::DelegationHandler;
 use crate::error::ClusterError;
 use crate::failure_detector::handle_probe_request;
@@ -21,6 +21,7 @@ use crate::protocol::{
 };
 
 use common::database::api::Database;
+use scheduler::scheduler::Scheduler;
 
 /// Maximum UDP packet size.
 const MAX_PACKET_SIZE: usize = 65535;
@@ -29,7 +30,8 @@ const MAX_PACKET_SIZE: usize = 65535;
 pub async fn run_cluster_server(
     socket: Arc<UdpSocket>,
     membership: Arc<RwLock<MembershipList>>,
-    bucket_manager: Arc<RwLock<BucketManager>>,
+    device_manager: Arc<RwLock<DeviceManager>>,
+    scheduler: Option<Arc<RwLock<Scheduler>>>,
     database: Database,
 ) -> Result<(), ClusterError> {
     let local_node_id = {
@@ -37,13 +39,18 @@ pub async fn run_cluster_server(
         m.local_node_id()
     };
 
-    let delegation_handler = DelegationHandler::new(
-        local_node_id,
-        bucket_manager.clone(),
-        membership.clone(),
-        socket.clone(),
-        database.clone(),
-    );
+    let delegation_handler = if let Some(sched) = scheduler.clone() {
+        Some(DelegationHandler::new(
+            local_node_id,
+            device_manager.clone(),
+            sched,
+            membership.clone(),
+            socket.clone(),
+            database.clone(),
+        ))
+    } else {
+        None
+    };
 
     let mut buf = [0u8; MAX_PACKET_SIZE];
     let mut codec = ClusterMessageCodec;
@@ -78,8 +85,8 @@ pub async fn run_cluster_server(
             msg,
             from_addr,
             &membership,
-            &bucket_manager,
-            &delegation_handler,
+            &device_manager,
+            delegation_handler.as_ref(),
             &socket,
         )
         .await
@@ -94,8 +101,8 @@ async fn handle_message(
     msg: ClusterMessage,
     from_addr: SocketAddr,
     membership: &RwLock<MembershipList>,
-    bucket_manager: &RwLock<BucketManager>,
-    delegation_handler: &DelegationHandler,
+    device_manager: &RwLock<DeviceManager>,
+    delegation_handler: Option<&DelegationHandler>,
     socket: &UdpSocket,
 ) -> Result<(), ClusterError> {
     debug!(
@@ -111,40 +118,52 @@ async fn handle_message(
             handle_heartbeat_ack(msg.node_id, membership).await
         }
         ClusterMessageType::StatusRequest => {
-            handle_status_request(msg.node_id, from_addr, membership, bucket_manager, socket).await
+            handle_status_request(msg.node_id, from_addr, membership, device_manager, socket).await
         }
         ClusterMessageType::StatusResponse => {
             handle_status_response(msg.node_id, msg.payload, membership).await
         }
         ClusterMessageType::DelegateRequest => {
-            if let ClusterPayload::DelegateRequest(payload) = msg.payload {
-                delegation_handler
-                    .handle_delegation_request(msg.node_id, from_addr, payload)
-                    .await
+            if let Some(handler) = delegation_handler {
+                if let ClusterPayload::DelegateRequest(payload) = msg.payload {
+                    handler
+                        .handle_delegation_request(msg.node_id, from_addr, payload)
+                        .await
+                } else {
+                    Err(ClusterError::InvalidMessage("Expected DelegateRequest payload".to_string()))
+                }
             } else {
-                Err(ClusterError::InvalidMessage("Expected DelegateRequest payload".to_string()))
+                Ok(()) // Ignore delegation if scheduler not set
             }
         }
         ClusterMessageType::DelegateAccept => {
-            if let ClusterPayload::DelegateAccept(payload) = msg.payload {
-                delegation_handler
-                    .handle_delegation_accept(msg.node_id, payload)
-                    .await
+            if let Some(handler) = delegation_handler {
+                if let ClusterPayload::DelegateAccept(payload) = msg.payload {
+                    handler
+                        .handle_delegation_accept(msg.node_id, payload)
+                        .await
+                } else {
+                    Err(ClusterError::InvalidMessage("Expected DelegateAccept payload".to_string()))
+                }
             } else {
-                Err(ClusterError::InvalidMessage("Expected DelegateAccept payload".to_string()))
+                Ok(()) // Ignore delegation if scheduler not set
             }
         }
         ClusterMessageType::DelegateReject => {
-            if let ClusterPayload::DelegateReject(payload) = msg.payload {
-                delegation_handler
-                    .handle_delegation_reject(msg.node_id, payload.reason)
-                    .await
+            if let Some(handler) = delegation_handler {
+                if let ClusterPayload::DelegateReject(payload) = msg.payload {
+                    handler
+                        .handle_delegation_reject(msg.node_id, payload.reason)
+                        .await
+                } else {
+                    Err(ClusterError::InvalidMessage("Expected DelegateReject payload".to_string()))
+                }
             } else {
-                Err(ClusterError::InvalidMessage("Expected DelegateReject payload".to_string()))
+                Ok(()) // Ignore delegation if scheduler not set
             }
         }
         ClusterMessageType::NodeJoin => {
-            handle_node_join(msg.node_id, from_addr, msg.payload, membership, bucket_manager, socket).await
+            handle_node_join(msg.node_id, from_addr, msg.payload, membership, device_manager, socket).await
         }
         ClusterMessageType::NodeLeave => {
             handle_node_leave(msg.node_id, membership).await
@@ -153,7 +172,7 @@ async fn handle_message(
             handle_node_suspect(msg.payload, membership).await
         }
         ClusterMessageType::NodeDead => {
-            handle_node_dead(msg.payload, membership, bucket_manager).await
+            handle_node_dead(msg.payload, membership, device_manager).await
         }
         ClusterMessageType::ProbeRequest => {
             if let ClusterPayload::ProbeRequest(payload) = msg.payload {
@@ -240,23 +259,24 @@ async fn handle_status_request(
     _from_node_id: Uuid,
     from_addr: SocketAddr,
     membership: &RwLock<MembershipList>,
-    bucket_manager: &RwLock<BucketManager>,
+    device_manager: &RwLock<DeviceManager>,
     socket: &UdpSocket,
 ) -> Result<(), ClusterError> {
     let (local_id, seq, payload) = {
         let mut m = membership.write().await;
         let local = m.local_node();
 
-        let bm = bucket_manager.read().await;
-        let owned_buckets: Vec<i32> = bm.owned_buckets().iter().copied().collect();
+        let dm = device_manager.read().await;
+        let bucket_count = dm.local_bucket_count() as u16;
+        let device_count = dm.device_count() as u32;
 
         let payload = StatusResponsePayload {
             node_name: local.node_name.clone(),
             status: local.status,
-            bucket_count: owned_buckets.len() as u16,
-            device_count: local.device_count,
+            bucket_count,
+            device_count,
             load_percent: local.load_percent,
-            owned_buckets,
+            owned_buckets: vec![], // No longer tracking individual buckets for status
         };
 
         let seq = m.next_seq();
@@ -299,7 +319,7 @@ async fn handle_node_join(
     from_addr: SocketAddr,
     payload: ClusterPayload,
     membership: &RwLock<MembershipList>,
-    bucket_manager: &RwLock<BucketManager>,
+    device_manager: &RwLock<DeviceManager>,
     socket: &UdpSocket,
 ) -> Result<(), ClusterError> {
     let join = match payload {
@@ -327,18 +347,20 @@ async fn handle_node_join(
         m.add_or_update_node(node);
     }
 
-    // Assign buckets to the new node
-    let buckets_given = {
-        let mut bm = bucket_manager.write().await;
-        bm.assign_buckets_on_join(node_id).await?
+    // Get devices for delegation to the new node
+    let devices_to_delegate = {
+        let mut dm = device_manager.write().await;
+        dm.get_devices_for_delegation(node_id).await?
     };
 
-    if !buckets_given.is_empty() {
-        info!("Gave {} buckets to new node {}", buckets_given.len(), node_id);
+    if !devices_to_delegate.is_empty() {
+        info!("Prepared {} devices for delegation to new node {}", devices_to_delegate.len(), node_id);
+        // Note: Actual delegation happens via DelegationHandler, which requires scheduler
+        // For now, just log the intent
     }
 
     // Send our status back
-    handle_status_request(node_id, from_addr, membership, bucket_manager, socket).await?;
+    handle_status_request(node_id, from_addr, membership, device_manager, socket).await?;
 
     Ok(())
 }
@@ -378,7 +400,7 @@ async fn handle_node_suspect(
 async fn handle_node_dead(
     payload: ClusterPayload,
     membership: &RwLock<MembershipList>,
-    bucket_manager: &RwLock<BucketManager>,
+    device_manager: &RwLock<DeviceManager>,
 ) -> Result<(), ClusterError> {
     let dead = match payload {
         ClusterPayload::NodeDead(d) => d,
@@ -397,9 +419,9 @@ async fn handle_node_dead(
 
     info!("Node {} ({}) confirmed dead by cluster", node_name, dead.dead_node_id);
 
-    // Participate in redistribution
-    let mut bm = bucket_manager.write().await;
-    bm.redistribute_from_failed(dead.dead_node_id).await?;
+    // Participate in redistribution of devices
+    let mut dm = device_manager.write().await;
+    dm.redistribute_from_failed(dead.dead_node_id).await?;
 
     // Remove from membership
     let mut m = membership.write().await;

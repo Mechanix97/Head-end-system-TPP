@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::bucket_manager::BucketManager;
+use crate::device_manager::DeviceManager;
 use crate::membership::{broadcast_message, send_message, MembershipList};
 use crate::node::ClusterConfig;
 use crate::protocol::ClusterMessage;
@@ -24,7 +24,7 @@ use crate::protocol::ClusterMessage;
 /// initiates the failure detection protocol.
 pub async fn failure_detector_loop(
     membership: Arc<RwLock<MembershipList>>,
-    bucket_manager: Arc<RwLock<BucketManager>>,
+    device_manager: Arc<RwLock<DeviceManager>>,
     socket: Arc<UdpSocket>,
     config: ClusterConfig,
 ) {
@@ -45,7 +45,7 @@ pub async fn failure_detector_loop(
             handle_suspect_node(
                 node_id,
                 &membership,
-                &bucket_manager,
+                &device_manager,
                 &socket,
                 &config,
             )
@@ -59,7 +59,7 @@ pub async fn failure_detector_loop(
         };
 
         for node_id in dead_candidates {
-            handle_dead_node(node_id, &membership, &bucket_manager, &socket).await;
+            handle_dead_node(node_id, &membership, &device_manager, &socket).await;
         }
     }
 }
@@ -68,7 +68,7 @@ pub async fn failure_detector_loop(
 async fn handle_suspect_node(
     node_id: Uuid,
     membership: &RwLock<MembershipList>,
-    _bucket_manager: &RwLock<BucketManager>,
+    _device_manager: &RwLock<DeviceManager>,
     socket: &UdpSocket,
     config: &ClusterConfig,
 ) {
@@ -125,7 +125,7 @@ async fn handle_suspect_node(
 async fn handle_dead_node(
     node_id: Uuid,
     membership: &RwLock<MembershipList>,
-    bucket_manager: &RwLock<BucketManager>,
+    device_manager: &RwLock<DeviceManager>,
     socket: &UdpSocket,
 ) {
     let node_name = {
@@ -154,14 +154,14 @@ async fn handle_dead_node(
         warn!("Failed to broadcast NODE_DEAD: {}", e);
     }
 
-    // Trigger bucket redistribution
+    // Trigger device redistribution
     let redistribute_result = {
-        let mut bucket_manager = bucket_manager.write().await;
-        bucket_manager.redistribute_from_failed(node_id).await
+        let mut device_manager = device_manager.write().await;
+        device_manager.redistribute_from_failed(node_id).await
     };
 
     if let Err(e) = redistribute_result {
-        warn!("Failed to redistribute buckets from dead node: {}", e);
+        warn!("Failed to redistribute devices from dead node: {}", e);
     }
 
     // Remove node from membership list
@@ -172,8 +172,8 @@ async fn handle_dead_node(
 
     if let Some(node) = removed {
         info!(
-            "Removed dead node {} from membership (had {} buckets, {} devices)",
-            node.node_name, node.bucket_count, node.device_count
+            "Removed dead node {} from membership (had {} devices)",
+            node.node_name, node.device_count
         );
     }
 }

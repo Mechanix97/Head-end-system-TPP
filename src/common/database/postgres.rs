@@ -752,4 +752,85 @@ impl Engine for PostgresDB {
 
         Ok(())
     }
+
+    // ========== Device ownership (for cluster delegation) ==========
+
+    async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
+        let query = "SELECT id FROM T_DEVICES WHERE owner_node_id = $1";
+
+        let devices: Vec<Uuid> = sqlx::query_scalar(query)
+            .bind(node_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(devices)
+    }
+
+    async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError> {
+        let query = "UPDATE T_DEVICES SET owner_node_id = $1 WHERE id = $2";
+
+        sqlx::query(query)
+            .bind(node_id)
+            .bind(device_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_scheduled_connections_by_owner(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        let query = r#"
+            SELECT sc.fk_device, sc.schedule_time, sc.connection_time, sc.status, sc.job_id, sc.renewable
+            FROM T_SCHEDULED_CONNECTIONS sc
+            INNER JOIN T_DEVICES d ON sc.fk_device = d.id
+            WHERE d.owner_node_id = $1 AND sc.status = 'awaiting'
+            ORDER BY sc.schedule_time ASC
+        "#;
+
+        let rows = sqlx::query(query)
+            .bind(node_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let scheduled = rows
+            .into_iter()
+            .map(|row| {
+                let fk_device: Uuid = row
+                    .try_get("fk_device")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let schedule_time: NaiveDateTime = row
+                    .try_get("schedule_time")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let connection_time: Option<NaiveDateTime> = row
+                    .try_get("connection_time")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let status = row
+                    .try_get("status")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let job_id: Option<Uuid> = row
+                    .try_get("job_id")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let renewable: bool = row
+                    .try_get("renewable")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+                Ok(ScheduledConnection {
+                    fk_device,
+                    schedule_time,
+                    connection_time,
+                    status,
+                    job_id,
+                    renewable,
+                })
+            })
+            .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+        Ok(scheduled)
+    }
 }

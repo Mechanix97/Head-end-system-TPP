@@ -24,6 +24,7 @@ pub struct InnerDB {
     scheduled_connections: HashMap<Uuid, ScheduledConnection>,
     cluster_nodes: HashMap<Uuid, (String, String, i32, i32, String)>, // node_name, ip, cluster_port, backdoor_port, status
     bucket_assignments: HashMap<i32, Uuid>, // bucket_number -> owner_node_id
+    device_owners: HashMap<Uuid, Uuid>, // device_id -> owner_node_id
 }
 
 #[async_trait::async_trait]
@@ -329,6 +330,53 @@ impl Engine for InMemoryDB {
     async fn remove_bucket_assignment(&self, bucket_number: i32) -> Result<(), DatabaseError> {
         self.inner.lock().await.bucket_assignments.remove(&bucket_number);
         Ok(())
+    }
+
+    // ========== Device ownership (for cluster delegation) ==========
+
+    async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
+        let lock = self.inner.lock().await;
+        Ok(lock
+            .device_owners
+            .iter()
+            .filter(|(_, owner)| **owner == node_id)
+            .map(|(device_id, _)| *device_id)
+            .collect())
+    }
+
+    async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError> {
+        self.inner
+            .lock()
+            .await
+            .device_owners
+            .insert(device_id, node_id);
+        Ok(())
+    }
+
+    async fn get_scheduled_connections_by_owner(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        let lock = self.inner.lock().await;
+
+        // Get device IDs owned by this node
+        let owned_devices: std::collections::HashSet<Uuid> = lock
+            .device_owners
+            .iter()
+            .filter(|(_, owner)| **owner == node_id)
+            .map(|(device_id, _)| *device_id)
+            .collect();
+
+        // Filter scheduled connections for owned devices with 'awaiting' status
+        Ok(lock
+            .scheduled_connections
+            .values()
+            .filter(|conn| {
+                owned_devices.contains(&conn.fk_device)
+                    && matches!(conn.status, ScheduledStatus::Awaiting)
+            })
+            .cloned()
+            .collect())
     }
 }
 

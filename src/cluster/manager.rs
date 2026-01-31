@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use common::database::api::Database;
 
-use crate::bucket_manager::BucketManager;
+use crate::device_manager::DeviceManager;
 use crate::delegation::DelegationHandler;
 use crate::error::ClusterError;
 use crate::failure_detector::failure_detector_loop;
@@ -20,14 +20,18 @@ use crate::node::{ClusterConfig, NodeStatus};
 use crate::protocol::ClusterMessage;
 use crate::server::run_cluster_server;
 
+use scheduler::scheduler::Scheduler;
+
 /// Main cluster manager that coordinates all cluster operations.
 pub struct ClusterManager {
     /// Cluster configuration
     config: ClusterConfig,
     /// Membership list
     membership: Arc<RwLock<MembershipList>>,
-    /// Bucket manager
-    bucket_manager: Arc<RwLock<BucketManager>>,
+    /// Device manager
+    device_manager: Arc<RwLock<DeviceManager>>,
+    /// Scheduler (optional, provided after creation)
+    scheduler: Option<Arc<RwLock<Scheduler>>>,
     /// UDP socket for cluster communication
     socket: Arc<UdpSocket>,
     /// Database handle
@@ -49,9 +53,9 @@ impl ClusterManager {
         // Create membership list
         let membership = Arc::new(RwLock::new(MembershipList::new(config.clone())?));
 
-        // Create bucket manager
+        // Create device manager
         let local_node_id = config.node_id;
-        let bucket_manager = Arc::new(RwLock::new(BucketManager::new(
+        let device_manager = Arc::new(RwLock::new(DeviceManager::new(
             local_node_id,
             config.total_buckets,
             database.clone(),
@@ -61,7 +65,8 @@ impl ClusterManager {
         Ok(Self {
             config,
             membership,
-            bucket_manager,
+            device_manager,
+            scheduler: None, // Set later via set_scheduler()
             socket,
             database,
             tasks: Vec::new(),
@@ -77,21 +82,21 @@ impl ClusterManager {
     pub async fn start(&mut self) -> Result<(), ClusterError> {
         info!("Starting cluster manager for node {}", self.config.node_id);
 
-        // Load bucket assignments from database
+        // Load device ownership from database
         {
-            let mut bm = self.bucket_manager.write().await;
-            bm.load_from_database().await?;
+            let mut dm = self.device_manager.write().await;
+            dm.load_from_database().await?;
         }
 
         // If this is a new node joining an existing cluster, announce ourselves
         if !self.config.cluster_seeds.is_empty() {
             self.join_cluster().await?;
         } else {
-            // First node in cluster - claim unassigned buckets
-            info!("First node in cluster, claiming unassigned buckets");
-            let mut bm = self.bucket_manager.write().await;
-            let claimed = bm.claim_unassigned_buckets().await?;
-            info!("Claimed {} unassigned buckets", claimed.len());
+            // First node in cluster - claim unassigned devices
+            info!("First node in cluster, claiming unassigned devices");
+            let mut dm = self.device_manager.write().await;
+            let claimed = dm.claim_unassigned_devices().await?;
+            info!("Claimed {} unassigned devices", claimed.len());
         }
 
         // Register this node in the database
@@ -156,11 +161,11 @@ impl ClusterManager {
             info!("No other nodes responded, starting as first node");
         }
 
-        // Claim any unassigned buckets
-        let mut bm = self.bucket_manager.write().await;
-        let claimed = bm.claim_unassigned_buckets().await?;
+        // Claim any unassigned devices
+        let mut dm = self.device_manager.write().await;
+        let claimed = dm.claim_unassigned_devices().await?;
         if !claimed.is_empty() {
-            info!("Claimed {} unassigned buckets", claimed.len());
+            info!("Claimed {} unassigned devices", claimed.len());
         }
 
         Ok(())
@@ -183,12 +188,12 @@ impl ClusterManager {
         // Start failure detector
         let failure_detector_task = {
             let membership = self.membership.clone();
-            let bucket_manager = self.bucket_manager.clone();
+            let device_manager = self.device_manager.clone();
             let socket = self.socket.clone();
             let config = self.config.clone();
 
             tokio::spawn(async move {
-                failure_detector_loop(membership, bucket_manager, socket, config).await;
+                failure_detector_loop(membership, device_manager, socket, config).await;
             })
         };
         self.tasks.push(failure_detector_task);
@@ -197,11 +202,12 @@ impl ClusterManager {
         let server_task = {
             let socket = self.socket.clone();
             let membership = self.membership.clone();
-            let bucket_manager = self.bucket_manager.clone();
+            let device_manager = self.device_manager.clone();
+            let scheduler = self.scheduler.clone();
             let database = self.database.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = run_cluster_server(socket, membership, bucket_manager, database).await {
+                if let Err(e) = run_cluster_server(socket, membership, device_manager, scheduler, database).await {
                     error!("Cluster server error: {}", e);
                 }
             })
@@ -212,8 +218,11 @@ impl ClusterManager {
     }
 
     /// Updates local node statistics.
-    pub async fn update_stats(&self, bucket_count: u32, device_count: u32, load_percent: u8) {
+    pub async fn update_stats(&self, device_count: u32, load_percent: u8) {
         let mut m = self.membership.write().await;
+        // bucket_count is now informational only (local bucket count is fixed)
+        let dm = self.device_manager.read().await;
+        let bucket_count = dm.local_bucket_count() as u32;
         m.update_local_stats(bucket_count, device_count, load_percent);
     }
 
@@ -222,15 +231,20 @@ impl ClusterManager {
         &self.membership
     }
 
-    /// Gets the bucket manager (for external access).
-    pub fn bucket_manager(&self) -> &Arc<RwLock<BucketManager>> {
-        &self.bucket_manager
+    /// Gets the device manager (for external access).
+    pub fn device_manager(&self) -> &Arc<RwLock<DeviceManager>> {
+        &self.device_manager
     }
 
-    /// Checks if this node owns a specific bucket.
-    pub async fn owns_bucket(&self, bucket: i32) -> bool {
-        let bm = self.bucket_manager.read().await;
-        bm.owns_bucket(bucket)
+    /// Sets the scheduler reference (must be called before start).
+    pub fn set_scheduler(&mut self, scheduler: Arc<RwLock<Scheduler>>) {
+        self.scheduler = Some(scheduler);
+    }
+
+    /// Checks if this node owns a specific device.
+    pub async fn owns_device(&self, device_id: uuid::Uuid) -> bool {
+        let dm = self.device_manager.read().await;
+        dm.owns_device(device_id)
     }
 
     /// Gets the local node ID.
@@ -250,10 +264,15 @@ impl ClusterManager {
             m.set_local_status(NodeStatus::Draining);
         }
 
-        // Delegate all buckets
+        // Delegate all devices
+        let scheduler = self.scheduler.clone().ok_or_else(|| {
+            ClusterError::InvalidState("Scheduler not set in cluster manager".to_string())
+        })?;
+
         let delegation_handler = DelegationHandler::new(
             self.config.node_id,
-            self.bucket_manager.clone(),
+            self.device_manager.clone(),
+            scheduler,
             self.membership.clone(),
             self.socket.clone(),
             self.database.clone(),
@@ -293,12 +312,12 @@ impl ClusterManager {
         self.tasks.clear();
     }
 
-    /// Gets the owned buckets from this cluster manager.
+    /// Gets the owned devices from this cluster manager.
     ///
-    /// Returns a set of bucket numbers currently owned by this node.
-    pub async fn get_owned_buckets(&self) -> HashSet<i32> {
-        let bucket_manager = self.bucket_manager.read().await;
-        bucket_manager.owned_buckets().iter().copied().collect()
+    /// Returns a set of device UUIDs currently owned by this node.
+    pub async fn get_owned_devices(&self) -> HashSet<Uuid> {
+        let device_manager = self.device_manager.read().await;
+        device_manager.owned_devices().iter().copied().collect()
     }
 }
 

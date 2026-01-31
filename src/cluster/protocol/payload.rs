@@ -180,51 +180,139 @@ impl NodeJoinPayload {
     }
 }
 
+/// Payload for a single delegated device.
+#[derive(Debug, Clone)]
+pub struct DelegatedDevicePayload {
+    /// Device UUID (16 bytes)
+    pub device_id: Uuid,
+    /// IPv4 address (optional, length-prefixed)
+    pub ipv4: Option<String>,
+    /// IPv6 address (optional, length-prefixed)
+    pub ipv6: Option<String>,
+    /// Scheduled time as Unix timestamp (8 bytes)
+    pub schedule_time: i64,
+}
+
+impl DelegatedDevicePayload {
+    pub fn encode(&self, buf: &mut impl BufMut) {
+        // Device ID (16 bytes)
+        buf.put_u128(self.device_id.as_u128());
+
+        // IPv4 (1 byte flag + optional string)
+        if let Some(ipv4) = &self.ipv4 {
+            buf.put_u8(1);
+            let bytes = ipv4.as_bytes();
+            buf.put_u16(bytes.len() as u16);
+            buf.put_slice(bytes);
+        } else {
+            buf.put_u8(0);
+        }
+
+        // IPv6 (1 byte flag + optional string)
+        if let Some(ipv6) = &self.ipv6 {
+            buf.put_u8(1);
+            let bytes = ipv6.as_bytes();
+            buf.put_u16(bytes.len() as u16);
+            buf.put_slice(bytes);
+        } else {
+            buf.put_u8(0);
+        }
+
+        // Schedule time (8 bytes)
+        buf.put_i64(self.schedule_time);
+    }
+
+    pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
+        if buf.remaining() < 16 + 1 + 1 + 8 {
+            return Err(ClusterCodecError::InvalidLength);
+        }
+
+        // Device ID
+        let device_id = Uuid::from_u128(buf.get_u128());
+
+        // IPv4
+        let ipv4 = if buf.get_u8() == 1 {
+            let len = buf.get_u16() as usize;
+            if buf.remaining() < len {
+                return Err(ClusterCodecError::InvalidLength);
+            }
+            let mut bytes = vec![0u8; len];
+            buf.copy_to_slice(&mut bytes);
+            Some(String::from_utf8(bytes)
+                .map_err(|e| ClusterCodecError::InvalidPayload(e.to_string()))?)
+        } else {
+            None
+        };
+
+        // IPv6
+        let ipv6 = if buf.get_u8() == 1 {
+            let len = buf.get_u16() as usize;
+            if buf.remaining() < len {
+                return Err(ClusterCodecError::InvalidLength);
+            }
+            let mut bytes = vec![0u8; len];
+            buf.copy_to_slice(&mut bytes);
+            Some(String::from_utf8(bytes)
+                .map_err(|e| ClusterCodecError::InvalidPayload(e.to_string()))?)
+        } else {
+            None
+        };
+
+        // Schedule time
+        if buf.remaining() < 8 {
+            return Err(ClusterCodecError::InvalidLength);
+        }
+        let schedule_time = buf.get_i64();
+
+        Ok(Self {
+            device_id,
+            ipv4,
+            ipv6,
+            schedule_time,
+        })
+    }
+}
+
 /// Payload for DELEGATE_REQUEST messages.
 #[derive(Debug, Clone)]
 pub struct DelegateRequestPayload {
-    /// Buckets to delegate
-    pub buckets: Vec<i32>,
+    /// Devices to delegate
+    pub devices: Vec<DelegatedDevicePayload>,
     /// Reason for delegation
     pub reason: DelegationReason,
-    /// Number of devices affected
-    pub device_count: u32,
 }
 
 impl DelegateRequestPayload {
     pub fn encode(&self, buf: &mut impl BufMut) {
-        buf.put_u16(self.buckets.len() as u16);
-        for bucket in &self.buckets {
-            buf.put_i32(*bucket);
+        buf.put_u16(self.devices.len() as u16);
+        for device in &self.devices {
+            device.encode(buf);
         }
         buf.put_u8(self.reason.code());
-        buf.put_u32(self.device_count);
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 7 {
+        if buf.remaining() < 3 {
             return Err(ClusterCodecError::InvalidLength);
         }
 
-        let bucket_count = buf.get_u16() as usize;
-        if buf.remaining() < bucket_count * 4 + 5 {
-            return Err(ClusterCodecError::InvalidLength);
+        let device_count = buf.get_u16() as usize;
+        let mut devices = Vec::with_capacity(device_count);
+        for _ in 0..device_count {
+            devices.push(DelegatedDevicePayload::decode(buf)?);
         }
 
-        let mut buckets = Vec::with_capacity(bucket_count);
-        for _ in 0..bucket_count {
-            buckets.push(buf.get_i32());
+        if buf.remaining() < 1 {
+            return Err(ClusterCodecError::InvalidLength);
         }
 
         let reason_code = buf.get_u8();
         let reason = DelegationReason::from_code(reason_code)
             .ok_or_else(|| ClusterCodecError::InvalidPayload(format!("Invalid reason code: {reason_code}")))?;
-        let device_count = buf.get_u32();
 
         Ok(Self {
-            buckets,
+            devices,
             reason,
-            device_count,
         })
     }
 }
@@ -232,15 +320,15 @@ impl DelegateRequestPayload {
 /// Payload for DELEGATE_ACCEPT messages.
 #[derive(Debug, Clone)]
 pub struct DelegateAcceptPayload {
-    /// Buckets that were accepted
-    pub buckets: Vec<i32>,
+    /// Device IDs that were accepted
+    pub accepted_device_ids: Vec<Uuid>,
 }
 
 impl DelegateAcceptPayload {
     pub fn encode(&self, buf: &mut impl BufMut) {
-        buf.put_u16(self.buckets.len() as u16);
-        for bucket in &self.buckets {
-            buf.put_i32(*bucket);
+        buf.put_u16(self.accepted_device_ids.len() as u16);
+        for device_id in &self.accepted_device_ids {
+            buf.put_u128(device_id.as_u128());
         }
     }
 
@@ -249,17 +337,17 @@ impl DelegateAcceptPayload {
             return Err(ClusterCodecError::InvalidLength);
         }
 
-        let bucket_count = buf.get_u16() as usize;
-        if buf.remaining() < bucket_count * 4 {
+        let device_count = buf.get_u16() as usize;
+        if buf.remaining() < device_count * 16 {
             return Err(ClusterCodecError::InvalidLength);
         }
 
-        let mut buckets = Vec::with_capacity(bucket_count);
-        for _ in 0..bucket_count {
-            buckets.push(buf.get_i32());
+        let mut accepted_device_ids = Vec::with_capacity(device_count);
+        for _ in 0..device_count {
+            accepted_device_ids.push(Uuid::from_u128(buf.get_u128()));
         }
 
-        Ok(Self { buckets })
+        Ok(Self { accepted_device_ids })
     }
 }
 

@@ -56,4 +56,12 @@ pub enum ClusterError {
     /// Cluster not initialized
     #[error("Cluster not initialized")]
     NotInitialized,
+
+    /// Invalid state
+    #[error("Invalid state: {0}")]
+    InvalidState(String),
+
+    /// Scheduler error
+    #[error("Scheduler error: {0}")]
+    SchedulerError(String),
 }

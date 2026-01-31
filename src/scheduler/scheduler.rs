@@ -21,8 +21,8 @@ use metrics::metrics_connections::METRICS_CONNECTIONS;
 /// This trait allows the cluster manager to configure the scheduler
 /// without creating a circular dependency.
 pub trait SchedulerClusterSync {
-    /// Enables cluster mode with the given owned buckets.
-    fn enable_cluster_mode(&mut self, owned_buckets: HashSet<i32>);
+    /// Enables cluster mode with the given owned devices.
+    fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>);
 }
 
 /// Manages scheduled connections to IoT devices using a time-bucket algorithm.
@@ -41,8 +41,8 @@ pub struct Scheduler {
     pub job_scheduler: JobScheduler,
     /// Database handle for persisting scheduler state
     pub database: Database,
-    /// Buckets owned by this node (only used in cluster mode, None = owns all)
-    pub owned_buckets: Option<HashSet<i32>>,
+    /// Devices owned by this node (only used in cluster mode, None = owns all)
+    pub owned_devices: Option<HashSet<Uuid>>,
 }
 
 impl Scheduler {
@@ -55,7 +55,7 @@ impl Scheduler {
             bucket_number: bucket_number as i32,
             job_scheduler: JobScheduler::new().await?,
             database,
-            owned_buckets: None, // None means single-node mode, owns all buckets
+            owned_devices: None, // None means single-node mode, owns all devices
         };
         scheduler.start().await?;
         scheduler.reload_active_connections().await?;
@@ -118,22 +118,11 @@ impl Scheduler {
         let scheduled_connections = self.database.get_scheduled_connections().await?;
 
         for mut connection in scheduled_connections {
-            // In cluster mode, check if we own this device's bucket
-            let device_bucket = match self.database.get_bucket_number(connection.fk_device).await {
-                Ok(bucket) => bucket,
-                Err(_) => {
-                    info!(
-                        "Device {:#x} has no bucket assignment, skipping",
-                        connection.fk_device
-                    );
-                    continue;
-                }
-            };
-
-            if !self.owns_bucket(device_bucket) {
+            // In cluster mode, check if we own this device
+            if !self.owns_device(connection.fk_device) {
                 info!(
-                    "Device {:#x} in bucket {} not owned by this node, skipping",
-                    connection.fk_device, device_bucket
+                    "Device {:#x} not owned by this node, skipping",
+                    connection.fk_device
                 );
                 continue;
             }
@@ -259,48 +248,96 @@ impl Scheduler {
             .map_err(SchedulerError::DatabaseError)
     }
 
-    /// Sets the buckets owned by this node (for cluster mode).
-    pub fn set_owned_buckets(&mut self, buckets: HashSet<i32>) {
-        self.owned_buckets = Some(buckets);
+    /// Sets the devices owned by this node (for cluster mode).
+    pub fn set_owned_devices(&mut self, devices: HashSet<Uuid>) {
+        self.owned_devices = Some(devices);
     }
 
-    /// Checks if this node owns a specific bucket.
+    /// Checks if this node owns a specific device.
     ///
-    /// In single-node mode (owned_buckets = None), owns all buckets.
-    /// In cluster mode, only owns buckets in the owned_buckets set.
-    pub fn owns_bucket(&self, bucket: i32) -> bool {
-        match &self.owned_buckets {
-            None => true, // Single-node mode, owns all buckets
-            Some(owned) => owned.contains(&bucket),
+    /// In single-node mode (owned_devices = None), owns all devices.
+    /// In cluster mode, only owns devices in the owned_devices set.
+    pub fn owns_device(&self, device_id: Uuid) -> bool {
+        match &self.owned_devices {
+            None => true, // Single-node mode, owns all devices
+            Some(owned) => owned.contains(&device_id),
         }
     }
 
-    /// Enables cluster mode with the given owned buckets.
-    pub fn enable_cluster_mode(&mut self, owned_buckets: HashSet<i32>) {
-        info!("Enabling cluster mode with {} owned buckets", owned_buckets.len());
-        self.owned_buckets = Some(owned_buckets);
+    /// Enables cluster mode with the given owned devices.
+    pub fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>) {
+        info!("Enabling cluster mode with {} owned devices", owned_devices.len());
+        self.owned_devices = Some(owned_devices);
     }
 
-    /// Disables cluster mode (reverts to single-node, owns all buckets).
+    /// Disables cluster mode (reverts to single-node, owns all devices).
     pub fn disable_cluster_mode(&mut self) {
         info!("Disabling cluster mode");
-        self.owned_buckets = None;
+        self.owned_devices = None;
     }
 
-    /// Adds a bucket to the owned set (cluster mode only).
-    pub fn add_owned_bucket(&mut self, bucket: i32) {
-        if let Some(owned) = &mut self.owned_buckets {
-            owned.insert(bucket);
-            info!("Added bucket {} to owned set (now have {})", bucket, owned.len());
+    /// Adds a device to the owned set (cluster mode only).
+    pub fn add_owned_device(&mut self, device_id: Uuid) {
+        if let Some(owned) = &mut self.owned_devices {
+            owned.insert(device_id);
+            info!("Added device {:?} to owned set (now have {})", device_id, owned.len());
         }
     }
 
-    /// Removes a bucket from the owned set (cluster mode only).
-    pub fn remove_owned_bucket(&mut self, bucket: i32) {
-        if let Some(owned) = &mut self.owned_buckets {
-            owned.remove(&bucket);
-            info!("Removed bucket {} from owned set (now have {})", bucket, owned.len());
+    /// Removes a device from the owned set (cluster mode only).
+    pub fn remove_owned_device(&mut self, device_id: Uuid) {
+        if let Some(owned) = &mut self.owned_devices {
+            owned.remove(&device_id);
+            info!("Removed device {:?} from owned set (now have {})", device_id, owned.len());
         }
+    }
+
+    /// Schedules a delegated device at its original schedule time.
+    ///
+    /// This is called when accepting delegation from another node.
+    /// The device will be connected at the specified time, then reassigned to a local bucket.
+    pub async fn schedule_delegated_device(
+        &mut self,
+        device_id: Uuid,
+        schedule_time: NaiveDateTime,
+    ) -> Result<(), SchedulerError> {
+        info!(
+            "Scheduling delegated device {:?} at original time {}",
+            device_id, schedule_time
+        );
+
+        let job_id = self.create_wakeup_job(device_id, schedule_time).await?;
+
+        self.database
+            .schedule_connection(device_id, schedule_time, job_id)
+            .await?;
+
+        // Add to owned devices set
+        self.add_owned_device(device_id);
+
+        Ok(())
+    }
+
+    /// Assigns a device to a local bucket after successful connection.
+    ///
+    /// This is called after a delegated device connects successfully.
+    /// The device is assigned to the least-loaded local bucket.
+    pub async fn assign_local_bucket_after_connection(
+        &mut self,
+        device_id: Uuid,
+    ) -> Result<i32, SchedulerError> {
+        let bucket_number = self.get_bucket_number().await;
+
+        self.database
+            .add_device_to_bucket(device_id, bucket_number as i32)
+            .await?;
+
+        info!(
+            "Assigned device {:?} to local bucket {} after connection",
+            device_id, bucket_number
+        );
+
+        Ok(bucket_number as i32)
     }
 
     async fn create_wakeup_job(
@@ -355,8 +392,8 @@ impl Scheduler {
 }
 
 impl SchedulerClusterSync for Scheduler {
-    fn enable_cluster_mode(&mut self, owned_buckets: HashSet<i32>) {
-        self.enable_cluster_mode(owned_buckets);
+    fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>) {
+        self.enable_cluster_mode(owned_devices);
     }
 }
 

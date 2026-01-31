@@ -1,6 +1,6 @@
-//! Bucket delegation between nodes.
+//! Device delegation between nodes.
 //!
-//! Handles the transfer of bucket ownership and associated connections
+//! Handles the transfer of device ownership and associated connections
 //! between nodes during rebalancing or shutdown.
 
 use std::net::SocketAddr;
@@ -12,20 +12,26 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use common::database::api::Database;
+use common::delegated_device::DelegatedDevice;
 
-use crate::bucket_manager::BucketManager;
+use crate::device_manager::DeviceManager;
 use crate::error::ClusterError;
 use crate::membership::{send_message, MembershipList};
 use crate::protocol::{
-    ClusterMessage, DelegateAcceptPayload, DelegateRequestPayload, DelegationReason,
+    ClusterMessage, DelegateAcceptPayload, DelegatedDevicePayload, DelegateRequestPayload,
+    DelegationReason,
 };
+
+use scheduler::scheduler::Scheduler;
 
 /// Handles outgoing delegation requests.
 pub struct DelegationHandler {
     /// This node's ID
     local_node_id: Uuid,
-    /// Bucket manager
-    bucket_manager: Arc<RwLock<BucketManager>>,
+    /// Device manager
+    device_manager: Arc<RwLock<DeviceManager>>,
+    /// Scheduler (for scheduling delegated devices)
+    scheduler: Arc<RwLock<Scheduler>>,
     /// Membership list
     membership: Arc<RwLock<MembershipList>>,
     /// UDP socket for sending messages
@@ -38,28 +44,30 @@ impl DelegationHandler {
     /// Creates a new delegation handler.
     pub fn new(
         local_node_id: Uuid,
-        bucket_manager: Arc<RwLock<BucketManager>>,
+        device_manager: Arc<RwLock<DeviceManager>>,
+        scheduler: Arc<RwLock<Scheduler>>,
         membership: Arc<RwLock<MembershipList>>,
         socket: Arc<UdpSocket>,
         database: Database,
     ) -> Self {
         Self {
             local_node_id,
-            bucket_manager,
+            device_manager,
+            scheduler,
             membership,
             socket,
             database,
         }
     }
 
-    /// Requests delegation of specific buckets to another node.
+    /// Requests delegation of specific devices to another node.
     pub async fn request_delegation(
         &self,
-        buckets: Vec<i32>,
+        devices: Vec<DelegatedDevice>,
         reason: DelegationReason,
         target_node_id: Option<Uuid>,
-    ) -> Result<Vec<i32>, ClusterError> {
-        if buckets.is_empty() {
+    ) -> Result<Vec<Uuid>, ClusterError> {
+        if devices.is_empty() {
             return Ok(Vec::new());
         }
 
@@ -71,18 +79,15 @@ impl DelegationHandler {
                 .ok_or(ClusterError::NodeNotFound(id))?;
             (id, node.cluster_addr)
         } else {
-            // Find the least loaded active node
+            // Find the least loaded active node (by device count)
             let membership = self.membership.read().await;
             let node = membership
                 .active_nodes()
                 .into_iter()
-                .min_by_key(|n| n.bucket_count)
+                .min_by_key(|n| n.device_count)
                 .ok_or(ClusterError::NoNodesAvailable)?;
             (node.node_id, node.cluster_addr)
         };
-
-        // Get device count for the buckets
-        let device_count = self.get_device_count_for_buckets(&buckets).await?;
 
         // Send delegation request
         let seq = {
@@ -90,17 +95,27 @@ impl DelegationHandler {
             membership.next_seq()
         };
 
+        // Convert DelegatedDevice to DelegatedDevicePayload
+        let device_payloads: Vec<DelegatedDevicePayload> = devices
+            .iter()
+            .map(|d| DelegatedDevicePayload {
+                device_id: d.device_id,
+                ipv4: d.ipv4.clone(),
+                ipv6: d.ipv6.clone(),
+                schedule_time: d.schedule_time.and_utc().timestamp(),
+            })
+            .collect();
+
         let payload = DelegateRequestPayload {
-            buckets: buckets.clone(),
+            devices: device_payloads,
             reason,
-            device_count,
         };
 
         let msg = ClusterMessage::delegate_request(self.local_node_id, seq, payload);
 
         info!(
-            "Requesting delegation of {} buckets to node {}",
-            buckets.len(),
+            "Requesting delegation of {} devices to node {}",
+            devices.len(),
             target_id
         );
 
@@ -110,7 +125,7 @@ impl DelegationHandler {
         // In a production system, we'd wait for a response and handle rejection
         // The actual transfer happens when we receive DELEGATE_ACCEPT
 
-        Ok(buckets)
+        Ok(devices.iter().map(|d| d.device_id).collect())
     }
 
     /// Handles an incoming delegation request.
@@ -121,8 +136,8 @@ impl DelegationHandler {
         payload: DelegateRequestPayload,
     ) -> Result<(), ClusterError> {
         info!(
-            "Received delegation request for {} buckets from node {} (reason: {:?})",
-            payload.buckets.len(),
+            "Received delegation request for {} devices from node {} (reason: {:?})",
+            payload.devices.len(),
             from_node_id,
             payload.reason
         );
@@ -150,23 +165,50 @@ impl DelegationHandler {
             return Ok(());
         }
 
-        // Accept the delegation
-        let accepted_buckets = payload.buckets.clone();
+        // Convert payload to DelegatedDevice
+        let delegated_devices: Vec<DelegatedDevice> = payload
+            .devices
+            .iter()
+            .map(|p| {
+                DelegatedDevice::new(
+                    p.device_id,
+                    p.ipv4.clone(),
+                    p.ipv6.clone(),
+                    chrono::DateTime::from_timestamp(p.schedule_time, 0)
+                        .unwrap_or_default()
+                        .naive_utc(),
+                )
+            })
+            .collect();
 
-        // Update our bucket manager
+        // Accept the delegation
+        let accepted_device_ids = {
+            let mut device_manager = self.device_manager.write().await;
+            device_manager.accept_delegation(delegated_devices.clone()).await?
+        };
+
+        // Schedule the delegated devices at their original times
         {
-            let mut bucket_manager = self.bucket_manager.write().await;
-            bucket_manager.accept_delegation(accepted_buckets.clone()).await?;
+            let mut scheduler = self.scheduler.write().await;
+            for device in &delegated_devices {
+                scheduler
+                    .schedule_delegated_device(device.device_id, device.schedule_time)
+                    .await
+                    .map_err(|e| {
+                        warn!("Failed to schedule delegated device {:?}: {}", device.device_id, e);
+                        ClusterError::SchedulerError(e.to_string())
+                    })?;
+            }
         }
 
         // Send accept response
         let accept_payload = DelegateAcceptPayload {
-            buckets: accepted_buckets.clone(),
+            accepted_device_ids: accepted_device_ids.clone(),
         };
         let msg = ClusterMessage::delegate_accept(self.local_node_id, seq, accept_payload);
         send_message(&self.socket, from_addr, msg).await?;
 
-        info!("Accepted delegation of {} buckets", accepted_buckets.len());
+        info!("Accepted delegation of {} devices", accepted_device_ids.len());
 
         Ok(())
     }
@@ -178,20 +220,28 @@ impl DelegationHandler {
         payload: DelegateAcceptPayload,
     ) -> Result<(), ClusterError> {
         info!(
-            "Node {} accepted delegation of {} buckets",
+            "Node {} accepted delegation of {} devices",
             from_node_id,
-            payload.buckets.len()
+            payload.accepted_device_ids.len()
         );
 
-        // Update our bucket manager to release the buckets
+        // Update our device manager to release the devices
         {
-            let mut bucket_manager = self.bucket_manager.write().await;
-            bucket_manager.release_buckets(&payload.buckets);
+            let mut device_manager = self.device_manager.write().await;
+            device_manager.release_devices(&payload.accepted_device_ids);
         }
 
         // Update the database to reflect new ownership
-        for bucket in &payload.buckets {
-            self.database.assign_bucket(*bucket, from_node_id).await?;
+        for device_id in &payload.accepted_device_ids {
+            self.database.set_device_owner(*device_id, from_node_id).await?;
+        }
+
+        // Remove devices from scheduler's owned set
+        {
+            let mut scheduler = self.scheduler.write().await;
+            for device_id in &payload.accepted_device_ids {
+                scheduler.remove_owned_device(*device_id);
+            }
         }
 
         Ok(())
@@ -212,39 +262,46 @@ impl DelegationHandler {
         Err(ClusterError::DelegationRejected(reason))
     }
 
-    /// Gets the device count for a set of buckets.
-    async fn get_device_count_for_buckets(&self, buckets: &[i32]) -> Result<u32, ClusterError> {
-        let mut count = 0u32;
-        for &bucket in buckets {
-            let devices = self.database.get_devices_in_bucket(bucket).await?;
-            count += devices.len() as u32;
-        }
-        Ok(count)
-    }
-
     /// Initiates graceful shutdown delegation.
     ///
-    /// Transfers all owned buckets to other nodes before shutting down.
+    /// Transfers all owned devices to other nodes before shutting down.
     pub async fn shutdown_delegation(&self) -> Result<(), ClusterError> {
-        let buckets = {
-            let bucket_manager = self.bucket_manager.read().await;
-            bucket_manager.buckets_for_shutdown()
+        let device_ids = {
+            let device_manager = self.device_manager.read().await;
+            device_manager.devices_for_shutdown()
         };
 
-        if buckets.is_empty() {
-            info!("No buckets to delegate on shutdown");
+        if device_ids.is_empty() {
+            info!("No devices to delegate on shutdown");
             return Ok(());
         }
 
-        info!("Initiating shutdown delegation of {} buckets", buckets.len());
+        info!("Initiating shutdown delegation of {} devices", device_ids.len());
 
-        // Get active nodes sorted by load
+        // Build DelegatedDevice structs with device info
+        let mut delegated_devices = Vec::new();
+        for device_id in &device_ids {
+            let device = self.database.get_device(*device_id).await?;
+            let schedule_time = match self.database.get_scheduled_connection(*device_id).await {
+                Ok(conn) => conn.schedule_time,
+                Err(_) => chrono::Utc::now().naive_utc() + chrono::Duration::days(1),
+            };
+
+            delegated_devices.push(DelegatedDevice::new(
+                device.id,
+                device.ipv4,
+                device.ipv6,
+                schedule_time,
+            ));
+        }
+
+        // Get active nodes sorted by load (device count)
         let target_nodes: Vec<(Uuid, SocketAddr)> = {
             let membership = self.membership.read().await;
             let mut nodes: Vec<_> = membership
                 .active_nodes()
                 .iter()
-                .map(|n| (n.node_id, n.cluster_addr, n.bucket_count))
+                .map(|n| (n.node_id, n.cluster_addr, n.device_count))
                 .collect();
             nodes.sort_by_key(|(_, _, count)| *count);
             nodes.into_iter().map(|(id, addr, _)| (id, addr)).collect()
@@ -255,10 +312,10 @@ impl DelegationHandler {
             return Err(ClusterError::NoNodesAvailable);
         }
 
-        // Distribute buckets among available nodes
-        let buckets_per_node = buckets.len().div_ceil(target_nodes.len());
+        // Distribute devices among available nodes
+        let devices_per_node = delegated_devices.len().div_ceil(target_nodes.len());
 
-        for (i, chunk) in buckets.chunks(buckets_per_node).enumerate() {
+        for (i, chunk) in delegated_devices.chunks(devices_per_node).enumerate() {
             let target_idx = i % target_nodes.len();
             let (target_id, _) = target_nodes[target_idx];
 
@@ -274,3 +331,4 @@ impl DelegationHandler {
         Ok(())
     }
 }
+

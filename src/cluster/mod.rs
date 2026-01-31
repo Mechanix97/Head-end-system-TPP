@@ -22,7 +22,7 @@
 //! - `server`: UDP server for inter-node communication
 //! - `manager`: Main cluster manager that orchestrates everything
 
-pub mod bucket_manager;
+pub mod device_manager;
 pub mod delegation;
 pub mod error;
 pub mod failure_detector;
@@ -41,6 +41,6 @@ mod node_test;
 #[cfg(test)]
 mod membership_test;
 #[cfg(test)]
-mod bucket_manager_test;
+mod device_manager_test;
 #[cfg(test)]
 mod integration_tests;

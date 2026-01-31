@@ -253,6 +253,26 @@ impl Database {
     pub async fn remove_bucket_assignment(&self, bucket_number: i32) -> Result<(), DatabaseError> {
         self.engine.remove_bucket_assignment(bucket_number).await
     }
+
+    // ========== Device ownership (for cluster delegation) ==========
+
+    /// Gets all device UUIDs owned by a specific node.
+    pub async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
+        self.engine.get_devices_by_owner(node_id).await
+    }
+
+    /// Sets the owner node for a device.
+    pub async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError> {
+        self.engine.set_device_owner(device_id, node_id).await
+    }
+
+    /// Gets scheduled connections for devices owned by a specific node.
+    pub async fn get_scheduled_connections_by_owner(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        self.engine.get_scheduled_connections_by_owner(node_id).await
+    }
 }
 
 /// Database engine trait that defines the interface for database operations.
@@ -372,4 +392,18 @@ pub trait Engine: Debug + Send + Sync {
 
     /// Removes bucket assignment
     async fn remove_bucket_assignment(&self, bucket_number: i32) -> Result<(), DatabaseError>;
+
+    // ========== Device ownership (for cluster delegation) ==========
+
+    /// Gets all device UUIDs owned by a specific node
+    async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError>;
+
+    /// Sets the owner node for a device
+    async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError>;
+
+    /// Gets scheduled connections for devices owned by a specific node
+    async fn get_scheduled_connections_by_owner(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError>;
 }

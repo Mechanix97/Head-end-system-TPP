@@ -46,8 +46,11 @@ CREATE TABLE IF NOT EXISTS T_DEVICES (
     IPv6 TEXT,
     MAC TEXT,
     factory_id BIGINT,
-    batch_id BIGINT
+    batch_id BIGINT,
+    owner_node_id UUID
 );
+
+CREATE INDEX IF NOT EXISTS idx_devices_by_owner ON T_DEVICES(owner_node_id);
 
 CREATE TABLE IF NOT EXISTS T_DEVICE_REGISTRATION (
     FK_DEVICE UUID REFERENCES T_DEVICES(id),
@@ -71,6 +74,8 @@ CREATE TABLE IF NOT EXISTS T_SCHEDULED_CONNECTIONS (
     owner_node_id UUID
 );
 
+CREATE INDEX IF NOT EXISTS idx_scheduled_by_owner ON T_SCHEDULED_CONNECTIONS(owner_node_id);
+
 CREATE TABLE IF NOT EXISTS T_NODES (
     node_id UUID PRIMARY KEY,
     node_name VARCHAR(255) NOT NULL UNIQUE,
@@ -84,8 +89,10 @@ CREATE TABLE IF NOT EXISTS T_NODES (
     device_count INTEGER DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS T_BUCKET_ASSIGNMENTS (
-    bucket_number INTEGER PRIMARY KEY,
-    owner_node_id UUID REFERENCES T_NODES(node_id) ON DELETE SET NULL,
-    assigned_at TIMESTAMP DEFAULT NOW()
-);
+-- T_BUCKET_ASSIGNMENTS is deprecated (device-based delegation replaces bucket-based)
+-- Keeping commented for reference during migration
+-- CREATE TABLE IF NOT EXISTS T_BUCKET_ASSIGNMENTS (
+--     bucket_number INTEGER PRIMARY KEY,
+--     owner_node_id UUID REFERENCES T_NODES(node_id) ON DELETE SET NULL,
+--     assigned_at TIMESTAMP DEFAULT NOW()
+-- );
