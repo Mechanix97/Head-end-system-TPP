@@ -39,18 +39,14 @@ pub async fn run_cluster_server(
         m.local_node_id()
     };
 
-    let delegation_handler = if let Some(sched) = scheduler.clone() {
-        Some(DelegationHandler::new(
+    let delegation_handler = scheduler.clone().map(|sched| DelegationHandler::new(
             local_node_id,
             device_manager.clone(),
             sched,
             membership.clone(),
             socket.clone(),
             database.clone(),
-        ))
-    } else {
-        None
-    };
+        ));
 
     let mut buf = [0u8; MAX_PACKET_SIZE];
     let mut codec = ClusterMessageCodec;

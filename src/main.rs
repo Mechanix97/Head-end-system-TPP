@@ -2,7 +2,7 @@ use clap::Parser;
 use std::{error::Error, sync::Arc};
 use tokio::{
     io::{self, AsyncReadExt},
-    sync::Mutex,
+    sync::RwLock,
 };
 use tracing::info;
 
@@ -116,7 +116,7 @@ struct Args {
 async fn initialize_cluster(
     args: &Args,
     database: &Database,
-    scheduler: &Arc<Mutex<Scheduler>>,
+    scheduler: &Arc<RwLock<Scheduler>>,
 ) -> Result<ClusterManager, Box<dyn Error>> {
     // Create cluster configuration from CLI args
     let config = ClusterConfig::from_cli_args(
@@ -128,13 +128,18 @@ async fn initialize_cluster(
         args.cluster_seeds.clone(),
     )?;
 
-    // Initialize and start cluster manager
+    // Initialize cluster manager
     let mut manager = ClusterManager::new(config, database.clone()).await?;
+
+    // Set scheduler reference before starting
+    manager.set_scheduler(scheduler.clone());
+
+    // Start cluster manager
     manager.start().await?;
 
-    // Sync scheduler with cluster-owned buckets
-    let owned_buckets = manager.get_owned_buckets().await;
-    scheduler.lock().await.enable_cluster_mode(owned_buckets);
+    // Sync scheduler with cluster-owned devices
+    let owned_devices = manager.get_owned_devices().await;
+    scheduler.write().await.enable_cluster_mode(owned_devices);
 
     info!("Cluster mode enabled");
     Ok(manager)
@@ -161,7 +166,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let db = Database::new(args.database_type, db_params).await?;
 
-    let scheduler = Arc::new(Mutex::new(
+    let scheduler = Arc::new(RwLock::new(
         Scheduler::new(args.buckets_number, db.clone()).await?,
     ));
 

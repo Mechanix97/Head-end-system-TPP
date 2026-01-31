@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::udp::UdpFramed;
@@ -25,7 +25,7 @@ use scheduler::scheduler::Scheduler;
 const ACK_TIMEOUT_DURATION_MS: u64 = 30000;
 
 pub async fn init_backdoor(
-    scheduler: Arc<Mutex<Scheduler>>,
+    scheduler: Arc<RwLock<Scheduler>>,
     ip: String,
     port: String,
     ack_timeout_duration: Option<u64>,
@@ -36,7 +36,7 @@ pub async fn init_backdoor(
 
     let ack_timeout_duration = ack_timeout_duration.unwrap_or(ACK_TIMEOUT_DURATION_MS);
 
-    let scheduler_clone: Arc<Mutex<Scheduler>> = scheduler.clone();
+    let scheduler_clone: Arc<RwLock<Scheduler>> = scheduler.clone();
     let codec = MessageCodec;
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
 
@@ -128,7 +128,7 @@ async fn handle_backdoor_register_msg(
     framed: &mut UdpFramed<MessageCodec>,
     msg: Message,
     socket_addr: SocketAddr,
-    scheduler: &Arc<Mutex<Scheduler>>,
+    scheduler: &Arc<RwLock<Scheduler>>,
     ack_timeout_duration: u64,
     database: Database,
 ) -> Result<(), BackdoorError> {
@@ -141,7 +141,7 @@ async fn handle_backdoor_register_msg(
     let device = Device::new(socket_addr, None, None, None);
 
     database.add_device(&device).await?;
-    scheduler.lock().await.register_device(&device).await?;
+    scheduler.write().await.register_device(&device).await?;
     database
         .register_device(device.id, msg.get_timestamp()?)
         .await?;
@@ -170,7 +170,7 @@ async fn handle_backdoor_register_msg(
 /// Checks if the device has requested the registration in the interval (300 ms)
 /// and starts the scheduler sequence.
 async fn handle_backdoor_ack_msg(
-    scheduler: &Arc<Mutex<Scheduler>>,
+    scheduler: &Arc<RwLock<Scheduler>>,
     msg: Message,
     socket_addr: SocketAddr,
     database: Database,
@@ -221,7 +221,7 @@ async fn handle_backdoor_ack_msg(
                 .await?;
 
             scheduler
-                .lock()
+                .write()
                 .await
                 .schedule_next_wakeup_job(device.id)
                 .await?;
@@ -256,15 +256,15 @@ mod tests {
     use common::database::api::Database;
     use scheduler::scheduler::Scheduler;
     use std::sync::Arc;
-    use tokio::sync::Mutex;
+    use tokio::sync::RwLock;
     use tokio_util::codec::Decoder;
     use tokio_util::codec::Encoder;
 
     use super::*;
 
-    async fn set_up_hes(backdoor_port: &str) -> Arc<Mutex<Scheduler>> {
+    async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<Scheduler>> {
         let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
-        let scheduler: Arc<Mutex<Scheduler>> =
+        let scheduler: Arc<RwLock<Scheduler>> =
             Arc::new(Mutex::new(Scheduler::new(1, db.clone()).await.unwrap()));
         init_backdoor(
             scheduler.clone(),

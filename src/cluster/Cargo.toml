@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 common = { path = "../common" }
 metrics = { path = "../metrics" }
+scheduler = { path = "../scheduler" }
 
 tracing.workspace = true
 bytes.workspace = true

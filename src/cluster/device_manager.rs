@@ -130,11 +130,7 @@ impl DeviceManager {
 
         let fair_share = self.owned_devices.len() / active_node_count;
         let current_count = self.owned_devices.len();
-        let to_give = if current_count > fair_share {
-            current_count - fair_share
-        } else {
-            0
-        };
+        let to_give = current_count.saturating_sub(fair_share);
 
         if to_give == 0 {
             debug!("No devices to give away (have {}, fair share is {})", current_count, fair_share);
