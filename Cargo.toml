@@ -27,6 +27,7 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tokio = { version = "1.47", features = ["full", "macros"] }
 clap = { version = "4.5.47", features = ["derive"] }
 hostname = "0.4"
+uuid = { workspace = true }
 
 [workspace.dependencies]
 scheduler = { path = "src/scheduler" }

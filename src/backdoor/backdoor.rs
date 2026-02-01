@@ -30,6 +30,7 @@ pub async fn init_backdoor(
     port: String,
     ack_timeout_duration: Option<u64>,
     database: Database,
+    node_id: uuid::Uuid,
 ) -> Result<JoinHandle<()>, BackdoorError> {
     let socket = UdpSocket::bind(format!("{ip}:{port}")).await?;
     info!("Listening for device registration on {ip}:{port} via UDP");
@@ -39,6 +40,7 @@ pub async fn init_backdoor(
     let scheduler_clone: Arc<RwLock<Scheduler>> = scheduler.clone();
     let codec = MessageCodec;
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
+    let local_node_id = node_id; // Uuid is Copy
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         // TODO have multiple threads receiving requests, maybe a threadpool
@@ -71,6 +73,7 @@ pub async fn init_backdoor(
                             &scheduler_clone,
                             ack_timeout_duration,
                             database.clone(),
+                            local_node_id,
                         )
                         .await
                         {
@@ -131,6 +134,7 @@ async fn handle_backdoor_register_msg(
     scheduler: &Arc<RwLock<Scheduler>>,
     ack_timeout_duration: u64,
     database: Database,
+    node_id: uuid::Uuid,
 ) -> Result<(), BackdoorError> {
     // TODO: check that the information provided is correct #10
     if msg.device_id != 0 {
@@ -145,6 +149,9 @@ async fn handle_backdoor_register_msg(
     database
         .register_device(device.id, msg.get_timestamp()?)
         .await?;
+
+    // Assign ownership to this node
+    database.set_device_owner(device.id, node_id).await?;
 
     let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
 
@@ -266,12 +273,14 @@ mod tests {
         let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
         let scheduler: Arc<RwLock<Scheduler>> =
             Arc::new(RwLock::new(Scheduler::new(1, db.clone()).await.unwrap()));
+        let node_id = uuid::Uuid::new_v4();
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
             Some(300),
             db.clone(),
+            node_id,
         )
         .await
         .unwrap();

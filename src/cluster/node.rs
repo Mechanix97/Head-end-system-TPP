@@ -231,6 +231,7 @@ impl ClusterConfig {
     ///
     /// Automatically determines the node name from hostname if not provided.
     pub fn from_cli_args(
+        node_id: Uuid,
         node_name: Option<String>,
         cluster_ip: String,
         cluster_port: u16,
@@ -246,6 +247,7 @@ impl ClusterConfig {
         });
 
         let mut config = Self::new(node_name, cluster_ip, cluster_port, backdoor_port, total_buckets);
+        config.node_id = node_id; // Use provided node_id instead of generating new one
 
         if let Some(seeds) = cluster_seeds {
             config = config.with_seeds(&seeds)?;

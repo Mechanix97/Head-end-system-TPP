@@ -5,6 +5,7 @@ use tokio::{
     sync::RwLock,
 };
 use tracing::info;
+use uuid::Uuid;
 
 use backdoor::backdoor::init_backdoor;
 use cluster::{ClusterConfig, ClusterManager};
@@ -138,7 +139,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing_subscriber::fmt().init();
 
-    info!("Head-End System starting");
+    // Generate node ID (always, even for single-node)
+    let node_id = Uuid::new_v4();
+    info!("Head-End System starting with node_id: {}", node_id);
 
     let db_params = if args.database_type == DatabaseType::Postgres {
         Some(PostgresConnectionArgs {
@@ -161,6 +164,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let cluster_manager = if !args.disable_cluster {
         // Create cluster configuration from CLI args
         let config = ClusterConfig::from_cli_args(
+            node_id,
             args.node_name.clone(),
             args.cluster_ip.clone(),
             args.cluster_port,
@@ -192,6 +196,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         args.backdoor_port,
         None,
         db.clone(),
+        node_id,
     )
     .await?;
 

@@ -157,7 +157,9 @@ mod tests {
 
     #[test]
     fn test_cluster_config_from_cli_args() {
+        let node_id = uuid::Uuid::new_v4();
         let config = ClusterConfig::from_cli_args(
+            node_id,
             Some("my-node".to_string()),
             "0.0.0.0".to_string(),
             6570,
@@ -167,13 +169,16 @@ mod tests {
         )
         .expect("Should create config");
 
+        assert_eq!(config.node_id, node_id);
         assert_eq!(config.node_name, "my-node");
         assert_eq!(config.cluster_seeds.len(), 1);
     }
 
     #[test]
     fn test_cluster_config_from_cli_args_auto_hostname() {
+        let node_id = uuid::Uuid::new_v4();
         let config = ClusterConfig::from_cli_args(
+            node_id,
             None, // No node name provided
             "0.0.0.0".to_string(),
             6570,
@@ -183,6 +188,7 @@ mod tests {
         )
         .expect("Should create config");
 
+        assert_eq!(config.node_id, node_id);
         // Should have a default name (either hostname or "hes-node")
         assert!(!config.node_name.is_empty());
     }
