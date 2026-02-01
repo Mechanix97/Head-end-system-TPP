@@ -8,6 +8,47 @@ use uuid::Uuid;
 use crate::node::NodeStatus;
 use super::ClusterCodecError;
 
+// Protocol encoding constants
+const OPTION_SOME: u8 = 1;
+const OPTION_NONE: u8 = 0;
+const BOOL_TRUE: u8 = 1;
+const BOOL_FALSE: u8 = 0;
+
+// Size constants for primitive types (in bytes)
+const UUID_SIZE: usize = 16;  // u128
+const U8_SIZE: usize = 1;
+const U16_SIZE: usize = 2;
+const U32_SIZE: usize = 4;
+const I64_SIZE: usize = 8;
+
+/// Helper: encode optional string
+fn encode_optional_string(buf: &mut impl BufMut, opt: &Option<String>) {
+    if let Some(s) = opt {
+        buf.put_u8(OPTION_SOME);
+        let bytes = s.as_bytes();
+        buf.put_u16(bytes.len() as u16);
+        buf.put_slice(bytes);
+    } else {
+        buf.put_u8(OPTION_NONE);
+    }
+}
+
+/// Helper: decode optional string
+fn decode_optional_string(buf: &mut impl Buf) -> Result<Option<String>, ClusterCodecError> {
+    if buf.get_u8() == OPTION_SOME {
+        let len = buf.get_u16() as usize;
+        if buf.remaining() < len {
+            return Err(ClusterCodecError::InvalidLength);
+        }
+        let mut bytes = vec![0u8; len];
+        buf.copy_to_slice(&mut bytes);
+        Ok(Some(String::from_utf8(bytes)
+            .map_err(|e| ClusterCodecError::InvalidPayload(e.to_string()))?))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Reason for delegation request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DelegationReason {
@@ -58,8 +99,8 @@ pub struct HeartbeatPayload {
 }
 
 impl HeartbeatPayload {
-    /// Minimum payload size: status(1) + bucket_count(2) + device_count(4) + load(1) + node_count(2) = 10
-    pub const MIN_SIZE: usize = 10;
+    /// Minimum payload size: status + bucket_count + device_count + load + node_count
+    pub const MIN_SIZE: usize = U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U16_SIZE;
 
     pub fn encode(&self, buf: &mut impl BufMut) {
         buf.put_u8(self.status.code());
@@ -85,7 +126,7 @@ impl HeartbeatPayload {
         let load_percent = buf.get_u8();
         let node_count = buf.get_u16() as usize;
 
-        if buf.remaining() < node_count * 16 {
+        if buf.remaining() < node_count * UUID_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
 
@@ -104,7 +145,7 @@ impl HeartbeatPayload {
     }
 
     pub fn encoded_size(&self) -> usize {
-        Self::MIN_SIZE + self.known_nodes.len() * 16
+        Self::MIN_SIZE + self.known_nodes.len() * UUID_SIZE
     }
 }
 
@@ -120,6 +161,9 @@ pub struct NodeJoinPayload {
 }
 
 impl NodeJoinPayload {
+    // Minimum size: name_len + addr_len + backdoor_port
+    const MIN_SIZE: usize = U16_SIZE + U16_SIZE + U16_SIZE;
+
     pub fn encode(&self, buf: &mut impl BufMut) {
         // Encode node name with length prefix
         let name_bytes = self.node_name.as_bytes();
@@ -136,7 +180,7 @@ impl NodeJoinPayload {
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 6 {
+        if buf.remaining() < Self::MIN_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
 
@@ -150,7 +194,7 @@ impl NodeJoinPayload {
         let node_name = String::from_utf8(name_bytes)
             .map_err(|e| ClusterCodecError::InvalidPayload(e.to_string()))?;
 
-        if buf.remaining() < 4 {
+        if buf.remaining() < U16_SIZE + U16_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
 
@@ -167,7 +211,7 @@ impl NodeJoinPayload {
             .parse()
             .map_err(|e| ClusterCodecError::InvalidPayload(format!("Invalid address: {e}")))?;
 
-        if buf.remaining() < 2 {
+        if buf.remaining() < U16_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
         let backdoor_port = buf.get_u16();
@@ -194,36 +238,25 @@ pub struct DelegatedDevicePayload {
 }
 
 impl DelegatedDevicePayload {
+    // Minimum size: UUID + ipv4_flag + ipv6_flag + schedule_time
+    const MIN_SIZE: usize = UUID_SIZE + U8_SIZE + U8_SIZE + I64_SIZE;
+
     pub fn encode(&self, buf: &mut impl BufMut) {
         // Device ID (16 bytes)
         buf.put_u128(self.device_id.as_u128());
 
-        // IPv4 (1 byte flag + optional string)
-        if let Some(ipv4) = &self.ipv4 {
-            buf.put_u8(1);
-            let bytes = ipv4.as_bytes();
-            buf.put_u16(bytes.len() as u16);
-            buf.put_slice(bytes);
-        } else {
-            buf.put_u8(0);
-        }
+        // IPv4 (optional)
+        encode_optional_string(buf, &self.ipv4);
 
-        // IPv6 (1 byte flag + optional string)
-        if let Some(ipv6) = &self.ipv6 {
-            buf.put_u8(1);
-            let bytes = ipv6.as_bytes();
-            buf.put_u16(bytes.len() as u16);
-            buf.put_slice(bytes);
-        } else {
-            buf.put_u8(0);
-        }
+        // IPv6 (optional)
+        encode_optional_string(buf, &self.ipv6);
 
         // Schedule time (8 bytes)
         buf.put_i64(self.schedule_time);
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 16 + 1 + 1 + 8 {
+        if buf.remaining() < Self::MIN_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
 
@@ -231,32 +264,10 @@ impl DelegatedDevicePayload {
         let device_id = Uuid::from_u128(buf.get_u128());
 
         // IPv4
-        let ipv4 = if buf.get_u8() == 1 {
-            let len = buf.get_u16() as usize;
-            if buf.remaining() < len {
-                return Err(ClusterCodecError::InvalidLength);
-            }
-            let mut bytes = vec![0u8; len];
-            buf.copy_to_slice(&mut bytes);
-            Some(String::from_utf8(bytes)
-                .map_err(|e| ClusterCodecError::InvalidPayload(e.to_string()))?)
-        } else {
-            None
-        };
+        let ipv4 = decode_optional_string(buf)?;
 
         // IPv6
-        let ipv6 = if buf.get_u8() == 1 {
-            let len = buf.get_u16() as usize;
-            if buf.remaining() < len {
-                return Err(ClusterCodecError::InvalidLength);
-            }
-            let mut bytes = vec![0u8; len];
-            buf.copy_to_slice(&mut bytes);
-            Some(String::from_utf8(bytes)
-                .map_err(|e| ClusterCodecError::InvalidPayload(e.to_string()))?)
-        } else {
-            None
-        };
+        let ipv6 = decode_optional_string(buf)?;
 
         // Schedule time
         if buf.remaining() < 8 {
@@ -283,6 +294,9 @@ pub struct DelegateRequestPayload {
 }
 
 impl DelegateRequestPayload {
+    // Minimum size: device_count + reason (empty device list)
+    const MIN_SIZE: usize = U16_SIZE + U8_SIZE;
+
     pub fn encode(&self, buf: &mut impl BufMut) {
         buf.put_u16(self.devices.len() as u16);
         for device in &self.devices {
@@ -292,7 +306,7 @@ impl DelegateRequestPayload {
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 3 {
+        if buf.remaining() < Self::MIN_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
 
@@ -325,6 +339,9 @@ pub struct DelegateAcceptPayload {
 }
 
 impl DelegateAcceptPayload {
+    // Minimum size: device_count (empty device list)
+    const MIN_SIZE: usize = U16_SIZE;
+
     pub fn encode(&self, buf: &mut impl BufMut) {
         buf.put_u16(self.accepted_device_ids.len() as u16);
         for device_id in &self.accepted_device_ids {
@@ -333,7 +350,7 @@ impl DelegateAcceptPayload {
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 2 {
+        if buf.remaining() < Self::MIN_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
 
@@ -359,6 +376,9 @@ pub struct DelegateRejectPayload {
 }
 
 impl DelegateRejectPayload {
+    // Minimum size: string length prefix
+    const MIN_SIZE: usize = U16_SIZE;
+
     pub fn encode(&self, buf: &mut impl BufMut) {
         let bytes = self.reason.as_bytes();
         buf.put_u16(bytes.len() as u16);
@@ -366,7 +386,7 @@ impl DelegateRejectPayload {
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 2 {
+        if buf.remaining() < Self::MIN_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
 
@@ -392,12 +412,14 @@ pub struct NodeSuspectPayload {
 }
 
 impl NodeSuspectPayload {
+    const MIN_SIZE: usize = UUID_SIZE;
+
     pub fn encode(&self, buf: &mut impl BufMut) {
         buf.put_u128(self.suspect_node_id.as_u128());
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 16 {
+        if buf.remaining() < Self::MIN_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
         Ok(Self {
@@ -414,12 +436,14 @@ pub struct NodeDeadPayload {
 }
 
 impl NodeDeadPayload {
+    const MIN_SIZE: usize = UUID_SIZE;
+
     pub fn encode(&self, buf: &mut impl BufMut) {
         buf.put_u128(self.dead_node_id.as_u128());
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 16 {
+        if buf.remaining() < Self::MIN_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
         Ok(Self {
@@ -446,6 +470,11 @@ pub struct StatusResponsePayload {
 }
 
 impl StatusResponsePayload {
+    // Minimum size: name_len + status + bucket_count + device_count + load + buckets_len
+    const MIN_SIZE: usize = U16_SIZE + U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U16_SIZE;
+    // Size after name_len: status + bucket_count + device_count + load + buckets_len
+    const FIELDS_AFTER_NAME: usize = U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U16_SIZE;
+
     pub fn encode(&self, buf: &mut impl BufMut) {
         let name_bytes = self.node_name.as_bytes();
         buf.put_u16(name_bytes.len() as u16);
@@ -461,12 +490,12 @@ impl StatusResponsePayload {
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 12 {
+        if buf.remaining() < Self::MIN_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
 
         let name_len = buf.get_u16() as usize;
-        if buf.remaining() < name_len + 10 {
+        if buf.remaining() < name_len + Self::FIELDS_AFTER_NAME {
             return Err(ClusterCodecError::InvalidLength);
         }
 
@@ -511,12 +540,14 @@ pub struct ProbeRequestPayload {
 }
 
 impl ProbeRequestPayload {
+    const MIN_SIZE: usize = UUID_SIZE;
+
     pub fn encode(&self, buf: &mut impl BufMut) {
         buf.put_u128(self.target_node_id.as_u128());
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 16 {
+        if buf.remaining() < Self::MIN_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
         Ok(Self {
@@ -535,18 +566,20 @@ pub struct ProbeResponsePayload {
 }
 
 impl ProbeResponsePayload {
+    const MIN_SIZE: usize = UUID_SIZE + U8_SIZE;
+
     pub fn encode(&self, buf: &mut impl BufMut) {
         buf.put_u128(self.target_node_id.as_u128());
-        buf.put_u8(if self.is_alive { 1 } else { 0 });
+        buf.put_u8(if self.is_alive { BOOL_TRUE } else { BOOL_FALSE });
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
-        if buf.remaining() < 17 {
+        if buf.remaining() < Self::MIN_SIZE {
             return Err(ClusterCodecError::InvalidLength);
         }
         Ok(Self {
             target_node_id: Uuid::from_u128(buf.get_u128()),
-            is_alive: buf.get_u8() != 0,
+            is_alive: buf.get_u8() == BOOL_TRUE,
         })
     }
 }
