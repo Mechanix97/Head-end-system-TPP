@@ -88,11 +88,3 @@ CREATE TABLE IF NOT EXISTS T_NODES (
     bucket_count INTEGER DEFAULT 0,
     device_count INTEGER DEFAULT 0
 );
-
--- T_BUCKET_ASSIGNMENTS is deprecated (device-based delegation replaces bucket-based)
--- Keeping commented for reference during migration
--- CREATE TABLE IF NOT EXISTS T_BUCKET_ASSIGNMENTS (
---     bucket_number INTEGER PRIMARY KEY,
---     owner_node_id UUID REFERENCES T_NODES(node_id) ON DELETE SET NULL,
---     assigned_at TIMESTAMP DEFAULT NOW()
--- );
