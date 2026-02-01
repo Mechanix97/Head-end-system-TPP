@@ -149,6 +149,11 @@ async fn initialize_cluster(
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
+    // Validate: cluster mode requires a shared database
+    if !args.disable_cluster && args.database_type == DatabaseType::InMemory {
+        return Err("Cluster mode requires a shared database. Use --database postgres or run with --disable-cluster for single-node mode.".into());
+    }
+
     tracing_subscriber::fmt().init();
 
     info!("Head-End System starting");
