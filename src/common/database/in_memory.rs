@@ -283,12 +283,7 @@ impl Engine for InMemoryDB {
         Ok(())
     }
 
-    async fn remove_cluster_node(&self, node_id: Uuid) -> Result<(), DatabaseError> {
-        self.inner.lock().await.cluster_nodes.remove(&node_id);
-        Ok(())
-    }
-
-    // ========== Device ownership (for cluster delegation) ==========
+        // ========== Device ownership (for cluster delegation) ==========
 
     async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
         let lock = self.inner.lock().await;

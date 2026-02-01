@@ -663,18 +663,6 @@ impl Engine for PostgresDB {
         Ok(())
     }
 
-    async fn remove_cluster_node(&self, node_id: Uuid) -> Result<(), DatabaseError> {
-        let query = "DELETE FROM T_NODES WHERE node_id = $1";
-
-        sqlx::query(query)
-            .bind(node_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
-        Ok(())
-    }
-
     // ========== Device ownership (for cluster delegation) ==========
 
     async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {

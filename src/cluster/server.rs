@@ -84,6 +84,7 @@ pub async fn run_cluster_server(
             &device_manager,
             delegation_handler.as_ref(),
             &socket,
+            &database,
         )
         .await
         {
@@ -100,6 +101,7 @@ async fn handle_message(
     device_manager: &RwLock<DeviceManager>,
     delegation_handler: Option<&DelegationHandler>,
     socket: &UdpSocket,
+    database: &Database,
 ) -> Result<(), ClusterError> {
     debug!(
         "Received {:?} from node {} at {}",
@@ -168,7 +170,7 @@ async fn handle_message(
             handle_node_suspect(msg.payload, membership).await
         }
         ClusterMessageType::NodeDead => {
-            handle_node_dead(msg.payload, membership, device_manager).await
+            handle_node_dead(msg.payload, membership, device_manager, database).await
         }
         ClusterMessageType::ProbeRequest => {
             if let ClusterPayload::ProbeRequest(payload) = msg.payload {
@@ -397,6 +399,7 @@ async fn handle_node_dead(
     payload: ClusterPayload,
     membership: &RwLock<MembershipList>,
     device_manager: &RwLock<DeviceManager>,
+    database: &Database,
 ) -> Result<(), ClusterError> {
     let dead = match payload {
         ClusterPayload::NodeDead(d) => d,
@@ -415,11 +418,16 @@ async fn handle_node_dead(
 
     info!("Node {} ({}) confirmed dead by cluster", node_name, dead.dead_node_id);
 
+    // Update node status in database to "dead"
+    database
+        .update_cluster_node_status(dead.dead_node_id, "dead")
+        .await?;
+
     // Participate in redistribution of devices
     let mut dm = device_manager.write().await;
     dm.redistribute_from_failed(dead.dead_node_id).await?;
 
-    // Remove from membership
+    // Remove from membership (in-memory only)
     let mut m = membership.write().await;
     m.remove_node(dead.dead_node_id);
 

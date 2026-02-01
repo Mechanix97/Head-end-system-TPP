@@ -224,11 +224,6 @@ impl Database {
         self.engine.update_cluster_node_last_seen(node_id).await
     }
 
-    /// Removes a cluster node.
-    pub async fn remove_cluster_node(&self, node_id: Uuid) -> Result<(), DatabaseError> {
-        self.engine.remove_cluster_node(node_id).await
-    }
-
     // ========== Device ownership (for cluster delegation) ==========
 
     /// Gets all device UUIDs owned by a specific node.
@@ -349,9 +344,6 @@ pub trait Engine: Debug + Send + Sync {
 
     /// Updates a cluster node's last_seen timestamp
     async fn update_cluster_node_last_seen(&self, node_id: Uuid) -> Result<(), DatabaseError>;
-
-    /// Removes a cluster node
-    async fn remove_cluster_node(&self, node_id: Uuid) -> Result<(), DatabaseError>;
 
     // ========== Device ownership (for cluster delegation) ==========
 
