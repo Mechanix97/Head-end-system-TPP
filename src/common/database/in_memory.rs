@@ -22,7 +22,6 @@ pub struct InnerDB {
     device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
     buckets: HashMap<Uuid, i32>,
     scheduled_connections: HashMap<Uuid, ScheduledConnection>,
-    device_owners: HashMap<Uuid, Uuid>, // device_id -> owner_node_id
 }
 
 #[async_trait::async_trait]
@@ -274,49 +273,25 @@ impl Engine for InMemoryDB {
 
         // ========== Device ownership (for cluster delegation) ==========
 
-    async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
-        let lock = self.inner.lock().await;
-        Ok(lock
-            .device_owners
-            .iter()
-            .filter(|(_, owner)| **owner == node_id)
-            .map(|(device_id, _)| *device_id)
-            .collect())
+    async fn get_devices_by_owner(&self, _node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
     }
 
-    async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError> {
-        self.inner
-            .lock()
-            .await
-            .device_owners
-            .insert(device_id, node_id);
-        Ok(())
+    async fn set_device_owner(&self, _device_id: Uuid, _node_id: Uuid) -> Result<(), DatabaseError> {
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
     }
 
     async fn get_scheduled_connections_by_owner(
         &self,
-        node_id: Uuid,
+        _node_id: Uuid,
     ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
-        let lock = self.inner.lock().await;
-
-        // Get device IDs owned by this node
-        let owned_devices: std::collections::HashSet<Uuid> = lock
-            .device_owners
-            .iter()
-            .filter(|(_, owner)| **owner == node_id)
-            .map(|(device_id, _)| *device_id)
-            .collect();
-
-        // Filter scheduled connections for owned devices with 'awaiting' status
-        Ok(lock
-            .scheduled_connections
-            .values()
-            .filter(|conn| {
-                owned_devices.contains(&conn.fk_device)
-                    && matches!(conn.status, ScheduledStatus::Awaiting)
-            })
-            .cloned()
-            .collect())
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
     }
 }
 

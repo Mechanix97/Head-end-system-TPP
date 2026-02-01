@@ -11,11 +11,11 @@ use uuid::Uuid;
 
 use common::database::api::Database;
 
-use crate::device_manager::DeviceManager;
 use crate::delegation::DelegationHandler;
+use crate::device_manager::DeviceManager;
 use crate::error::ClusterError;
 use crate::failure_detector::failure_detector_loop;
-use crate::membership::{heartbeat_loop, broadcast_message, MembershipList};
+use crate::membership::{MembershipList, broadcast_message, heartbeat_loop};
 use crate::node::{ClusterConfig, NodeStatus};
 use crate::protocol::ClusterMessage;
 use crate::server::run_cluster_server;
@@ -42,7 +42,11 @@ pub struct ClusterManager {
 
 impl ClusterManager {
     /// Creates a new cluster manager.
-    pub async fn new(config: ClusterConfig, database: Database) -> Result<Self, ClusterError> {
+    pub async fn new(
+        config: ClusterConfig,
+        database: Database,
+        scheduler: Arc<RwLock<Scheduler>>,
+    ) -> Result<Self, ClusterError> {
         // Create UDP socket for cluster communication
         let bind_addr = format!("{}:{}", config.cluster_ip, config.cluster_port);
         let socket = UdpSocket::bind(&bind_addr).await?;
@@ -66,7 +70,7 @@ impl ClusterManager {
             config,
             membership,
             device_manager,
-            scheduler: None, // Set later via set_scheduler()
+            scheduler: Some(scheduler),
             socket,
             database,
             tasks: Vec::new(),
@@ -76,7 +80,7 @@ impl ClusterManager {
     /// Starts the cluster manager.
     ///
     /// This initializes the cluster by:
-    /// 1. Loading bucket assignments from database
+    /// 1. Loading device ownership from database
     /// 2. Contacting seed nodes if provided
     /// 3. Starting background tasks (heartbeat, failure detection, server)
     pub async fn start(&mut self) -> Result<(), ClusterError> {
@@ -126,7 +130,10 @@ impl ClusterManager {
 
     /// Joins an existing cluster by contacting seed nodes.
     async fn join_cluster(&self) -> Result<(), ClusterError> {
-        info!("Joining cluster via {} seed nodes", self.config.cluster_seeds.len());
+        info!(
+            "Joining cluster via {} seed nodes",
+            self.config.cluster_seeds.len()
+        );
 
         // Send NODE_JOIN to all seed nodes
         let (node_id, seq, payload) = {
@@ -141,7 +148,9 @@ impl ClusterManager {
 
         for seed_addr in &self.config.cluster_seeds {
             info!("Sending NODE_JOIN to seed {}", seed_addr);
-            if let Err(e) = crate::membership::send_message(&self.socket, *seed_addr, join_msg.clone()).await {
+            if let Err(e) =
+                crate::membership::send_message(&self.socket, *seed_addr, join_msg.clone()).await
+            {
                 error!("Failed to contact seed {}: {}", seed_addr, e);
             }
         }
@@ -156,7 +165,10 @@ impl ClusterManager {
         };
 
         if node_count > 1 {
-            info!("Successfully joined cluster with {} total nodes", node_count);
+            info!(
+                "Successfully joined cluster with {} total nodes",
+                node_count
+            );
         } else {
             info!("No other nodes responded, starting as first node");
         }
@@ -207,7 +219,10 @@ impl ClusterManager {
             let database = self.database.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = run_cluster_server(socket, membership, device_manager, scheduler, database).await {
+                if let Err(e) =
+                    run_cluster_server(socket, membership, device_manager, scheduler, database)
+                        .await
+                {
                     error!("Cluster server error: {}", e);
                 }
             })
@@ -236,11 +251,6 @@ impl ClusterManager {
         &self.device_manager
     }
 
-    /// Sets the scheduler reference (must be called before start).
-    pub fn set_scheduler(&mut self, scheduler: Arc<RwLock<Scheduler>>) {
-        self.scheduler = Some(scheduler);
-    }
-
     /// Checks if this node owns a specific device.
     pub async fn owns_device(&self, device_id: uuid::Uuid) -> bool {
         let dm = self.device_manager.read().await;
@@ -254,7 +264,7 @@ impl ClusterManager {
 
     /// Initiates graceful shutdown.
     ///
-    /// Transfers all buckets to other nodes and announces departure.
+    /// Transfers all devices to other nodes and announces departure.
     pub async fn shutdown(&self) -> Result<(), ClusterError> {
         info!("Initiating graceful cluster shutdown");
 

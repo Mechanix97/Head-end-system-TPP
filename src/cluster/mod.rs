@@ -7,9 +7,9 @@
 //! # Architecture
 //!
 //! The cluster uses a SWIM-like protocol for failure detection with:
-//! - Heartbeats every 15 seconds
-//! - 60-second timeout for declaring a node dead
-//! - Bucket-based device distribution for load balancing
+//! - Heartbeats every 60 seconds
+//! - 180-second suspect timeout + 60-second dead timeout for declaring a node dead
+//! - Device-based delegation for load balancing (each node has fixed local buckets)
 //!
 //! # Components
 //!
@@ -17,7 +17,7 @@
 //! - `protocol`: Inter-node communication protocol (messages, codec)
 //! - `membership`: Membership list management and heartbeat logic
 //! - `failure_detector`: SWIM-like failure detection
-//! - `bucket_manager`: Bucket assignment and redistribution
+//! - `device_manager`: Device ownership and delegation management
 //! - `delegation`: Device delegation between nodes
 //! - `server`: UDP server for inter-node communication
 //! - `manager`: Main cluster manager that orchestrates everything

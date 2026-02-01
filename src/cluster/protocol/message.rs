@@ -22,11 +22,11 @@ pub enum ClusterMessageType {
     StatusRequest,
     /// Response with node status (unicast)
     StatusResponse,
-    /// Request to delegate buckets to another node (unicast)
+    /// Request to delegate devices to another node (unicast)
     DelegateRequest,
-    /// Accept bucket delegation (unicast)
+    /// Accept device delegation (unicast)
     DelegateAccept,
-    /// Reject bucket delegation (unicast)
+    /// Reject device delegation (unicast)
     DelegateReject,
     /// Announce new node joining the cluster (broadcast)
     NodeJoin,

@@ -8,7 +8,7 @@ use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
 use cluster::{ClusterConfig, ClusterManager};
-use common::database::{api::Database, postgres::PostgresConnectionArgs, DatabaseType};
+use common::database::{DatabaseType, api::Database, postgres::PostgresConnectionArgs};
 use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
 
@@ -92,7 +92,11 @@ struct Args {
     postgres_port: String,
 
     /// Disable cluster mode (runs in single-node mode)
-    #[arg(long = "disable-cluster", default_value = "false", help = "Disable cluster mode")]
+    #[arg(
+        long = "disable-cluster",
+        default_value = "false",
+        help = "Disable cluster mode"
+    )]
     disable_cluster: bool,
 
     /// Cluster node name
@@ -100,49 +104,27 @@ struct Args {
     node_name: Option<String>,
 
     /// Cluster communication port
-    #[arg(long = "cluster-port", default_value = "6570", help = "Cluster communication port")]
+    #[arg(
+        long = "cluster-port",
+        default_value = "6570",
+        help = "Cluster communication port"
+    )]
     cluster_port: u16,
 
     /// Cluster bind IP
-    #[arg(long = "cluster-ip", default_value = "0.0.0.0", help = "Cluster bind IP")]
+    #[arg(
+        long = "cluster-ip",
+        default_value = "0.0.0.0",
+        help = "Cluster bind IP"
+    )]
     cluster_ip: String,
 
     /// Cluster seed nodes
-    #[arg(long = "cluster-seeds", help = "Seed nodes for cluster join (comma-separated, e.g., '127.0.0.1:6570,127.0.0.1:6571')")]
+    #[arg(
+        long = "cluster-seeds",
+        help = "Seed nodes for cluster join (comma-separated, e.g., '127.0.0.1:6570,127.0.0.1:6571')"
+    )]
     cluster_seeds: Option<String>,
-}
-
-/// Initializes the cluster manager and synchronizes it with the scheduler.
-async fn initialize_cluster(
-    args: &Args,
-    database: &Database,
-    scheduler: &Arc<RwLock<Scheduler>>,
-) -> Result<ClusterManager, Box<dyn Error>> {
-    // Create cluster configuration from CLI args
-    let config = ClusterConfig::from_cli_args(
-        args.node_name.clone(),
-        args.cluster_ip.clone(),
-        args.cluster_port,
-        args.backdoor_port.parse().unwrap_or(6565),
-        args.buckets_number as i32,
-        args.cluster_seeds.clone(),
-    )?;
-
-    // Initialize cluster manager
-    let mut manager = ClusterManager::new(config, database.clone()).await?;
-
-    // Set scheduler reference before starting
-    manager.set_scheduler(scheduler.clone());
-
-    // Start cluster manager
-    manager.start().await?;
-
-    // Sync scheduler with cluster-owned devices
-    let owned_devices = manager.get_owned_devices().await;
-    scheduler.write().await.enable_cluster_mode(owned_devices);
-
-    info!("Cluster mode enabled");
-    Ok(manager)
 }
 
 #[tokio::main]
@@ -177,7 +159,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Initialize cluster unless disabled
     let cluster_manager = if !args.disable_cluster {
-        Some(initialize_cluster(&args, &db, &scheduler).await?)
+        // Create cluster configuration from CLI args
+        let config = ClusterConfig::from_cli_args(
+            args.node_name.clone(),
+            args.cluster_ip.clone(),
+            args.cluster_port,
+            args.backdoor_port.parse().unwrap_or(6565),
+            args.buckets_number as i32,
+            args.cluster_seeds.clone(),
+        )?;
+
+        // Initialize cluster manager
+        let mut manager = ClusterManager::new(config, db.clone(), scheduler.clone()).await?;
+
+        // Start cluster manager
+        manager.start().await?;
+
+        // Sync scheduler with cluster-owned devices
+        let owned_devices = manager.get_owned_devices().await;
+        scheduler.write().await.enable_cluster_mode(owned_devices);
+
+        info!("Cluster mode enabled");
+        Some(manager)
     } else {
         info!("Running in single-node mode");
         None

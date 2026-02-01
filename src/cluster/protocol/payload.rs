@@ -58,7 +58,7 @@ pub enum DelegationReason {
     Shutdown,
     /// Cluster is rebalancing after a node joined/left
     Rebalance,
-    /// Node that owned these buckets has died
+    /// Node that owned these devices has died
     NodeFailure,
 }
 
@@ -465,7 +465,7 @@ pub struct StatusResponsePayload {
     pub device_count: u32,
     /// Load percentage
     pub load_percent: u8,
-    /// List of owned bucket numbers
+    /// DEPRECATED: List of owned bucket numbers (always empty with device-based architecture)
     pub owned_buckets: Vec<i32>,
 }
 

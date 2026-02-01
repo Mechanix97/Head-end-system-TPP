@@ -21,10 +21,6 @@ pub enum ClusterError {
     #[error("Node not found: {0}")]
     NodeNotFound(uuid::Uuid),
 
-    /// Bucket not assigned to this node
-    #[error("Bucket {0} not owned by this node")]
-    BucketNotOwned(i32),
-
     /// No nodes available for delegation
     #[error("No nodes available for delegation")]
     NoNodesAvailable,
