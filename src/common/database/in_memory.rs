@@ -23,7 +23,6 @@ pub struct InnerDB {
     buckets: HashMap<Uuid, i32>,
     scheduled_connections: HashMap<Uuid, ScheduledConnection>,
     cluster_nodes: HashMap<Uuid, (String, String, i32, i32, String)>, // node_name, ip, cluster_port, backdoor_port, status
-    bucket_assignments: HashMap<i32, Uuid>, // bucket_number -> owner_node_id
     device_owners: HashMap<Uuid, Uuid>, // device_id -> owner_node_id
 }
 
@@ -286,49 +285,6 @@ impl Engine for InMemoryDB {
 
     async fn remove_cluster_node(&self, node_id: Uuid) -> Result<(), DatabaseError> {
         self.inner.lock().await.cluster_nodes.remove(&node_id);
-        Ok(())
-    }
-
-    async fn assign_bucket(&self, bucket_number: i32, owner_node_id: Uuid) -> Result<(), DatabaseError> {
-        self.inner
-            .lock()
-            .await
-            .bucket_assignments
-            .insert(bucket_number, owner_node_id);
-        Ok(())
-    }
-
-    async fn get_bucket_assignments(&self) -> Result<Vec<(i32, Uuid)>, DatabaseError> {
-        let lock = self.inner.lock().await;
-        Ok(lock
-            .bucket_assignments
-            .iter()
-            .map(|(bucket, owner)| (*bucket, *owner))
-            .collect())
-    }
-
-    async fn get_buckets_by_node(&self, node_id: Uuid) -> Result<Vec<i32>, DatabaseError> {
-        let lock = self.inner.lock().await;
-        Ok(lock
-            .bucket_assignments
-            .iter()
-            .filter(|(_, owner)| **owner == node_id)
-            .map(|(bucket, _)| *bucket)
-            .collect())
-    }
-
-    async fn get_devices_in_bucket(&self, bucket_number: i32) -> Result<Vec<Uuid>, DatabaseError> {
-        let lock = self.inner.lock().await;
-        Ok(lock
-            .buckets
-            .iter()
-            .filter(|(_, bucket)| **bucket == bucket_number)
-            .map(|(device_id, _)| *device_id)
-            .collect())
-    }
-
-    async fn remove_bucket_assignment(&self, bucket_number: i32) -> Result<(), DatabaseError> {
-        self.inner.lock().await.bucket_assignments.remove(&bucket_number);
         Ok(())
     }
 

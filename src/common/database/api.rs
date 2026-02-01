@@ -229,31 +229,6 @@ impl Database {
         self.engine.remove_cluster_node(node_id).await
     }
 
-    /// Assigns a bucket to a node.
-    pub async fn assign_bucket(&self, bucket_number: i32, owner_node_id: Uuid) -> Result<(), DatabaseError> {
-        self.engine.assign_bucket(bucket_number, owner_node_id).await
-    }
-
-    /// Gets all bucket assignments.
-    pub async fn get_bucket_assignments(&self) -> Result<Vec<(i32, Uuid)>, DatabaseError> {
-        self.engine.get_bucket_assignments().await
-    }
-
-    /// Gets buckets owned by a specific node.
-    pub async fn get_buckets_by_node(&self, node_id: Uuid) -> Result<Vec<i32>, DatabaseError> {
-        self.engine.get_buckets_by_node(node_id).await
-    }
-
-    /// Gets devices in a specific bucket.
-    pub async fn get_devices_in_bucket(&self, bucket_number: i32) -> Result<Vec<Uuid>, DatabaseError> {
-        self.engine.get_devices_in_bucket(bucket_number).await
-    }
-
-    /// Removes bucket assignment.
-    pub async fn remove_bucket_assignment(&self, bucket_number: i32) -> Result<(), DatabaseError> {
-        self.engine.remove_bucket_assignment(bucket_number).await
-    }
-
     // ========== Device ownership (for cluster delegation) ==========
 
     /// Gets all device UUIDs owned by a specific node.
@@ -377,21 +352,6 @@ pub trait Engine: Debug + Send + Sync {
 
     /// Removes a cluster node
     async fn remove_cluster_node(&self, node_id: Uuid) -> Result<(), DatabaseError>;
-
-    /// Assigns a bucket to a node
-    async fn assign_bucket(&self, bucket_number: i32, owner_node_id: Uuid) -> Result<(), DatabaseError>;
-
-    /// Gets all bucket assignments (bucket_number, owner_node_id)
-    async fn get_bucket_assignments(&self) -> Result<Vec<(i32, Uuid)>, DatabaseError>;
-
-    /// Gets buckets owned by a specific node
-    async fn get_buckets_by_node(&self, node_id: Uuid) -> Result<Vec<i32>, DatabaseError>;
-
-    /// Gets devices in a specific bucket
-    async fn get_devices_in_bucket(&self, bucket_number: i32) -> Result<Vec<Uuid>, DatabaseError>;
-
-    /// Removes bucket assignment
-    async fn remove_bucket_assignment(&self, bucket_number: i32) -> Result<(), DatabaseError>;
 
     // ========== Device ownership (for cluster delegation) ==========
 
