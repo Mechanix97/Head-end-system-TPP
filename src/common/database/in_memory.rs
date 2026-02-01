@@ -22,7 +22,6 @@ pub struct InnerDB {
     device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
     buckets: HashMap<Uuid, i32>,
     scheduled_connections: HashMap<Uuid, ScheduledConnection>,
-    cluster_nodes: HashMap<Uuid, (String, String, i32, i32, String)>, // node_name, ip, cluster_port, backdoor_port, status
     device_owners: HashMap<Uuid, Uuid>, // device_id -> owner_node_id
 }
 
@@ -244,43 +243,33 @@ impl Engine for InMemoryDB {
 
     async fn register_cluster_node(
         &self,
-        node_id: Uuid,
-        node_name: String,
-        cluster_ip: String,
-        cluster_port: i32,
-        backdoor_port: i32,
+        _node_id: Uuid,
+        _node_name: String,
+        _cluster_ip: String,
+        _cluster_port: i32,
+        _backdoor_port: i32,
     ) -> Result<(), DatabaseError> {
-        self.inner
-            .lock()
-            .await
-            .cluster_nodes
-            .insert(node_id, (node_name, cluster_ip, cluster_port, backdoor_port, "active".to_string()));
-        Ok(())
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
     }
 
     async fn get_active_cluster_nodes(&self) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError> {
-        let lock = self.inner.lock().await;
-        Ok(lock
-            .cluster_nodes
-            .iter()
-            .filter(|(_, (_, _, _, _, status))| status == "active" || status == "starting")
-            .map(|(id, (name, ip, cluster_port, backdoor_port, _))| {
-                (*id, name.clone(), ip.clone(), *cluster_port, *backdoor_port)
-            })
-            .collect())
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
     }
 
-    async fn update_cluster_node_status(&self, node_id: Uuid, status: &str) -> Result<(), DatabaseError> {
-        let mut lock = self.inner.lock().await;
-        if let Some(node) = lock.cluster_nodes.get_mut(&node_id) {
-            node.4 = status.to_string();
-        }
-        Ok(())
+    async fn update_cluster_node_status(&self, _node_id: Uuid, _status: &str) -> Result<(), DatabaseError> {
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
     }
 
     async fn update_cluster_node_last_seen(&self, _node_id: Uuid) -> Result<(), DatabaseError> {
-        // In-memory DB doesn't track last_seen
-        Ok(())
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
     }
 
         // ========== Device ownership (for cluster delegation) ==========
