@@ -173,12 +173,12 @@ pub struct ClusterConfig {
 }
 
 impl ClusterConfig {
-    /// Default heartbeat interval (15 seconds).
-    pub const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
-    /// Default suspect timeout (60 seconds).
-    pub const DEFAULT_SUSPECT_TIMEOUT: Duration = Duration::from_secs(60);
-    /// Default dead timeout after suspect (30 seconds).
-    pub const DEFAULT_DEAD_TIMEOUT: Duration = Duration::from_secs(30);
+    /// Default heartbeat interval (60 seconds).
+    pub const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
+    /// Default suspect timeout (180 seconds - 3 missed heartbeats).
+    pub const DEFAULT_SUSPECT_TIMEOUT: Duration = Duration::from_secs(180);
+    /// Default dead timeout after suspect (60 seconds - 1 additional heartbeat).
+    pub const DEFAULT_DEAD_TIMEOUT: Duration = Duration::from_secs(60);
     /// Default cluster port.
     pub const DEFAULT_CLUSTER_PORT: u16 = 6570;
 

@@ -91,9 +91,9 @@ struct Args {
     #[arg(long = "postgres-port", default_value = "5432", help = "Postgres port")]
     postgres_port: String,
 
-    /// Enable cluster mode
-    #[arg(long = "enable-cluster", default_value = "false", help = "Enable cluster mode")]
-    enable_cluster: bool,
+    /// Disable cluster mode (runs in single-node mode)
+    #[arg(long = "disable-cluster", default_value = "false", help = "Disable cluster mode")]
+    disable_cluster: bool,
 
     /// Cluster node name
     #[arg(long = "node-name", help = "Cluster node name (defaults to hostname)")]
@@ -170,8 +170,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Scheduler::new(args.buckets_number, db.clone()).await?,
     ));
 
-    // Initialize cluster if enabled
-    let cluster_manager = if args.enable_cluster {
+    // Initialize cluster unless disabled
+    let cluster_manager = if !args.disable_cluster {
         Some(initialize_cluster(&args, &db, &scheduler).await?)
     } else {
         info!("Running in single-node mode");
