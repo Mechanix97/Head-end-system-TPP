@@ -139,6 +139,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing_subscriber::fmt().init();
 
+    // TODO: Persist configuration to file (e.g., ~/.hes/config.toml or /etc/hes/config.toml)
+    // - node_id should be persistent across restarts (currently regenerates on each startup)
+    // - Store CLI args as defaults (backdoor_port, cluster_port, metrics_port, etc.)
+    // - Load config from file first, then override with CLI args if provided
+    // - In cluster mode: changing node_id would orphan all owned devices in database
+
     // Generate node ID (always, even for single-node)
     let node_id = Uuid::new_v4();
     info!("Head-End System starting with node_id: {}", node_id);
