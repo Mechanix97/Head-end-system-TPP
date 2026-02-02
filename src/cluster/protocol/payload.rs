@@ -465,15 +465,13 @@ pub struct StatusResponsePayload {
     pub device_count: u32,
     /// Load percentage
     pub load_percent: u8,
-    /// DEPRECATED: List of owned bucket numbers (always empty with device-based architecture)
-    pub owned_buckets: Vec<i32>,
 }
 
 impl StatusResponsePayload {
-    // Minimum size: name_len + status + bucket_count + device_count + load + buckets_len
-    const MIN_SIZE: usize = U16_SIZE + U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U16_SIZE;
-    // Size after name_len: status + bucket_count + device_count + load + buckets_len
-    const FIELDS_AFTER_NAME: usize = U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U16_SIZE;
+    // Minimum size: name_len + status + bucket_count + device_count + load
+    const MIN_SIZE: usize = U16_SIZE + U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE;
+    // Size after name_len: status + bucket_count + device_count + load
+    const FIELDS_AFTER_NAME: usize = U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE;
 
     pub fn encode(&self, buf: &mut impl BufMut) {
         let name_bytes = self.node_name.as_bytes();
@@ -483,10 +481,6 @@ impl StatusResponsePayload {
         buf.put_u16(self.bucket_count);
         buf.put_u32(self.device_count);
         buf.put_u8(self.load_percent);
-        buf.put_u16(self.owned_buckets.len() as u16);
-        for bucket in &self.owned_buckets {
-            buf.put_i32(*bucket);
-        }
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
@@ -510,16 +504,6 @@ impl StatusResponsePayload {
         let bucket_count = buf.get_u16();
         let device_count = buf.get_u32();
         let load_percent = buf.get_u8();
-        let owned_count = buf.get_u16() as usize;
-
-        if buf.remaining() < owned_count * 4 {
-            return Err(ClusterCodecError::InvalidLength);
-        }
-
-        let mut owned_buckets = Vec::with_capacity(owned_count);
-        for _ in 0..owned_count {
-            owned_buckets.push(buf.get_i32());
-        }
 
         Ok(Self {
             node_name,
@@ -527,7 +511,6 @@ impl StatusResponsePayload {
             bucket_count,
             device_count,
             load_percent,
-            owned_buckets,
         })
     }
 }

@@ -274,7 +274,6 @@ async fn handle_status_request(
             bucket_count,
             device_count,
             load_percent: local.load_percent,
-            owned_buckets: vec![], // No longer tracking individual buckets for status
         };
 
         let seq = m.next_seq();

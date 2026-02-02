@@ -124,14 +124,12 @@ mod tests {
         let mut codec = ClusterMessageCodec;
         let node_id = Uuid::new_v4();
 
-        // owned_buckets is deprecated but kept for protocol compatibility
         let payload = StatusResponsePayload {
             node_name: "cluster-node-alpha".to_string(),
             status: NodeStatus::Active,
             bucket_count: 7, // Local bucket count
             device_count: 350,
             load_percent: 45,
-            owned_buckets: vec![], // Deprecated: always empty with device-based architecture
         };
 
         let msg = ClusterMessage::status_response(node_id, 100, payload);
@@ -150,7 +148,6 @@ mod tests {
             assert_eq!(p.bucket_count, 7);
             assert_eq!(p.device_count, 350);
             assert_eq!(p.load_percent, 45);
-            assert!(p.owned_buckets.is_empty()); // Deprecated field
         } else {
             panic!("Expected StatusResponse payload");
         }
