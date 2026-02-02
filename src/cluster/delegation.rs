@@ -121,9 +121,7 @@ impl DelegationHandler {
 
         send_message(&self.socket, target_addr, msg).await?;
 
-        // For now, we assume the delegation will be accepted
-        // In a production system, we'd wait for a response and handle rejection
-        // The actual transfer happens when we receive DELEGATE_ACCEPT
+        // TODO: Wait for DELEGATE_ACCEPT/REJECT response with timeout before returning success
 
         Ok(devices.iter().map(|d| d.device_id).collect())
     }
@@ -143,11 +141,20 @@ impl DelegationHandler {
         );
 
         // Check if we can accept the delegation
-        let can_accept = {
+        let (can_accept, is_overloaded) = {
             let membership = self.membership.read().await;
             let local = membership.local_node();
-            // Accept if we're active and not overloaded
-            local.is_available() && local.load_percent < 90
+            let overloaded = local.load_percent >= 90;
+
+            // Always accept Shutdown delegations (node is going down, must rescue devices)
+            // For other reasons, only accept if we're active and not overloaded
+            let accept = if payload.reason == DelegationReason::Shutdown {
+                local.is_available()
+            } else {
+                local.is_available() && !overloaded
+            };
+
+            (accept, overloaded)
         };
 
         let seq = {
@@ -210,6 +217,24 @@ impl DelegationHandler {
 
         info!("Accepted delegation of {} devices", accepted_device_ids.len());
 
+        // If we accepted a Shutdown delegation while overloaded, redistribute some devices
+        if is_overloaded && payload.reason == DelegationReason::Shutdown {
+            warn!(
+                "Accepted {} devices from shutting down node while overloaded ({}% load), will redistribute",
+                accepted_device_ids.len(),
+                {
+                    let membership = self.membership.read().await;
+                    membership.local_node().load_percent
+                }
+            );
+
+            // TODO: Trigger rebalancing to redistribute excess load
+            // - Select target node(s) with lower load
+            // - Calculate how many devices to delegate to get below 90% load
+            // - Call request_delegation() with DelegationReason::Rebalance
+            // This should be done asynchronously to not block the shutdown response
+        }
+
         Ok(())
     }
 
@@ -229,11 +254,6 @@ impl DelegationHandler {
         {
             let mut device_manager = self.device_manager.write().await;
             device_manager.release_devices(&payload.accepted_device_ids);
-        }
-
-        // Update the database to reflect new ownership
-        for device_id in &payload.accepted_device_ids {
-            self.database.set_device_owner(*device_id, from_node_id).await?;
         }
 
         // Remove devices from scheduler's owned set
