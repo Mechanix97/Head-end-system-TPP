@@ -266,21 +266,22 @@ impl Scheduler {
 
     /// Enables cluster mode with the given owned devices.
     pub fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>) {
-        info!("Enabling cluster mode with {} owned devices", owned_devices.len());
+        info!(
+            "Enabling cluster mode with {} owned devices",
+            owned_devices.len()
+        );
         self.owned_devices = Some(owned_devices);
-    }
-
-    /// Disables cluster mode (reverts to single-node, owns all devices).
-    pub fn disable_cluster_mode(&mut self) {
-        info!("Disabling cluster mode");
-        self.owned_devices = None;
     }
 
     /// Adds a device to the owned set (cluster mode only).
     pub fn add_owned_device(&mut self, device_id: Uuid) {
         if let Some(owned) = &mut self.owned_devices {
             owned.insert(device_id);
-            info!("Added device {:?} to owned set (now have {})", device_id, owned.len());
+            info!(
+                "Added device {:?} to owned set (now have {})",
+                device_id,
+                owned.len()
+            );
         }
     }
 
@@ -288,7 +289,11 @@ impl Scheduler {
     pub fn remove_owned_device(&mut self, device_id: Uuid) {
         if let Some(owned) = &mut self.owned_devices {
             owned.remove(&device_id);
-            info!("Removed device {:?} from owned set (now have {})", device_id, owned.len());
+            info!(
+                "Removed device {:?} from owned set (now have {})",
+                device_id,
+                owned.len()
+            );
         }
     }
 
@@ -359,7 +364,12 @@ impl Scheduler {
                         let mut connection = db_clone
                             .get_scheduled_connection(device_id)
                             .await
-                            .inspect_err(|e| error!("[Job {:#x}] Failed to get scheduled connection: {}", job_id, e))
+                            .inspect_err(|e| {
+                                error!(
+                                    "[Job {:#x}] Failed to get scheduled connection: {}",
+                                    job_id, e
+                                )
+                            })
                             .ok();
 
                         if let Some(conn) = &mut connection {
@@ -370,7 +380,12 @@ impl Scheduler {
                             db_clone
                                 .update_scheduled_connection(conn)
                                 .await
-                                .inspect_err(|e| error!("[Job {:#x}] Failed to update connection status: {}", job_id, e))
+                                .inspect_err(|e| {
+                                    error!(
+                                        "[Job {:#x}] Failed to update connection status: {}",
+                                        job_id, e
+                                    )
+                                })
                                 .ok();
                         }
                     }
