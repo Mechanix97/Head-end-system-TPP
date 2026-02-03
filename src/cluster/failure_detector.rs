@@ -220,6 +220,7 @@ async fn indirect_probe(
         return false;
     }
 
+    // TODO: Track pending probes and match responses properly
     // Wait for response (with timeout)
     // In a real implementation, we'd need to track pending probes and match responses
     // For now, we just wait a short time and check if the target node's heartbeat was updated
