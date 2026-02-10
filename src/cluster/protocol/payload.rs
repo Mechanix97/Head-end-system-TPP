@@ -94,19 +94,22 @@ pub struct HeartbeatPayload {
     pub device_count: u32,
     /// Current load percentage (0-100)
     pub load_percent: u8,
+    /// Suggested maximum number of devices for this node
+    pub max_device_suggested: u32,
     /// List of known node IDs
     pub known_nodes: Vec<Uuid>,
 }
 
 impl HeartbeatPayload {
-    /// Minimum payload size: status + bucket_count + device_count + load + node_count
-    pub const MIN_SIZE: usize = U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U16_SIZE;
+    /// Minimum payload size: status + bucket_count + device_count + load + max_device_suggested + node_count
+    pub const MIN_SIZE: usize = U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U32_SIZE + U16_SIZE;
 
     pub fn encode(&self, buf: &mut impl BufMut) {
         buf.put_u8(self.status.code());
         buf.put_u16(self.bucket_count);
         buf.put_u32(self.device_count);
         buf.put_u8(self.load_percent);
+        buf.put_u32(self.max_device_suggested);
         buf.put_u16(self.known_nodes.len() as u16);
         for node_id in &self.known_nodes {
             buf.put_u128(node_id.as_u128());
@@ -124,6 +127,7 @@ impl HeartbeatPayload {
         let bucket_count = buf.get_u16();
         let device_count = buf.get_u32();
         let load_percent = buf.get_u8();
+        let max_device_suggested = buf.get_u32();
         let node_count = buf.get_u16() as usize;
 
         if buf.remaining() < node_count * UUID_SIZE {
@@ -140,6 +144,7 @@ impl HeartbeatPayload {
             bucket_count,
             device_count,
             load_percent,
+            max_device_suggested,
             known_nodes,
         })
     }
@@ -465,13 +470,15 @@ pub struct StatusResponsePayload {
     pub device_count: u32,
     /// Load percentage
     pub load_percent: u8,
+    /// Suggested maximum number of devices for this node
+    pub max_device_suggested: u32,
 }
 
 impl StatusResponsePayload {
-    // Minimum size: name_len + status + bucket_count + device_count + load
-    const MIN_SIZE: usize = U16_SIZE + U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE;
-    // Size after name_len: status + bucket_count + device_count + load
-    const FIELDS_AFTER_NAME: usize = U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE;
+    // Minimum size: name_len + status + bucket_count + device_count + load + max_device_suggested
+    const MIN_SIZE: usize = U16_SIZE + U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U32_SIZE;
+    // Size after name_len: status + bucket_count + device_count + load + max_device_suggested
+    const FIELDS_AFTER_NAME: usize = U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U32_SIZE;
 
     pub fn encode(&self, buf: &mut impl BufMut) {
         let name_bytes = self.node_name.as_bytes();
@@ -481,6 +488,7 @@ impl StatusResponsePayload {
         buf.put_u16(self.bucket_count);
         buf.put_u32(self.device_count);
         buf.put_u8(self.load_percent);
+        buf.put_u32(self.max_device_suggested);
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
@@ -504,6 +512,7 @@ impl StatusResponsePayload {
         let bucket_count = buf.get_u16();
         let device_count = buf.get_u32();
         let load_percent = buf.get_u8();
+        let max_device_suggested = buf.get_u32();
 
         Ok(Self {
             node_name,
@@ -511,6 +520,7 @@ impl StatusResponsePayload {
             bucket_count,
             device_count,
             load_percent,
+            max_device_suggested,
         })
     }
 }

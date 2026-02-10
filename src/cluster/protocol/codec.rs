@@ -119,6 +119,7 @@ mod tests {
             bucket_count: 10,
             device_count: 100,
             load_percent: 50,
+            max_device_suggested: 1000,
             known_nodes: vec![Uuid::new_v4(), Uuid::new_v4()],
         };
 
@@ -139,6 +140,7 @@ mod tests {
             assert_eq!(p.bucket_count, 10);
             assert_eq!(p.device_count, 100);
             assert_eq!(p.load_percent, 50);
+            assert_eq!(p.max_device_suggested, 1000);
             assert_eq!(p.known_nodes.len(), 2);
         } else {
             panic!("Expected Heartbeat payload");

@@ -226,8 +226,6 @@ async fn indirect_probe(
     // For now, we just wait a short time and check if the target node's heartbeat was updated
     tokio::time::sleep(Duration::from_secs(5)).await;
 
-    
-
     {
         let membership = membership.read().await;
         if let Some(node) = membership.get_node(target_node_id) {

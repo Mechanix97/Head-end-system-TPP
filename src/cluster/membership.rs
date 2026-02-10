@@ -79,18 +79,12 @@ impl MembershipList {
 
     /// Gets all active nodes (excluding self).
     pub fn active_nodes(&self) -> Vec<&NodeInfo> {
-        self.nodes
-            .values()
-            .filter(|n| n.is_available())
-            .collect()
+        self.nodes.values().filter(|n| n.is_available()).collect()
     }
 
     /// Gets all reachable nodes (excluding self).
     pub fn reachable_nodes(&self) -> Vec<&NodeInfo> {
-        self.nodes
-            .values()
-            .filter(|n| n.is_reachable())
-            .collect()
+        self.nodes.values().filter(|n| n.is_reachable()).collect()
     }
 
     /// Gets a node by ID.
@@ -123,10 +117,14 @@ impl MembershipList {
             existing.bucket_count = node.bucket_count;
             existing.device_count = node.device_count;
             existing.load_percent = node.load_percent;
+            existing.max_device_suggested = node.max_device_suggested;
             existing.update_heartbeat();
         } else {
             // Add new node
-            info!("Adding new node to membership: {} ({})", node.node_name, node.node_id);
+            info!(
+                "Adding new node to membership: {} ({})",
+                node.node_name, node.node_id
+            );
             self.nodes.insert(node.node_id, node);
         }
     }
@@ -179,7 +177,8 @@ impl MembershipList {
             .values()
             .filter(|n| {
                 n.status == NodeStatus::Suspect
-                    && n.time_since_heartbeat() > self.config.suspect_timeout + self.config.dead_timeout
+                    && n.time_since_heartbeat()
+                        > self.config.suspect_timeout + self.config.dead_timeout
             })
             .map(|n| n.node_id)
             .collect()
@@ -196,7 +195,8 @@ impl MembershipList {
             status: self.local_node.status,
             bucket_count: self.local_node.bucket_count as u16,
             device_count: self.local_node.device_count,
-            load_percent: self.local_node.load_percent,
+            load_percent: self.local_node.load_percent as u8,
+            max_device_suggested: self.local_node.max_device_suggested,
             known_nodes: self.known_node_ids(),
         }
     }
@@ -215,11 +215,16 @@ impl MembershipList {
         self.local_node.status = status;
     }
 
-    /// Updates local node stats.
-    pub fn update_local_stats(&mut self, bucket_count: u32, device_count: u32, load_percent: u8) {
+    /// Updates local node stats. Recalculates load_percent as device_count / max_device_suggested * 100.
+    pub fn update_local_stats(&mut self, bucket_count: u32, device_count: u32) {
         self.local_node.bucket_count = bucket_count;
         self.local_node.device_count = device_count;
-        self.local_node.load_percent = load_percent;
+        if self.local_node.max_device_suggested > 0 {
+            self.local_node.load_percent =
+                (device_count as f32 / self.local_node.max_device_suggested as f32) * 100.0;
+        } else {
+            self.local_node.load_percent = 0.0;
+        }
     }
 
     /// Gets the total number of nodes (including self).

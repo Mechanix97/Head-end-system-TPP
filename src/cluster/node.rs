@@ -94,11 +94,15 @@ pub struct NodeInfo {
     pub bucket_count: u32,
     /// Number of devices managed by this node
     pub device_count: u32,
+    /// Number of max devices targeted to be managed by this node (can be surpassed)
+    pub max_device_suggested: u32,
     /// Current load percentage (0-100)
-    pub load_percent: u8,
+    pub load_percent: f32,
 }
 
 impl NodeInfo {
+    pub const DEFAULT_MAX_DEVICES: u32 = 1000;
+
     /// Creates a new NodeInfo for the local node.
     pub fn new_local(
         node_id: Uuid,
@@ -117,7 +121,8 @@ impl NodeInfo {
             last_heartbeat: now,
             bucket_count: 0,
             device_count: 0,
-            load_percent: 0,
+            max_device_suggested: Self::DEFAULT_MAX_DEVICES,
+            load_percent: 0.0,
         }
     }
 
@@ -246,7 +251,13 @@ impl ClusterConfig {
                 .unwrap_or_else(|| "hes-node".to_string())
         });
 
-        let mut config = Self::new(node_name, cluster_ip, cluster_port, backdoor_port, total_buckets);
+        let mut config = Self::new(
+            node_name,
+            cluster_ip,
+            cluster_port,
+            backdoor_port,
+            total_buckets,
+        );
         config.node_id = node_id; // Use provided node_id instead of generating new one
 
         if let Some(seeds) = cluster_seeds {

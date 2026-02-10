@@ -268,48 +268,91 @@ impl DeviceManager {
         Ok(())
     }
 
-    /// Rebalances devices across the cluster.
+    /// Rebalances devices across the cluster based on load percentage.
     ///
-    /// Called when nodes have significantly uneven device counts.
+    /// Calculates how many devices to shed based on the difference between local load
+    /// and the average load of underloaded nodes. Redistributes devices to nodes with
+    /// the lowest load_percent first.
     pub async fn rebalance_cluster(&mut self) -> Result<(), ClusterError> {
-        let (active_nodes, my_count) = {
+        let (active_nodes, local_load, local_max) = {
             let membership = self.membership.read().await;
+            let local_node = membership.local_node();
             let nodes: Vec<_> = membership
                 .active_nodes()
                 .iter()
-                .map(|n| (n.node_id, n.device_count as usize))
+                .map(|n| (n.node_id, n.device_count, n.load_percent, n.max_device_suggested))
                 .collect();
-            let my_count = self.owned_devices.len();
-            (nodes, my_count)
+            (nodes, local_node.load_percent, local_node.max_device_suggested)
         };
 
-        let total_nodes = active_nodes.len() + 1; // +1 for self
-        let fair_share = my_count / total_nodes;
-        let excess = my_count.saturating_sub(fair_share);
-
-        if excess == 0 {
-            debug!("No excess devices to redistribute (have {}, fair share is {})", my_count, fair_share);
+        if active_nodes.is_empty() {
+            debug!("No active nodes to rebalance with");
             return Ok(());
         }
 
-        // Find underloaded nodes
-        let underloaded: Vec<_> = active_nodes
+        let my_count = self.owned_devices.len();
+
+        // Calculate average load of cluster
+        let total_load: f32 = active_nodes.iter().map(|(_, _, load, _)| load).sum();
+        let avg_load = (total_load + local_load) / (active_nodes.len() + 1) as f32;
+
+        // Find underloaded nodes (below average)
+        let mut underloaded: Vec<_> = active_nodes
             .into_iter()
-            .filter(|(_, count)| *count < fair_share)
+            .filter(|(_, _, load, _)| *load < avg_load)
             .collect();
 
         if underloaded.is_empty() {
-            debug!("No underloaded nodes to give devices to");
+            debug!("No underloaded nodes found (all at or above {:.1}% average)", avg_load);
             return Ok(());
         }
 
-        // Give devices to underloaded nodes
-        let devices_to_give: Vec<Uuid> = self.owned_devices.iter().copied().take(excess).collect();
+        // Sort by load (lowest first)
+        underloaded.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Calculate how many devices to give away based on load difference
+        // Goal: reduce our load to approximately the average
+        let target_load = avg_load;
+        let devices_to_shed = if local_max > 0 {
+            let target_count = (target_load / 100.0 * local_max as f32) as usize;
+            my_count.saturating_sub(target_count)
+        } else {
+            0
+        };
+
+        if devices_to_shed == 0 {
+            debug!(
+                "No devices to shed (local load {:.1}% is at target {:.1}%)",
+                local_load, target_load
+            );
+            return Ok(());
+        }
+
+        info!(
+            "Rebalancing: local load {:.1}%, cluster avg {:.1}%, shedding {} devices to {} underloaded nodes",
+            local_load,
+            avg_load,
+            devices_to_shed,
+            underloaded.len()
+        );
+
+        // Give devices to underloaded nodes (distribute evenly, prioritize lowest load)
+        let devices_to_give: Vec<Uuid> = self.owned_devices.iter().copied().take(devices_to_shed).collect();
 
         let mut device_idx = 0;
-        for (node_id, count) in underloaded {
-            let needed = fair_share.saturating_sub(count);
-            for _ in 0..needed {
+        let devices_per_node = (devices_to_shed + underloaded.len() - 1) / underloaded.len(); // Round up
+
+        for (node_id, current_count, current_load, max_suggested) in underloaded {
+            // Calculate how many devices this node can take without exceeding average load
+            let max_acceptable_count = if max_suggested > 0 {
+                (avg_load / 100.0 * max_suggested as f32) as u32
+            } else {
+                current_count + devices_per_node as u32
+            };
+
+            let can_take = (max_acceptable_count.saturating_sub(current_count) as usize).min(devices_per_node);
+
+            for _ in 0..can_take {
                 if device_idx >= devices_to_give.len() {
                     break;
                 }
@@ -317,13 +360,23 @@ impl DeviceManager {
                 self.database.set_device_owner(device_id, node_id).await?;
                 self.owned_devices.remove(&device_id);
                 device_idx += 1;
+
+                debug!(
+                    "Delegated device {} to node {} (was at {:.1}% load)",
+                    device_id, node_id, current_load
+                );
+            }
+
+            if device_idx >= devices_to_give.len() {
+                break;
             }
         }
 
         info!(
-            "Rebalance complete, gave away {} devices, now own {}",
+            "Rebalance complete: redistributed {} devices, now own {} ({:.1}% load)",
             device_idx,
-            self.owned_devices.len()
+            self.owned_devices.len(),
+            (self.owned_devices.len() as f32 / local_max as f32) * 100.0
         );
 
         Ok(())

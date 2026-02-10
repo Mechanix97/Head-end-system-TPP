@@ -19,6 +19,7 @@ mod tests {
             bucket_count: 15,
             device_count: 250,
             load_percent: 65,
+            max_device_suggested: 1000,
             known_nodes: vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()],
         };
 
@@ -43,6 +44,7 @@ mod tests {
             assert_eq!(p.bucket_count, 15);
             assert_eq!(p.device_count, 250);
             assert_eq!(p.load_percent, 65);
+            assert_eq!(p.max_device_suggested, 1000);
             assert_eq!(p.known_nodes.len(), 3);
         } else {
             panic!("Expected Heartbeat payload");
@@ -130,6 +132,7 @@ mod tests {
             bucket_count: 7, // Local bucket count
             device_count: 350,
             load_percent: 45,
+            max_device_suggested: 500,
         };
 
         let msg = ClusterMessage::status_response(node_id, 100, payload);
@@ -148,6 +151,7 @@ mod tests {
             assert_eq!(p.bucket_count, 7);
             assert_eq!(p.device_count, 350);
             assert_eq!(p.load_percent, 45);
+            assert_eq!(p.max_device_suggested, 500);
         } else {
             panic!("Expected StatusResponse payload");
         }
@@ -167,6 +171,7 @@ mod tests {
                     bucket_count: 10,
                     device_count: 100,
                     load_percent: 50,
+                    max_device_suggested: 1000,
                     known_nodes: vec![],
                 },
             ),

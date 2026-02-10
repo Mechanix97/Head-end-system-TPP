@@ -144,7 +144,7 @@ impl DelegationHandler {
         let (can_accept, is_overloaded) = {
             let membership = self.membership.read().await;
             let local = membership.local_node();
-            let overloaded = local.load_percent >= 90;
+            let overloaded = local.load_percent >= 90.0;
 
             // Always accept Shutdown delegations (node is going down, must rescue devices)
             // For other reasons, only accept if we're active and not overloaded

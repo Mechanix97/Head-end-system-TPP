@@ -187,7 +187,7 @@ mod tests {
         let config = create_test_config();
         let mut membership = MembershipList::new(config).expect("Should create membership");
 
-        membership.update_local_stats(5, 100, 50);
+        membership.update_local_stats(5, 500);
 
         let node1 = create_test_node("node-1", 6571);
         let node2 = create_test_node("node-2", 6572);
@@ -197,8 +197,10 @@ mod tests {
         let payload = membership.create_heartbeat_payload();
 
         assert_eq!(payload.bucket_count, 5);
-        assert_eq!(payload.device_count, 100);
+        assert_eq!(payload.device_count, 500);
+        // load_percent = 500 / 1000 * 100 = 50
         assert_eq!(payload.load_percent, 50);
+        assert_eq!(payload.max_device_suggested, NodeInfo::DEFAULT_MAX_DEVICES);
         assert_eq!(payload.known_nodes.len(), 2); // 2 remote nodes
     }
 

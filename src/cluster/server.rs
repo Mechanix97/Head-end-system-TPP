@@ -212,7 +212,8 @@ async fn handle_heartbeat(
         node.status = heartbeat.status;
         node.bucket_count = heartbeat.bucket_count as u32;
         node.device_count = heartbeat.device_count;
-        node.load_percent = heartbeat.load_percent;
+        node.load_percent = heartbeat.load_percent.into();
+        node.max_device_suggested = heartbeat.max_device_suggested;
         node.update_heartbeat();
     } else {
         // New node - add to membership
@@ -226,7 +227,8 @@ async fn handle_heartbeat(
             last_heartbeat: chrono::Utc::now(),
             bucket_count: heartbeat.bucket_count as u32,
             device_count: heartbeat.device_count,
-            load_percent: heartbeat.load_percent,
+            max_device_suggested: heartbeat.max_device_suggested,
+            load_percent: f32::from(heartbeat.load_percent),
         };
         m.add_or_update_node(node);
     }
@@ -273,7 +275,8 @@ async fn handle_status_request(
             status: local.status,
             bucket_count,
             device_count,
-            load_percent: local.load_percent,
+            load_percent: local.load_percent as u8,
+            max_device_suggested: local.max_device_suggested,
         };
 
         let seq = m.next_seq();
@@ -303,7 +306,8 @@ async fn handle_status_response(
         node.status = status.status;
         node.bucket_count = status.bucket_count as u32;
         node.device_count = status.device_count;
-        node.load_percent = status.load_percent;
+        node.load_percent = f32::from(status.load_percent);
+        node.max_device_suggested = status.max_device_suggested;
         node.update_heartbeat();
     }
 
@@ -339,7 +343,8 @@ async fn handle_node_join(
             last_heartbeat: chrono::Utc::now(),
             bucket_count: 0,
             device_count: 0,
-            load_percent: 0,
+            max_device_suggested: NodeInfo::DEFAULT_MAX_DEVICES,
+            load_percent: 0.0,
         };
         m.add_or_update_node(node);
     }

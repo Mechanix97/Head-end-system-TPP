@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use common::database::api::Database;
@@ -232,13 +232,60 @@ impl ClusterManager {
         info!("Started {} background tasks", self.tasks.len());
     }
 
-    /// Updates local node statistics.
-    pub async fn update_stats(&self, device_count: u32, load_percent: u8) {
-        let mut m = self.membership.write().await;
-        // bucket_count is now informational only (local bucket count is fixed)
-        let dm = self.device_manager.read().await;
-        let bucket_count = dm.local_bucket_count() as u32;
-        m.update_local_stats(bucket_count, device_count, load_percent);
+    /// Updates local node statistics and triggers rebalancing if load is significantly higher than other nodes.
+    pub async fn update_stats(&self, device_count: u32) {
+        let should_rebalance = {
+            let mut m = self.membership.write().await;
+            // bucket_count is now informational only (local bucket count is fixed)
+            let dm = self.device_manager.read().await;
+            let bucket_count = dm.local_bucket_count() as u32;
+            m.update_local_stats(bucket_count, device_count);
+
+            // Check if rebalancing is needed
+            self.should_rebalance_based_on_load(&m)
+        };
+
+        if should_rebalance {
+            info!("Load imbalance detected, triggering rebalancing");
+            if let Err(e) = self.trigger_rebalance().await {
+                warn!("Rebalancing failed: {}", e);
+            }
+        }
+    }
+
+    /// Checks if the local node's load is significantly higher than the cluster average.
+    /// Returns true if load_percent is at least 20 percentage points higher than the average of active nodes.
+    fn should_rebalance_based_on_load(&self, membership: &crate::membership::MembershipList) -> bool {
+        const LOAD_IMBALANCE_THRESHOLD: f32 = 20.0; // percentage points
+
+        let local_load = membership.local_node().load_percent;
+        let active_nodes = membership.active_nodes();
+
+        if active_nodes.is_empty() {
+            return false; // No other nodes to compare
+        }
+
+        // Calculate average load of other active nodes
+        let total_load: f32 = active_nodes.iter().map(|n| n.load_percent).sum();
+        let avg_load = total_load / active_nodes.len() as f32;
+
+        let load_diff = local_load - avg_load;
+
+        if load_diff >= LOAD_IMBALANCE_THRESHOLD {
+            info!(
+                "Local load ({:.1}%) is {:.1}pp higher than cluster average ({:.1}%), triggering rebalance",
+                local_load, load_diff, avg_load
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Triggers a rebalancing operation.
+    async fn trigger_rebalance(&self) -> Result<(), crate::ClusterError> {
+        let mut dm = self.device_manager.write().await;
+        dm.rebalance_cluster().await
     }
 
     /// Gets the membership list (for external access).
