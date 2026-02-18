@@ -340,7 +340,7 @@ impl DeviceManager {
         let devices_to_give: Vec<Uuid> = self.owned_devices.iter().copied().take(devices_to_shed).collect();
 
         let mut device_idx = 0;
-        let devices_per_node = (devices_to_shed + underloaded.len() - 1) / underloaded.len(); // Round up
+        let devices_per_node = devices_to_shed.div_ceil(underloaded.len()); // Round up
 
         for (node_id, current_count, current_load, max_suggested) in underloaded {
             // Calculate how many devices this node can take without exceeding average load
