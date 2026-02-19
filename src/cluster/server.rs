@@ -413,6 +413,44 @@ async fn handle_node_join(
     // Send our status back
     handle_status_request(node_id, from_addr, membership, device_manager, socket).await?;
 
+    // Broadcast NODE_JOIN to all other nodes so they also discover the new node
+    let (seq, join_payload) = {
+        let mut m = membership.write().await;
+        let seq = m.next_seq();
+        // Get the node info we just added
+        let node = m.get_node(node_id);
+        if let Some(n) = node {
+            let payload = crate::protocol::NodeJoinPayload {
+                node_name: n.node_name.clone(),
+                cluster_addr: n.cluster_addr,
+                backdoor_port: n.backdoor_port,
+            };
+            (seq, Some(payload))
+        } else {
+            (seq, None)
+        }
+    };
+
+    if let Some(payload) = join_payload {
+        // Create NODE_JOIN message on behalf of the new node
+        let join_msg = ClusterMessage::node_join(node_id, seq, payload);
+        // Broadcast to all nodes except the new one
+        let targets: Vec<SocketAddr> = {
+            let m = membership.read().await;
+            m.reachable_nodes()
+                .iter()
+                .filter(|n| n.node_id != node_id)
+                .map(|n| n.cluster_addr)
+                .collect()
+        };
+
+        for target in targets {
+            if let Err(e) = crate::membership::send_message(socket, target, join_msg.clone()).await {
+                warn!("Failed to relay NODE_JOIN to {}: {}", target, e);
+            }
+        }
+    }
+
     Ok(())
 }
 
