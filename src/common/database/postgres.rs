@@ -583,9 +583,10 @@ impl Engine for PostgresDB {
             VALUES ($1, $2, $3, $4, $5, 'active', NOW(), NOW())
             ON CONFLICT (id)
             DO UPDATE SET
-                cluster_ip = $3,
-                cluster_port = $4,
-                backdoor_port = $5,
+                status = 'active',
+                cluster_ip = EXCLUDED.cluster_ip,
+                cluster_port = EXCLUDED.cluster_port,
+                backdoor_port = EXCLUDED.backdoor_port,
                 last_seen = NOW()
         "#;
 
