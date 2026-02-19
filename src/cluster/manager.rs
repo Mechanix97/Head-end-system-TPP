@@ -140,10 +140,20 @@ impl ClusterManager {
             info!("Claimed {} unassigned devices", claimed.len());
         }
 
-        // Register this node in the database
-        // If cluster_ip is 0.0.0.0, detect the actual IP
+        // If cluster_ip is 0.0.0.0, detect the actual IP and update membership
         let actual_ip = get_actual_cluster_ip(&self.config.cluster_ip).await?;
 
+        // Update local node's cluster address if it changed
+        if actual_ip != self.config.cluster_ip {
+            let new_addr = format!("{}:{}", actual_ip, self.config.cluster_port);
+            if let Ok(addr) = new_addr.parse() {
+                let mut m = self.membership.write().await;
+                m.local_node_mut().cluster_addr = addr;
+                info!("Updated local cluster address from {} to {}", self.config.cluster_ip, actual_ip);
+            }
+        }
+
+        // Register this node in the database
         self.database
             .register_cluster_node(
                 self.config.node_id,
