@@ -252,6 +252,7 @@ pub async fn heartbeat_loop(
 
     loop {
         ticker.tick().await;
+        info!("Sending heartbeat to peers");
 
         let (node_id, seq, payload, targets) = {
             let mut membership = membership.write().await;
@@ -283,7 +284,7 @@ pub async fn heartbeat_loop(
             if let Err(e) = socket.send_to(&buf, target).await {
                 warn!("Failed to send heartbeat to {}: {}", target, e);
             } else {
-                debug!("Sent heartbeat to {}", target);
+                info!("Sent heartbeat to {}", target);
             }
         }
     }
