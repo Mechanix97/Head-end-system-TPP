@@ -10,8 +10,8 @@ use tokio_util::codec::Decoder;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::device_manager::DeviceManager;
 use crate::delegation::DelegationHandler;
+use crate::device_manager::DeviceManager;
 use crate::error::ClusterError;
 use crate::failure_detector::handle_probe_request;
 use crate::membership::MembershipList;
@@ -39,14 +39,16 @@ pub async fn run_cluster_server(
         m.local_node_id()
     };
 
-    let delegation_handler = scheduler.clone().map(|sched| DelegationHandler::new(
+    let delegation_handler = scheduler.clone().map(|sched| {
+        DelegationHandler::new(
             local_node_id,
             device_manager.clone(),
             sched,
             membership.clone(),
             socket.clone(),
             database.clone(),
-        ));
+        )
+    });
 
     let mut buf = [0u8; MAX_PACKET_SIZE];
     let mut codec = ClusterMessageCodec;
@@ -112,9 +114,7 @@ async fn handle_message(
         ClusterMessageType::Heartbeat => {
             handle_heartbeat(msg.node_id, from_addr, msg.payload, membership).await
         }
-        ClusterMessageType::HeartbeatAck => {
-            handle_heartbeat_ack(msg.node_id, membership).await
-        }
+        ClusterMessageType::HeartbeatAck => handle_heartbeat_ack(msg.node_id, membership).await,
         ClusterMessageType::StatusRequest => {
             handle_status_request(msg.node_id, from_addr, membership, device_manager, socket).await
         }
@@ -128,7 +128,9 @@ async fn handle_message(
                         .handle_delegation_request(msg.node_id, from_addr, payload)
                         .await
                 } else {
-                    Err(ClusterError::InvalidMessage("Expected DelegateRequest payload".to_string()))
+                    Err(ClusterError::InvalidMessage(
+                        "Expected DelegateRequest payload".to_string(),
+                    ))
                 }
             } else {
                 Ok(()) // Ignore delegation if scheduler not set
@@ -137,11 +139,11 @@ async fn handle_message(
         ClusterMessageType::DelegateAccept => {
             if let Some(handler) = delegation_handler {
                 if let ClusterPayload::DelegateAccept(payload) = msg.payload {
-                    handler
-                        .handle_delegation_accept(msg.node_id, payload)
-                        .await
+                    handler.handle_delegation_accept(msg.node_id, payload).await
                 } else {
-                    Err(ClusterError::InvalidMessage("Expected DelegateAccept payload".to_string()))
+                    Err(ClusterError::InvalidMessage(
+                        "Expected DelegateAccept payload".to_string(),
+                    ))
                 }
             } else {
                 Ok(()) // Ignore delegation if scheduler not set
@@ -154,21 +156,27 @@ async fn handle_message(
                         .handle_delegation_reject(msg.node_id, payload.reason)
                         .await
                 } else {
-                    Err(ClusterError::InvalidMessage("Expected DelegateReject payload".to_string()))
+                    Err(ClusterError::InvalidMessage(
+                        "Expected DelegateReject payload".to_string(),
+                    ))
                 }
             } else {
                 Ok(()) // Ignore delegation if scheduler not set
             }
         }
         ClusterMessageType::NodeJoin => {
-            handle_node_join(msg.node_id, from_addr, msg.payload, membership, device_manager, socket).await
+            handle_node_join(
+                msg.node_id,
+                from_addr,
+                msg.payload,
+                membership,
+                device_manager,
+                socket,
+            )
+            .await
         }
-        ClusterMessageType::NodeLeave => {
-            handle_node_leave(msg.node_id, membership).await
-        }
-        ClusterMessageType::NodeSuspect => {
-            handle_node_suspect(msg.payload, membership).await
-        }
+        ClusterMessageType::NodeLeave => handle_node_leave(msg.node_id, membership).await,
+        ClusterMessageType::NodeSuspect => handle_node_suspect(msg.payload, membership).await,
         ClusterMessageType::NodeDead => {
             handle_node_dead(msg.payload, membership, device_manager, database).await
         }
@@ -177,7 +185,9 @@ async fn handle_message(
                 handle_probe_request(payload.target_node_id, from_addr, membership, socket).await;
                 Ok(())
             } else {
-                Err(ClusterError::InvalidMessage("Expected ProbeRequest payload".to_string()))
+                Err(ClusterError::InvalidMessage(
+                    "Expected ProbeRequest payload".to_string(),
+                ))
             }
         }
         ClusterMessageType::ProbeResponse => {
@@ -202,9 +212,13 @@ async fn handle_heartbeat(
 ) -> Result<(), ClusterError> {
     let heartbeat = match payload {
         ClusterPayload::Heartbeat(h) => h,
-        _ => return Err(ClusterError::InvalidMessage("Expected Heartbeat payload".to_string())),
+        _ => {
+            return Err(ClusterError::InvalidMessage(
+                "Expected Heartbeat payload".to_string(),
+            ));
+        }
     };
-
+    info!("Received Heartbeat from {}", from_addr);
     let mut m = membership.write().await;
 
     // Update or add the node
@@ -298,7 +312,11 @@ async fn handle_status_response(
 ) -> Result<(), ClusterError> {
     let status = match payload {
         ClusterPayload::StatusResponse(s) => s,
-        _ => return Err(ClusterError::InvalidMessage("Expected StatusResponse payload".to_string())),
+        _ => {
+            return Err(ClusterError::InvalidMessage(
+                "Expected StatusResponse payload".to_string(),
+            ));
+        }
     };
 
     let mut m = membership.write().await;
@@ -343,10 +361,17 @@ async fn handle_node_join(
 ) -> Result<(), ClusterError> {
     let join = match payload {
         ClusterPayload::NodeJoin(j) => j,
-        _ => return Err(ClusterError::InvalidMessage("Expected NodeJoin payload".to_string())),
+        _ => {
+            return Err(ClusterError::InvalidMessage(
+                "Expected NodeJoin payload".to_string(),
+            ));
+        }
     };
 
-    info!("Node {} ({}) is joining the cluster", join.node_name, node_id);
+    info!(
+        "Node {} ({}) is joining the cluster",
+        join.node_name, node_id
+    );
 
     // Add to membership
     {
@@ -376,7 +401,11 @@ async fn handle_node_join(
     };
 
     if !devices_to_delegate.is_empty() {
-        info!("Prepared {} devices for delegation to new node {}", devices_to_delegate.len(), node_id);
+        info!(
+            "Prepared {} devices for delegation to new node {}",
+            devices_to_delegate.len(),
+            node_id
+        );
         // Note: Actual delegation happens via DelegationHandler, which requires scheduler
         // For now, just log the intent
     }
@@ -409,7 +438,11 @@ async fn handle_node_suspect(
 ) -> Result<(), ClusterError> {
     let suspect = match payload {
         ClusterPayload::NodeSuspect(s) => s,
-        _ => return Err(ClusterError::InvalidMessage("Expected NodeSuspect payload".to_string())),
+        _ => {
+            return Err(ClusterError::InvalidMessage(
+                "Expected NodeSuspect payload".to_string(),
+            ));
+        }
     };
 
     let mut m = membership.write().await;
@@ -427,7 +460,11 @@ async fn handle_node_dead(
 ) -> Result<(), ClusterError> {
     let dead = match payload {
         ClusterPayload::NodeDead(d) => d,
-        _ => return Err(ClusterError::InvalidMessage("Expected NodeDead payload".to_string())),
+        _ => {
+            return Err(ClusterError::InvalidMessage(
+                "Expected NodeDead payload".to_string(),
+            ));
+        }
     };
 
     let node_name = {
@@ -440,7 +477,10 @@ async fn handle_node_dead(
         name
     };
 
-    info!("Node {} ({}) confirmed dead by cluster", node_name, dead.dead_node_id);
+    info!(
+        "Node {} ({}) confirmed dead by cluster",
+        node_name, dead.dead_node_id
+    );
 
     // Update node status in database to "dead"
     database
