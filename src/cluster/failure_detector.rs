@@ -13,6 +13,8 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use common::database::api::Database;
+
 use crate::device_manager::DeviceManager;
 use crate::membership::{MembershipList, broadcast_message, send_message};
 use crate::node::ClusterConfig;
@@ -27,6 +29,7 @@ pub async fn failure_detector_loop(
     device_manager: Arc<RwLock<DeviceManager>>,
     socket: Arc<UdpSocket>,
     config: ClusterConfig,
+    database: Database,
 ) {
     // Check more frequently than the suspect timeout to catch failures quickly
     let check_interval = Duration::from_secs(10);
@@ -52,7 +55,7 @@ pub async fn failure_detector_loop(
         };
 
         for node_id in dead_candidates {
-            handle_dead_node(node_id, &membership, &device_manager, &socket).await;
+            handle_dead_node(node_id, &membership, &device_manager, &socket, &database).await;
         }
     }
 }
@@ -127,6 +130,7 @@ async fn handle_dead_node(
     membership: &RwLock<MembershipList>,
     device_manager: &RwLock<DeviceManager>,
     socket: &UdpSocket,
+    database: &Database,
 ) {
     let node_name = {
         let mut membership = membership.write().await;
@@ -143,6 +147,11 @@ async fn handle_dead_node(
         "Node {} confirmed dead, initiating redistribution",
         node_name
     );
+
+    // Update node status in database
+    if let Err(e) = database.update_cluster_node_status(node_id, "dead").await {
+        warn!("Failed to update node status in database: {}", e);
+    }
 
     // Broadcast NODE_DEAD
     let (local_id, seq) = {

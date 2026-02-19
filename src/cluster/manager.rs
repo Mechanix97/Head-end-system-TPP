@@ -204,9 +204,10 @@ impl ClusterManager {
             let device_manager = self.device_manager.clone();
             let socket = self.socket.clone();
             let config = self.config.clone();
+            let database = self.database.clone();
 
             tokio::spawn(async move {
-                failure_detector_loop(membership, device_manager, socket, config).await;
+                failure_detector_loop(membership, device_manager, socket, config, database).await;
             })
         };
         self.tasks.push(failure_detector_task);
