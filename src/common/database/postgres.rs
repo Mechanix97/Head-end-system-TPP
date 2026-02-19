@@ -668,7 +668,7 @@ impl Engine for PostgresDB {
     // ========== Device ownership (for cluster delegation) ==========
 
     async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
-        let query = "SELECT id FROM T_DEVICES WHERE FK_NODE = $1";
+        let query = "SELECT FK_DEVICE FROM T_BUCKETS WHERE FK_NODE = $1";
 
         let devices: Vec<Uuid> = sqlx::query_scalar(query)
             .bind(node_id)
@@ -680,7 +680,7 @@ impl Engine for PostgresDB {
     }
 
     async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError> {
-        let query = "UPDATE T_DEVICES SET FK_NODE = $1 WHERE id = $2";
+        let query = "UPDATE T_BUCKETS SET FK_NODE = $1 WHERE FK_DEVICE = $2";
 
         sqlx::query(query)
             .bind(node_id)
@@ -699,8 +699,8 @@ impl Engine for PostgresDB {
         let query = r#"
             SELECT sc.fk_device, sc.schedule_time, sc.connection_time, sc.status, sc.job_id, sc.renewable
             FROM T_SCHEDULED_CONNECTIONS sc
-            INNER JOIN T_DEVICES d ON sc.fk_device = d.id
-            WHERE d.FK_NODE = $1 AND sc.status = 'awaiting'
+            INNER JOIN T_BUCKETS b ON sc.fk_device = b.fk_device
+            WHERE b.FK_NODE = $1 AND sc.status = 'awaiting'
             ORDER BY sc.schedule_time ASC
         "#;
 

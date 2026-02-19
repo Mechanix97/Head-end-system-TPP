@@ -134,7 +134,7 @@ async fn handle_backdoor_register_msg(
     scheduler: &Arc<RwLock<Scheduler>>,
     ack_timeout_duration: u64,
     database: Database,
-    node_id: uuid::Uuid,
+    _node_id: uuid::Uuid,
 ) -> Result<(), BackdoorError> {
     // TODO: check that the information provided is correct #10
     if msg.device_id != 0 {
@@ -149,9 +149,6 @@ async fn handle_backdoor_register_msg(
     database
         .register_device(device.id, msg.get_timestamp()?)
         .await?;
-
-    // Assign ownership to this node
-    database.set_device_owner(device.id, node_id).await?;
 
     let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
 
