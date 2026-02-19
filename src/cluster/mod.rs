@@ -26,6 +26,7 @@ pub mod device_manager;
 pub mod delegation;
 pub mod error;
 pub mod failure_detector;
+pub mod heartbeat;
 pub mod manager;
 pub mod membership;
 pub mod node;

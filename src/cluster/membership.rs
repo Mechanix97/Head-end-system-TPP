@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::error::ClusterError;
@@ -239,56 +239,6 @@ impl MembershipList {
     }
 }
 
-/// Heartbeat sender task.
-///
-/// Runs in the background and sends heartbeats to all known nodes periodically.
-pub async fn heartbeat_loop(
-    membership: Arc<RwLock<MembershipList>>,
-    socket: Arc<UdpSocket>,
-    interval: Duration,
-) {
-    let mut ticker = tokio::time::interval(interval);
-    let mut codec = ClusterMessageCodec;
-
-    loop {
-        ticker.tick().await;
-        info!("Sending heartbeat to peers");
-
-        let (node_id, seq, payload, targets) = {
-            let mut membership = membership.write().await;
-            let seq = membership.next_seq();
-            let node_id = membership.local_node_id();
-            let payload = membership.create_heartbeat_payload();
-            let targets: Vec<SocketAddr> = membership
-                .reachable_nodes()
-                .iter()
-                .map(|n| n.cluster_addr)
-                .collect();
-            (node_id, seq, payload, targets)
-        };
-
-        if targets.is_empty() {
-            debug!("No nodes to send heartbeat to");
-            continue;
-        }
-
-        let msg = ClusterMessage::heartbeat(node_id, seq, payload);
-
-        let mut buf = BytesMut::new();
-        if let Err(e) = codec.encode(msg, &mut buf) {
-            warn!("Failed to encode heartbeat: {}", e);
-            continue;
-        }
-
-        for target in targets {
-            if let Err(e) = socket.send_to(&buf, target).await {
-                warn!("Failed to send heartbeat to {}: {}", target, e);
-            } else {
-                info!("Sent heartbeat to {}", target);
-            }
-        }
-    }
-}
 
 /// Sends a single message to a specific node.
 pub async fn send_message(
