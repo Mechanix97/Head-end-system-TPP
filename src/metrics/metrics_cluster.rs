@@ -6,7 +6,8 @@ use std::sync::LazyLock;
 use crate::MetricsError;
 
 /// Global singleton instance of cluster metrics.
-pub static METRICS_CLUSTER: LazyLock<MetricsCluster> = LazyLock::new(MetricsCluster::default);
+pub static METRICS_CLUSTER: LazyLock<MetricsCluster> =
+    LazyLock::new(|| MetricsCluster::try_new().unwrap_or_else(|e| panic!("Failed to initialize cluster metrics: {e}")));
 
 /// Prometheus metrics for tracking cluster operations.
 ///
@@ -66,15 +67,9 @@ pub struct MetricsCluster {
     pub cluster_node_load_percent: IntGaugeVec,
 }
 
-impl Default for MetricsCluster {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl MetricsCluster {
     /// Creates a new cluster metrics collector.
-    pub fn new() -> Self {
+    pub fn try_new() -> Result<Self, MetricsError> {
         let registry = Registry::new();
 
         // Node metrics
@@ -82,63 +77,63 @@ impl MetricsCluster {
             "hes_cluster_nodes_total",
             "Total number of nodes in the cluster",
         )
-        .expect("Invalid Prometheus gauge");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let cluster_nodes_active = IntGauge::new(
             "hes_cluster_nodes_active",
             "Number of active nodes in the cluster",
         )
-        .expect("Invalid Prometheus gauge");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let cluster_buckets_owned = IntGauge::new(
             "hes_cluster_buckets_owned",
             "Number of buckets owned by this node",
         )
-        .expect("Invalid Prometheus gauge");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let cluster_devices_owned = IntGauge::new(
             "hes_cluster_devices_owned",
             "Number of devices managed by this node",
         )
-        .expect("Invalid Prometheus gauge");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         // Heartbeat metrics
         let cluster_heartbeat_sent_total = IntCounter::new(
             "hes_cluster_heartbeat_sent_total",
             "Total heartbeats sent by this node",
         )
-        .expect("Invalid Prometheus counter");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let cluster_heartbeat_received_total = IntCounter::new(
             "hes_cluster_heartbeat_received_total",
             "Total heartbeats received by this node",
         )
-        .expect("Invalid Prometheus counter");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let cluster_heartbeat_timeout_total = IntCounter::new(
             "hes_cluster_heartbeat_timeout_total",
             "Total heartbeat timeouts detected",
         )
-        .expect("Invalid Prometheus counter");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         // Failover metrics
         let cluster_failovers_total = IntCounter::new(
             "hes_cluster_failovers_total",
             "Total node failovers handled",
         )
-        .expect("Invalid Prometheus counter");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let cluster_delegations_total = IntCounter::new(
             "hes_cluster_delegations_total",
             "Total bucket delegations performed",
         )
-        .expect("Invalid Prometheus counter");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let cluster_rebalances_total = IntCounter::new(
             "hes_cluster_rebalances_total",
             "Total cluster rebalances performed",
         )
-        .expect("Invalid Prometheus counter");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         // Message metrics
         let cluster_messages_total = IntCounterVec::new(
@@ -148,7 +143,7 @@ impl MetricsCluster {
             ),
             &["msg_type", "direction"],
         )
-        .expect("Invalid Prometheus counter vec");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         // Per-node metrics
         let cluster_node_buckets = IntGaugeVec::new(
@@ -158,7 +153,7 @@ impl MetricsCluster {
             ),
             &["node_id"],
         )
-        .expect("Invalid Prometheus gauge vec");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let cluster_node_devices = IntGaugeVec::new(
             Opts::new(
@@ -167,7 +162,7 @@ impl MetricsCluster {
             ),
             &["node_id"],
         )
-        .expect("Invalid Prometheus gauge vec");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let cluster_node_load_percent = IntGaugeVec::new(
             Opts::new(
@@ -176,53 +171,53 @@ impl MetricsCluster {
             ),
             &["node_id"],
         )
-        .expect("Invalid Prometheus gauge vec");
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         // Register all metrics
         registry
             .register(Box::new(cluster_nodes_total.clone()))
-            .expect("Failed to register cluster_nodes_total");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_nodes_active.clone()))
-            .expect("Failed to register cluster_nodes_active");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_buckets_owned.clone()))
-            .expect("Failed to register cluster_buckets_owned");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_devices_owned.clone()))
-            .expect("Failed to register cluster_devices_owned");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_heartbeat_sent_total.clone()))
-            .expect("Failed to register cluster_heartbeat_sent_total");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_heartbeat_received_total.clone()))
-            .expect("Failed to register cluster_heartbeat_received_total");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_heartbeat_timeout_total.clone()))
-            .expect("Failed to register cluster_heartbeat_timeout_total");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_failovers_total.clone()))
-            .expect("Failed to register cluster_failovers_total");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_delegations_total.clone()))
-            .expect("Failed to register cluster_delegations_total");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_rebalances_total.clone()))
-            .expect("Failed to register cluster_rebalances_total");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_messages_total.clone()))
-            .expect("Failed to register cluster_messages_total");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_node_buckets.clone()))
-            .expect("Failed to register cluster_node_buckets");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_node_devices.clone()))
-            .expect("Failed to register cluster_node_devices");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
             .register(Box::new(cluster_node_load_percent.clone()))
-            .expect("Failed to register cluster_node_load_percent");
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
-        MetricsCluster {
+        Ok(MetricsCluster {
             registry,
             cluster_nodes_total,
             cluster_nodes_active,
@@ -238,7 +233,7 @@ impl MetricsCluster {
             cluster_node_buckets,
             cluster_node_devices,
             cluster_node_load_percent,
-        }
+        })
     }
 
     /// Gathers all cluster metrics and encodes them in Prometheus text format.
