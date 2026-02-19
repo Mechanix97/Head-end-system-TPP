@@ -119,7 +119,7 @@ async fn handle_message(
             handle_status_request(msg.node_id, from_addr, membership, device_manager, socket).await
         }
         ClusterMessageType::StatusResponse => {
-            handle_status_response(msg.node_id, msg.payload, membership).await
+            handle_status_response(msg.node_id, from_addr, msg.payload, membership).await
         }
         ClusterMessageType::DelegateRequest => {
             if let Some(handler) = delegation_handler {
@@ -292,6 +292,7 @@ async fn handle_status_request(
 /// Handles a status response.
 async fn handle_status_response(
     node_id: Uuid,
+    from_addr: SocketAddr,
     payload: ClusterPayload,
     membership: &RwLock<MembershipList>,
 ) -> Result<(), ClusterError> {
@@ -309,6 +310,23 @@ async fn handle_status_response(
         node.load_percent = f32::from(status.load_percent);
         node.max_device_suggested = status.max_device_suggested;
         node.update_heartbeat();
+    } else {
+        // New node responding to our join - add to membership
+        let node = NodeInfo {
+            node_id,
+            node_name: status.node_name,
+            // Use actual source IP from UDP packet
+            cluster_addr: std::net::SocketAddr::new(from_addr.ip(), from_addr.port()),
+            backdoor_port: 6565, // Default, might not be used
+            status: status.status,
+            started_at: chrono::Utc::now(),
+            last_heartbeat: chrono::Utc::now(),
+            bucket_count: status.bucket_count as u32,
+            device_count: status.device_count,
+            max_device_suggested: status.max_device_suggested,
+            load_percent: f32::from(status.load_percent),
+        };
+        m.add_or_update_node(node);
     }
 
     Ok(())
@@ -336,7 +354,9 @@ async fn handle_node_join(
         let node = NodeInfo {
             node_id,
             node_name: join.node_name,
-            cluster_addr: join.cluster_addr,
+            // Use actual source IP instead of advertised IP (which might be 0.0.0.0)
+            // but preserve the cluster port from the payload
+            cluster_addr: std::net::SocketAddr::new(from_addr.ip(), join.cluster_addr.port()),
             backdoor_port: join.backdoor_port,
             status: NodeStatus::Starting,
             started_at: chrono::Utc::now(),
