@@ -14,7 +14,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::device_manager::DeviceManager;
-use crate::membership::{broadcast_message, send_message, MembershipList};
+use crate::membership::{MembershipList, broadcast_message, send_message};
 use crate::node::ClusterConfig;
 use crate::protocol::ClusterMessage;
 
@@ -42,14 +42,7 @@ pub async fn failure_detector_loop(
         };
 
         for node_id in suspect_candidates {
-            handle_suspect_node(
-                node_id,
-                &membership,
-                &device_manager,
-                &socket,
-                &config,
-            )
-            .await;
+            handle_suspect_node(node_id, &membership, &device_manager, &socket, &config).await;
         }
 
         // Check for dead candidates (suspect nodes that exceeded dead_timeout)
@@ -72,6 +65,7 @@ async fn handle_suspect_node(
     socket: &UdpSocket,
     config: &ClusterConfig,
 ) {
+    info!("Suspect node: {}", node_id);
     // Get node info and check if still suspect-worthy
     let node_name = {
         let mut membership = membership.write().await;
@@ -87,7 +81,10 @@ async fn handle_suspect_node(
         }
     };
 
-    warn!("Node {} is suspected to be down, initiating probe", node_name);
+    warn!(
+        "Node {} is suspected to be down, initiating probe",
+        node_name
+    );
 
     // Broadcast NODE_SUSPECT
     let (local_id, seq) = {
@@ -107,7 +104,10 @@ async fn handle_suspect_node(
 
     if probe_result {
         // Node is alive, update heartbeat
-        info!("Node {} responded to indirect probe, marking as active", node_name);
+        info!(
+            "Node {} responded to indirect probe, marking as active",
+            node_name
+        );
         let mut membership = membership.write().await;
         if let Some(node) = membership.get_node_mut(node_id) {
             node.update_heartbeat();
@@ -139,7 +139,10 @@ async fn handle_dead_node(
         }
     };
 
-    warn!("Node {} confirmed dead, initiating redistribution", node_name);
+    warn!(
+        "Node {} confirmed dead, initiating redistribution",
+        node_name
+    );
 
     // Broadcast NODE_DEAD
     let (local_id, seq) = {
