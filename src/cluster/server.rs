@@ -59,7 +59,13 @@ pub async fn run_cluster_server(
         let (len, from_addr) = match socket.recv_from(&mut buf).await {
             Ok(result) => result,
             Err(e) => {
-                warn!("Failed to receive packet: {}", e);
+                // WSAECONNRESET (10054) is expected when sending to a dead node
+                // Log as debug instead of warning to reduce noise
+                if e.kind() == std::io::ErrorKind::ConnectionReset {
+                    debug!("Connection reset by peer (node likely offline): {}", e);
+                } else {
+                    warn!("Failed to receive packet: {}", e);
+                }
                 continue;
             }
         };
@@ -415,8 +421,16 @@ async fn handle_node_join(
         // For now, just log the intent
     }
 
-    // Send our status back
-    handle_status_request(node_id, from_addr, membership, device_manager, socket).await?;
+    // Send our status back to the joining node
+    // Use the node's cluster_addr (not from_addr) to handle relayed NODE_JOIN correctly
+    let target_addr = {
+        let m = membership.read().await;
+        m.get_node(node_id).map(|n| n.cluster_addr)
+    };
+
+    if let Some(addr) = target_addr {
+        handle_status_request(node_id, addr, membership, device_manager, socket).await?;
+    }
 
     // Broadcast NODE_JOIN to all other nodes so they also discover the new node
     // Only do this if this is a DIRECT join (not a relayed message)
