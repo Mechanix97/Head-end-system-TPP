@@ -23,6 +23,42 @@ use crate::server::run_cluster_server;
 
 use scheduler::scheduler::Scheduler;
 
+/// Gets the actual IP address to use for cluster communication.
+///
+/// If the configured IP is 0.0.0.0 (bind to all interfaces), this function
+/// attempts to determine the actual outbound IP by connecting to an external address.
+async fn get_actual_cluster_ip(configured_ip: &str) -> Result<String, ClusterError> {
+    // If not 0.0.0.0, use the configured IP as-is
+    if configured_ip != "0.0.0.0" {
+        return Ok(configured_ip.to_string());
+    }
+
+    // Try to determine the actual IP by creating a dummy UDP socket
+    // connected to an external address (doesn't actually send data)
+    let socket = UdpSocket::bind("0.0.0.0:0").await?;
+
+    // Connect to Google DNS (8.8.8.8:80) - this doesn't send packets,
+    // just determines which local interface would be used
+    if socket.connect("8.8.8.8:80").await.is_ok() {
+        if let Ok(local_addr) = socket.local_addr() {
+            let ip = local_addr.ip();
+            // Only use if it's not loopback
+            if !ip.is_loopback() {
+                return Ok(ip.to_string());
+            }
+        }
+    }
+
+    // Fallback: try to find a non-loopback interface
+    match local_ip_address::local_ip() {
+        Ok(ip) if !ip.is_loopback() => Ok(ip.to_string()),
+        _ => {
+            warn!("Could not determine actual IP, using 0.0.0.0 (may cause issues)");
+            Ok("0.0.0.0".to_string())
+        }
+    }
+}
+
 /// Main cluster manager that coordinates all cluster operations.
 pub struct ClusterManager {
     /// Cluster configuration
@@ -105,11 +141,14 @@ impl ClusterManager {
         }
 
         // Register this node in the database
+        // If cluster_ip is 0.0.0.0, detect the actual IP
+        let actual_ip = get_actual_cluster_ip(&self.config.cluster_ip).await?;
+
         self.database
             .register_cluster_node(
                 self.config.node_id,
                 self.config.node_name.clone(),
-                self.config.cluster_ip.clone(),
+                actual_ip,
                 self.config.cluster_port as i32,
                 self.config.backdoor_port as i32,
             )
