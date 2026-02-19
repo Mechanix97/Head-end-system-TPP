@@ -237,7 +237,6 @@ impl MembershipList {
     }
 }
 
-
 /// Sends a single message to a specific node.
 pub async fn send_message(
     socket: &UdpSocket,
@@ -282,6 +281,7 @@ pub async fn broadcast_message(
         .map_err(|e| ClusterError::CodecError(e.to_string()))?;
 
     for target in targets {
+        info!("Sending broadcast msg to peer: {}", target);
         if let Err(e) = socket.send_to(&buf, target).await {
             warn!("Failed to broadcast to {}: {}", target, e);
         }
