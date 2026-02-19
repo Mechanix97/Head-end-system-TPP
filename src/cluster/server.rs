@@ -373,6 +373,11 @@ async fn handle_node_join(
         join.node_name, node_id
     );
 
+    // Determine if this is a direct NODE_JOIN or a relayed one
+    // Direct: from_addr.port() matches join.cluster_addr.port()
+    // Relayed: from_addr.port() is different (comes from another node's cluster port)
+    let is_direct_join = from_addr.port() == join.cluster_addr.port();
+
     // Add to membership
     {
         let mut m = membership.write().await;
@@ -414,6 +419,12 @@ async fn handle_node_join(
     handle_status_request(node_id, from_addr, membership, device_manager, socket).await?;
 
     // Broadcast NODE_JOIN to all other nodes so they also discover the new node
+    // Only do this if this is a DIRECT join (not a relayed message)
+    // This prevents broadcast loops
+    if !is_direct_join {
+        return Ok(());
+    }
+
     let (seq, join_payload) = {
         let mut m = membership.write().await;
         let seq = m.next_seq();
