@@ -268,9 +268,9 @@ mod tests {
 
     async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<Scheduler>> {
         let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
-        let scheduler: Arc<RwLock<Scheduler>> =
-            Arc::new(RwLock::new(Scheduler::new(1, db.clone()).await.unwrap()));
         let node_id = uuid::Uuid::new_v4();
+        let scheduler: Arc<RwLock<Scheduler>> =
+            Arc::new(RwLock::new(Scheduler::new(1, db.clone(), node_id).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
