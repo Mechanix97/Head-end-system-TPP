@@ -165,11 +165,11 @@ pub struct ClusterConfig {
     pub cluster_ip: String,
     /// Seed nodes to contact on startup (format: "ip:port,ip:port")
     pub cluster_seeds: Vec<SocketAddr>,
-    /// Interval between heartbeats (default: 15 seconds)
+    /// Interval between heartbeats
     pub heartbeat_interval: Duration,
-    /// Time without heartbeat before suspecting a node (default: 60 seconds)
+    /// Time without heartbeat before suspecting a node
     pub suspect_timeout: Duration,
-    /// Time in suspect state before declaring dead (default: 30 seconds)
+    /// Time in suspect state before declaring dead
     pub dead_timeout: Duration,
     /// Port for the backdoor UDP server
     pub backdoor_port: u16,
