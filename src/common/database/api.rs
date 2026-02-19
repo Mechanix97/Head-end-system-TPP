@@ -137,9 +137,10 @@ impl Database {
         &self,
         device_id: Uuid,
         bucket_number: i32,
+        node_id: Uuid,
     ) -> Result<(), DatabaseError> {
         self.engine
-            .add_device_to_bucket(device_id, bucket_number)
+            .add_device_to_bucket(device_id, bucket_number, node_id)
             .await
     }
 
@@ -304,6 +305,7 @@ pub trait Engine: Debug + Send + Sync {
         &self,
         device_id: Uuid,
         bucket_number: i32,
+        node_id: Uuid,
     ) -> Result<(), DatabaseError>;
     async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError>;
     async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError>;

@@ -282,6 +282,7 @@ impl Engine for PostgresDB {
         &self,
         device_id: Uuid,
         bucket_number: i32,
+        node_id: Uuid,
     ) -> Result<(), DatabaseError> {
         let query = "DELETE FROM T_BUCKETS WHERE FK_DEVICE = $1";
 
@@ -292,11 +293,12 @@ impl Engine for PostgresDB {
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         let query = "INSERT INTO T_BUCKETS
-                    (fk_device, bucket) 
-                    VALUES ($1, $2)";
+                    (fk_device, fk_node, bucket)
+                    VALUES ($1, $2, $3)";
 
         sqlx::query(query)
             .bind(device_id)
+            .bind(node_id)
             .bind(bucket_number)
             .execute(&self.pool)
             .await
@@ -577,9 +579,9 @@ impl Engine for PostgresDB {
         backdoor_port: i32,
     ) -> Result<(), DatabaseError> {
         let query = r#"
-            INSERT INTO T_NODES (node_id, node_name, cluster_ip, cluster_port, backdoor_port, status, started_at, last_seen)
+            INSERT INTO T_NODES (id, node_name, cluster_ip, cluster_port, backdoor_port, status, started_at, last_seen)
             VALUES ($1, $2, $3, $4, $5, 'active', NOW(), NOW())
-            ON CONFLICT (node_id)
+            ON CONFLICT (id)
             DO UPDATE SET
                 cluster_ip = $3,
                 cluster_port = $4,
@@ -602,7 +604,7 @@ impl Engine for PostgresDB {
 
     async fn get_active_cluster_nodes(&self) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError> {
         let query = r#"
-            SELECT node_id, node_name, cluster_ip, cluster_port, backdoor_port
+            SELECT id, node_name, cluster_ip, cluster_port, backdoor_port
             FROM T_NODES
             WHERE status IN ('active', 'starting')
             ORDER BY node_name
@@ -617,7 +619,7 @@ impl Engine for PostgresDB {
             .into_iter()
             .map(|row| {
                 let node_id: Uuid = row
-                    .try_get("node_id")
+                    .try_get("id")
                     .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
                 let node_name: String = row
                     .try_get("node_name")
@@ -639,7 +641,7 @@ impl Engine for PostgresDB {
     }
 
     async fn update_cluster_node_status(&self, node_id: Uuid, status: &str) -> Result<(), DatabaseError> {
-        let query = "UPDATE T_NODES SET status = $1, last_seen = NOW() WHERE node_id = $2";
+        let query = "UPDATE T_NODES SET status = $1, last_seen = NOW() WHERE id = $2";
 
         sqlx::query(query)
             .bind(status)
@@ -652,7 +654,7 @@ impl Engine for PostgresDB {
     }
 
     async fn update_cluster_node_last_seen(&self, node_id: Uuid) -> Result<(), DatabaseError> {
-        let query = "UPDATE T_NODES SET last_seen = NOW() WHERE node_id = $1";
+        let query = "UPDATE T_NODES SET last_seen = NOW() WHERE id = $1";
 
         sqlx::query(query)
             .bind(node_id)
@@ -666,7 +668,7 @@ impl Engine for PostgresDB {
     // ========== Device ownership (for cluster delegation) ==========
 
     async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
-        let query = "SELECT id FROM T_DEVICES WHERE owner_node_id = $1";
+        let query = "SELECT id FROM T_DEVICES WHERE FK_NODE = $1";
 
         let devices: Vec<Uuid> = sqlx::query_scalar(query)
             .bind(node_id)
@@ -678,7 +680,7 @@ impl Engine for PostgresDB {
     }
 
     async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError> {
-        let query = "UPDATE T_DEVICES SET owner_node_id = $1 WHERE id = $2";
+        let query = "UPDATE T_DEVICES SET FK_NODE = $1 WHERE id = $2";
 
         sqlx::query(query)
             .bind(node_id)
@@ -698,7 +700,7 @@ impl Engine for PostgresDB {
             SELECT sc.fk_device, sc.schedule_time, sc.connection_time, sc.status, sc.job_id, sc.renewable
             FROM T_SCHEDULED_CONNECTIONS sc
             INNER JOIN T_DEVICES d ON sc.fk_device = d.id
-            WHERE d.owner_node_id = $1 AND sc.status = 'awaiting'
+            WHERE d.FK_NODE = $1 AND sc.status = 'awaiting'
             ORDER BY sc.schedule_time ASC
         "#;
 

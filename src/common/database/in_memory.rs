@@ -117,6 +117,7 @@ impl Engine for InMemoryDB {
         &self,
         device_id: Uuid,
         bucket_number: i32,
+        _node_id: Uuid,
     ) -> Result<(), DatabaseError> {
         self.inner
             .lock()

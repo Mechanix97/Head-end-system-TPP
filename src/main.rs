@@ -163,7 +163,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let db = Database::new(args.database_type, db_params).await?;
 
     let scheduler = Arc::new(RwLock::new(
-        Scheduler::new(args.buckets_number, db.clone()).await?,
+        Scheduler::new(args.buckets_number, db.clone(), node_id).await?,
     ));
 
     // Initialize cluster unless disabled

@@ -43,6 +43,8 @@ pub struct Scheduler {
     pub database: Database,
     /// Devices owned by this node (only used in cluster mode, None = owns all)
     pub owned_devices: Option<HashSet<Uuid>>,
+    /// UUID of this node (used to tag bucket assignments in the database)
+    pub local_node_id: Uuid,
 }
 
 impl Scheduler {
@@ -50,12 +52,13 @@ impl Scheduler {
     ///
     /// Initializes the job scheduler and attempts to restore any previously
     /// scheduled connections from the database (for HES restarts).
-    pub async fn new(bucket_number: usize, database: Database) -> Result<Self, SchedulerError> {
+    pub async fn new(bucket_number: usize, database: Database, local_node_id: Uuid) -> Result<Self, SchedulerError> {
         let mut scheduler = Self {
             bucket_number: bucket_number as i32,
             job_scheduler: JobScheduler::new().await?,
             database,
             owned_devices: None, // None means single-node mode, owns all devices
+            local_node_id,
         };
         scheduler.start().await?;
         scheduler.reload_active_connections().await?;
@@ -91,7 +94,7 @@ impl Scheduler {
         let next_wake_up = self.get_next_schedule(bucket_number);
 
         self.database
-            .add_device_to_bucket(device.id, bucket_number as i32)
+            .add_device_to_bucket(device.id, bucket_number as i32, self.local_node_id)
             .await?;
 
         // Update scheduler metrics
@@ -334,7 +337,7 @@ impl Scheduler {
         let bucket_number = self.get_bucket_number().await;
 
         self.database
-            .add_device_to_bucket(device_id, bucket_number as i32)
+            .add_device_to_bucket(device_id, bucket_number as i32, self.local_node_id)
             .await?;
 
         info!(
