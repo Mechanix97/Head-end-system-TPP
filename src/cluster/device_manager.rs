@@ -70,7 +70,10 @@ impl DeviceManager {
 
     /// Loads device ownership from the database on startup.
     pub async fn load_from_database(&mut self) -> Result<(), ClusterError> {
-        let devices = self.database.get_devices_by_owner(self.local_node_id).await?;
+        let devices = self
+            .database
+            .get_devices_by_owner(self.local_node_id)
+            .await?;
 
         self.owned_devices.clear();
         for device_id in devices {
@@ -110,6 +113,31 @@ impl DeviceManager {
         Ok(all_devices)
     }
 
+    /// Claims all devices when creating a new cluster.
+    ///
+    /// This is called when a new node joins and there is no other node in the cluster
+    pub async fn claim_all_devices(&mut self) -> Result<Vec<Uuid>, ClusterError> {
+        // Query all devices
+        let all_devices = self.database.get_all_device_ids().await?;
+
+        if all_devices.is_empty() {
+            debug!("No devices to claim");
+            return Ok(all_devices);
+        }
+
+        info!("Claiming {} devices", all_devices.len());
+
+        // Claim all  devices
+        for device_id in &all_devices {
+            self.database
+                .set_device_owner(*device_id, self.local_node_id)
+                .await?;
+            self.owned_devices.insert(*device_id);
+        }
+
+        Ok(all_devices)
+    }
+
     /// Gets devices to delegate when a new node joins for load balancing.
     ///
     /// This is called when a new node joins to give it a fair share of devices.
@@ -133,12 +161,16 @@ impl DeviceManager {
         let to_give = current_count.saturating_sub(fair_share);
 
         if to_give == 0 {
-            debug!("No devices to give away (have {}, fair share is {})", current_count, fair_share);
+            debug!(
+                "No devices to give away (have {}, fair share is {})",
+                current_count, fair_share
+            );
             return Ok(Vec::new());
         }
 
         // Select devices to give away and get their scheduled connections
-        let device_ids_to_give: Vec<Uuid> = self.owned_devices.iter().copied().take(to_give).collect();
+        let device_ids_to_give: Vec<Uuid> =
+            self.owned_devices.iter().copied().take(to_give).collect();
 
         let mut delegated_devices = Vec::new();
 
@@ -177,7 +209,10 @@ impl DeviceManager {
     /// Accepts delegated devices from another node.
     ///
     /// Returns the list of device IDs that were successfully accepted.
-    pub async fn accept_delegation(&mut self, devices: Vec<DelegatedDevice>) -> Result<Vec<Uuid>, ClusterError> {
+    pub async fn accept_delegation(
+        &mut self,
+        devices: Vec<DelegatedDevice>,
+    ) -> Result<Vec<Uuid>, ClusterError> {
         info!("Accepting delegation of {} devices", devices.len());
 
         let mut accepted_ids = Vec::new();
@@ -214,12 +249,18 @@ impl DeviceManager {
     /// Redistributes devices from a failed node.
     ///
     /// This distributes the failed node's devices among remaining active nodes.
-    pub async fn redistribute_from_failed(&mut self, failed_node_id: Uuid) -> Result<(), ClusterError> {
+    pub async fn redistribute_from_failed(
+        &mut self,
+        failed_node_id: Uuid,
+    ) -> Result<(), ClusterError> {
         // Get devices owned by failed node
         let orphaned = self.database.get_devices_by_owner(failed_node_id).await?;
 
         if orphaned.is_empty() {
-            debug!("Failed node {} had no devices to redistribute", failed_node_id);
+            debug!(
+                "Failed node {} had no devices to redistribute",
+                failed_node_id
+            );
             return Ok(());
         }
 
@@ -252,7 +293,9 @@ impl DeviceManager {
         for (i, device_id) in orphaned.iter().enumerate() {
             let (target_node_id, _) = active_nodes[i % active_nodes.len()];
 
-            self.database.set_device_owner(*device_id, target_node_id).await?;
+            self.database
+                .set_device_owner(*device_id, target_node_id)
+                .await?;
 
             if target_node_id == self.local_node_id {
                 self.owned_devices.insert(*device_id);
@@ -280,9 +323,20 @@ impl DeviceManager {
             let nodes: Vec<_> = membership
                 .active_nodes()
                 .iter()
-                .map(|n| (n.node_id, n.device_count, n.load_percent, n.max_device_suggested))
+                .map(|n| {
+                    (
+                        n.node_id,
+                        n.device_count,
+                        n.load_percent,
+                        n.max_device_suggested,
+                    )
+                })
                 .collect();
-            (nodes, local_node.load_percent, local_node.max_device_suggested)
+            (
+                nodes,
+                local_node.load_percent,
+                local_node.max_device_suggested,
+            )
         };
 
         if active_nodes.is_empty() {
@@ -303,7 +357,10 @@ impl DeviceManager {
             .collect();
 
         if underloaded.is_empty() {
-            debug!("No underloaded nodes found (all at or above {:.1}% average)", avg_load);
+            debug!(
+                "No underloaded nodes found (all at or above {:.1}% average)",
+                avg_load
+            );
             return Ok(());
         }
 
@@ -337,7 +394,12 @@ impl DeviceManager {
         );
 
         // Give devices to underloaded nodes (distribute evenly, prioritize lowest load)
-        let devices_to_give: Vec<Uuid> = self.owned_devices.iter().copied().take(devices_to_shed).collect();
+        let devices_to_give: Vec<Uuid> = self
+            .owned_devices
+            .iter()
+            .copied()
+            .take(devices_to_shed)
+            .collect();
 
         let mut device_idx = 0;
         let devices_per_node = devices_to_shed.div_ceil(underloaded.len()); // Round up
@@ -350,7 +412,8 @@ impl DeviceManager {
                 current_count + devices_per_node as u32
             };
 
-            let can_take = (max_acceptable_count.saturating_sub(current_count) as usize).min(devices_per_node);
+            let can_take =
+                (max_acceptable_count.saturating_sub(current_count) as usize).min(devices_per_node);
 
             for _ in 0..can_take {
                 if device_idx >= devices_to_give.len() {
@@ -415,7 +478,8 @@ mod tests {
                 suspect_timeout: std::time::Duration::from_secs(30),
                 dead_timeout: std::time::Duration::from_secs(60),
                 cluster_seeds: vec![],
-            }).unwrap()
+            })
+            .unwrap(),
         ));
 
         let manager = DeviceManager::new(node_id, 48, db, membership);

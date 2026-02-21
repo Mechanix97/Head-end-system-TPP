@@ -23,56 +23,6 @@ use crate::server::run_cluster_server;
 
 use scheduler::scheduler::Scheduler;
 
-/// Gets the actual IP address to use for cluster communication.
-///
-/// If the configured IP is 0.0.0.0 (bind to all interfaces), this function
-/// attempts to determine the actual outbound IP by connecting to a seed node.
-async fn get_actual_cluster_ip(
-    configured_ip: &str,
-    seed_nodes: &[std::net::SocketAddr],
-) -> Result<String, ClusterError> {
-    // If not 0.0.0.0, use the configured IP as-is
-    if configured_ip != "0.0.0.0" {
-        return Ok(configured_ip.to_string());
-    }
-
-    // Try to determine the actual IP by creating a dummy UDP socket
-    // connected to a seed node (doesn't actually send data)
-    let socket = UdpSocket::bind("0.0.0.0:0").await?;
-
-    // If we have seed nodes, connect to the first one to determine the correct interface
-    if let Some(seed) = seed_nodes.first() {
-        if socket.connect(seed).await.is_ok() {
-            if let Ok(local_addr) = socket.local_addr() {
-                let ip = local_addr.ip();
-                // Only use if it's not loopback
-                if !ip.is_loopback() {
-                    info!(
-                        "Detected cluster IP {} by connecting to seed {}",
-                        ip, seed
-                    );
-                    return Ok(ip.to_string());
-                }
-            }
-        }
-    }
-
-    // Fallback: try to find a non-loopback interface
-    match local_ip_address::local_ip() {
-        Ok(ip) if !ip.is_loopback() => {
-            warn!(
-                "Using fallback IP detection, got {}. This may not be the correct cluster interface.",
-                ip
-            );
-            Ok(ip.to_string())
-        }
-        _ => {
-            warn!("Could not determine actual IP, using 0.0.0.0 (may cause issues)");
-            Ok("0.0.0.0".to_string())
-        }
-    }
-}
-
 /// Main cluster manager that coordinates all cluster operations.
 pub struct ClusterManager {
     /// Cluster configuration
@@ -150,21 +100,8 @@ impl ClusterManager {
             // First node in cluster - claim unassigned devices
             info!("First node in cluster, claiming unassigned devices");
             let mut dm = self.device_manager.write().await;
-            let claimed = dm.claim_unassigned_devices().await?;
+            let claimed = dm.claim_all_devices().await?;
             info!("Claimed {} unassigned devices", claimed.len());
-        }
-
-        // If cluster_ip is 0.0.0.0, detect the actual IP and update membership
-        let actual_ip = get_actual_cluster_ip(&self.config.cluster_ip, &self.config.cluster_seeds).await?;
-
-        // Update local node's cluster address if it changed
-        if actual_ip != self.config.cluster_ip {
-            let new_addr = format!("{}:{}", actual_ip, self.config.cluster_port);
-            if let Ok(addr) = new_addr.parse() {
-                let mut m = self.membership.write().await;
-                m.local_node_mut().cluster_addr = addr;
-                info!("Updated local cluster address from {} to {}", self.config.cluster_ip, actual_ip);
-            }
         }
 
         // Register this node in the database
@@ -172,7 +109,7 @@ impl ClusterManager {
             .register_cluster_node(
                 self.config.node_id,
                 self.config.node_name.clone(),
-                actual_ip,
+                self.config.cluster_ip.clone(),
                 self.config.cluster_port as i32,
                 self.config.backdoor_port as i32,
             )
@@ -320,7 +257,10 @@ impl ClusterManager {
 
     /// Checks if the local node's load is significantly higher than the cluster average.
     /// Returns true if load_percent is at least 20 percentage points higher than the average of active nodes.
-    fn should_rebalance_based_on_load(&self, membership: &crate::membership::MembershipList) -> bool {
+    fn should_rebalance_based_on_load(
+        &self,
+        membership: &crate::membership::MembershipList,
+    ) -> bool {
         const LOAD_IMBALANCE_THRESHOLD: f32 = 20.0; // percentage points
 
         let local_load = membership.local_node().load_percent;
