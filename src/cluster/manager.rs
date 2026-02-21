@@ -26,32 +26,46 @@ use scheduler::scheduler::Scheduler;
 /// Gets the actual IP address to use for cluster communication.
 ///
 /// If the configured IP is 0.0.0.0 (bind to all interfaces), this function
-/// attempts to determine the actual outbound IP by connecting to an external address.
-async fn get_actual_cluster_ip(configured_ip: &str) -> Result<String, ClusterError> {
+/// attempts to determine the actual outbound IP by connecting to a seed node.
+async fn get_actual_cluster_ip(
+    configured_ip: &str,
+    seed_nodes: &[std::net::SocketAddr],
+) -> Result<String, ClusterError> {
     // If not 0.0.0.0, use the configured IP as-is
     if configured_ip != "0.0.0.0" {
         return Ok(configured_ip.to_string());
     }
 
     // Try to determine the actual IP by creating a dummy UDP socket
-    // connected to an external address (doesn't actually send data)
+    // connected to a seed node (doesn't actually send data)
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
 
-    // Connect to Google DNS (8.8.8.8:80) - this doesn't send packets,
-    // just determines which local interface would be used
-    if socket.connect("8.8.8.8:80").await.is_ok() {
-        if let Ok(local_addr) = socket.local_addr() {
-            let ip = local_addr.ip();
-            // Only use if it's not loopback
-            if !ip.is_loopback() {
-                return Ok(ip.to_string());
+    // If we have seed nodes, connect to the first one to determine the correct interface
+    if let Some(seed) = seed_nodes.first() {
+        if socket.connect(seed).await.is_ok() {
+            if let Ok(local_addr) = socket.local_addr() {
+                let ip = local_addr.ip();
+                // Only use if it's not loopback
+                if !ip.is_loopback() {
+                    info!(
+                        "Detected cluster IP {} by connecting to seed {}",
+                        ip, seed
+                    );
+                    return Ok(ip.to_string());
+                }
             }
         }
     }
 
     // Fallback: try to find a non-loopback interface
     match local_ip_address::local_ip() {
-        Ok(ip) if !ip.is_loopback() => Ok(ip.to_string()),
+        Ok(ip) if !ip.is_loopback() => {
+            warn!(
+                "Using fallback IP detection, got {}. This may not be the correct cluster interface.",
+                ip
+            );
+            Ok(ip.to_string())
+        }
         _ => {
             warn!("Could not determine actual IP, using 0.0.0.0 (may cause issues)");
             Ok("0.0.0.0".to_string())
@@ -141,7 +155,7 @@ impl ClusterManager {
         }
 
         // If cluster_ip is 0.0.0.0, detect the actual IP and update membership
-        let actual_ip = get_actual_cluster_ip(&self.config.cluster_ip).await?;
+        let actual_ip = get_actual_cluster_ip(&self.config.cluster_ip, &self.config.cluster_seeds).await?;
 
         // Update local node's cluster address if it changed
         if actual_ip != self.config.cluster_ip {
