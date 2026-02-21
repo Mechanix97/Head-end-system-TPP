@@ -31,7 +31,7 @@ pub async fn run_cluster_server(
     socket: Arc<UdpSocket>,
     membership: Arc<RwLock<MembershipList>>,
     device_manager: Arc<RwLock<DeviceManager>>,
-    scheduler: Option<Arc<RwLock<Scheduler>>>,
+    scheduler: Arc<RwLock<Scheduler>>,
     database: Database,
 ) -> Result<(), ClusterError> {
     let local_node_id = {
@@ -39,16 +39,14 @@ pub async fn run_cluster_server(
         m.local_node_id()
     };
 
-    let delegation_handler = scheduler.clone().map(|sched| {
-        DelegationHandler::new(
-            local_node_id,
-            device_manager.clone(),
-            sched,
-            membership.clone(),
-            socket.clone(),
-            database.clone(),
-        )
-    });
+    let delegation_handler = DelegationHandler::new(
+        local_node_id,
+        device_manager.clone(),
+        scheduler.clone(),
+        membership.clone(),
+        socket.clone(),
+        database.clone(),
+    );
 
     let mut buf = [0u8; MAX_PACKET_SIZE];
     let mut codec = ClusterMessageCodec;
@@ -90,7 +88,7 @@ pub async fn run_cluster_server(
             from_addr,
             &membership,
             &device_manager,
-            delegation_handler.as_ref(),
+            &delegation_handler,
             &socket,
             &database,
         )
@@ -107,7 +105,7 @@ async fn handle_message(
     from_addr: SocketAddr,
     membership: &RwLock<MembershipList>,
     device_manager: &RwLock<DeviceManager>,
-    delegation_handler: Option<&DelegationHandler>,
+    delegation_handler: &DelegationHandler,
     socket: &UdpSocket,
     database: &Database,
 ) -> Result<(), ClusterError> {
@@ -128,46 +126,36 @@ async fn handle_message(
             handle_status_response(msg.node_id, from_addr, msg.payload, membership).await
         }
         ClusterMessageType::DelegateRequest => {
-            if let Some(handler) = delegation_handler {
-                if let ClusterPayload::DelegateRequest(payload) = msg.payload {
-                    handler
-                        .handle_delegation_request(msg.node_id, from_addr, payload)
-                        .await
-                } else {
-                    Err(ClusterError::InvalidMessage(
-                        "Expected DelegateRequest payload".to_string(),
-                    ))
-                }
+            if let ClusterPayload::DelegateRequest(payload) = msg.payload {
+                delegation_handler
+                    .handle_delegation_request(msg.node_id, from_addr, payload)
+                    .await
             } else {
-                Ok(()) // Ignore delegation if scheduler not set
+                Err(ClusterError::InvalidMessage(
+                    "Expected DelegateRequest payload".to_string(),
+                ))
             }
         }
         ClusterMessageType::DelegateAccept => {
-            if let Some(handler) = delegation_handler {
-                if let ClusterPayload::DelegateAccept(payload) = msg.payload {
-                    handler.handle_delegation_accept(msg.node_id, payload).await
-                } else {
-                    Err(ClusterError::InvalidMessage(
-                        "Expected DelegateAccept payload".to_string(),
-                    ))
-                }
+            if let ClusterPayload::DelegateAccept(payload) = msg.payload {
+                delegation_handler
+                    .handle_delegation_accept(msg.node_id, payload)
+                    .await
             } else {
-                Ok(()) // Ignore delegation if scheduler not set
+                Err(ClusterError::InvalidMessage(
+                    "Expected DelegateAccept payload".to_string(),
+                ))
             }
         }
         ClusterMessageType::DelegateReject => {
-            if let Some(handler) = delegation_handler {
-                if let ClusterPayload::DelegateReject(payload) = msg.payload {
-                    handler
-                        .handle_delegation_reject(msg.node_id, payload.reason)
-                        .await
-                } else {
-                    Err(ClusterError::InvalidMessage(
-                        "Expected DelegateReject payload".to_string(),
-                    ))
-                }
+            if let ClusterPayload::DelegateReject(payload) = msg.payload {
+                delegation_handler
+                    .handle_delegation_reject(msg.node_id, payload.reason)
+                    .await
             } else {
-                Ok(()) // Ignore delegation if scheduler not set
+                Err(ClusterError::InvalidMessage(
+                    "Expected DelegateReject payload".to_string(),
+                ))
             }
         }
         ClusterMessageType::NodeJoin => {
@@ -383,8 +371,8 @@ async fn handle_node_join(
     // Direct: The UDP packet comes from the same IP:PORT as join.cluster_addr
     // Relayed: The UDP packet comes from a different node (different IP or port)
     // Need to compare both IP and port to handle multiple nodes on same machine
-    let is_direct_join = from_addr.ip() == join.cluster_addr.ip()
-                      && from_addr.port() == join.cluster_addr.port();
+    let is_direct_join =
+        from_addr.ip() == join.cluster_addr.ip() && from_addr.port() == join.cluster_addr.port();
 
     // Add to membership
     {
@@ -476,7 +464,8 @@ async fn handle_node_join(
         };
 
         for target in targets {
-            if let Err(e) = crate::membership::send_message(socket, target, join_msg.clone()).await {
+            if let Err(e) = crate::membership::send_message(socket, target, join_msg.clone()).await
+            {
                 warn!("Failed to relay NODE_JOIN to {}: {}", target, e);
             }
         }

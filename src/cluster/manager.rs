@@ -32,7 +32,7 @@ pub struct ClusterManager {
     /// Device manager
     device_manager: Arc<RwLock<DeviceManager>>,
     /// Scheduler (optional, provided after creation)
-    scheduler: Option<Arc<RwLock<Scheduler>>>,
+    scheduler: Arc<RwLock<Scheduler>>,
     /// UDP socket for cluster communication
     socket: Arc<UdpSocket>,
     /// Database handle
@@ -71,7 +71,7 @@ impl ClusterManager {
             config,
             membership,
             device_manager,
-            scheduler: Some(scheduler),
+            scheduler,
             socket,
             database,
             tasks: Vec::new(),
@@ -87,12 +87,13 @@ impl ClusterManager {
     pub async fn start(&mut self) -> Result<(), ClusterError> {
         info!("Starting cluster manager for node {}", self.config.node_id);
 
-        // Load device ownership from database
+        //  1. Loading device ownership from database
         {
             let mut dm = self.device_manager.write().await;
             dm.load_from_database().await?;
         }
 
+        // 2. Contacting seed nodes if provided
         // If this is a new node joining an existing cluster, announce ourselves
         if !self.config.cluster_seeds.is_empty() {
             self.join_cluster().await?;
@@ -121,7 +122,7 @@ impl ClusterManager {
             m.set_local_status(NodeStatus::Active);
         }
 
-        // Start background tasks
+        // 3. Starting background tasks (heartbeat, failure detection, server)
         self.start_background_tasks();
 
         info!("Cluster manager started successfully");
@@ -185,8 +186,11 @@ impl ClusterManager {
     }
 
     /// Starts all background tasks.
+    /// 1. heartbeat task
+    /// 2. failure detector task
+    /// 3. cluster server
     fn start_background_tasks(&mut self) {
-        // Start heartbeat loop
+        // 1. heartbeat task
         let heartbeat_task = {
             let membership = self.membership.clone();
             let socket = self.socket.clone();
@@ -198,7 +202,7 @@ impl ClusterManager {
         };
         self.tasks.push(heartbeat_task);
 
-        // Start failure detector
+        // 2. failure detector task
         let failure_detector_task = {
             let membership = self.membership.clone();
             let device_manager = self.device_manager.clone();
@@ -212,7 +216,7 @@ impl ClusterManager {
         };
         self.tasks.push(failure_detector_task);
 
-        // Start cluster server
+        // 3. cluster server
         let server_task = {
             let socket = self.socket.clone();
             let membership = self.membership.clone();
@@ -327,14 +331,10 @@ impl ClusterManager {
         }
 
         // Delegate all devices
-        let scheduler = self.scheduler.clone().ok_or_else(|| {
-            ClusterError::InvalidState("Scheduler not set in cluster manager".to_string())
-        })?;
-
         let delegation_handler = DelegationHandler::new(
             self.config.node_id,
             self.device_manager.clone(),
-            scheduler,
+            self.scheduler.clone(),
             self.membership.clone(),
             self.socket.clone(),
             self.database.clone(),
