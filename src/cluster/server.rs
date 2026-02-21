@@ -380,12 +380,11 @@ async fn handle_node_join(
     );
 
     // Determine if this is a direct NODE_JOIN or a relayed one
-    // If the node already exists in our membership, this is a relayed message
-    // (the first node to receive it would have added it)
-    let is_direct_join = {
-        let m = membership.read().await;
-        m.get_node(node_id).is_none()
-    };
+    // Direct: The UDP packet comes from the same IP:PORT as join.cluster_addr
+    // Relayed: The UDP packet comes from a different node (different IP or port)
+    // Need to compare both IP and port to handle multiple nodes on same machine
+    let is_direct_join = from_addr.ip() == join.cluster_addr.ip()
+                      && from_addr.port() == join.cluster_addr.port();
 
     // Add to membership
     {
