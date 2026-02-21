@@ -109,7 +109,7 @@ async fn handle_message(
     socket: &UdpSocket,
     database: &Database,
 ) -> Result<(), ClusterError> {
-    debug!(
+    info!(
         "Received {:?} from node {} at {}",
         msg.msg_type, msg.node_id, from_addr
     );
