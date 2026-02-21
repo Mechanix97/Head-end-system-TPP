@@ -603,17 +603,15 @@ impl Engine for PostgresDB {
         Ok(())
     }
 
-    async fn get_active_cluster_nodes(&self) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError> {
+    async fn get_active_cluster_nodes(
+        &self,
+    ) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError> {
         let query = r#"
             SELECT id, node_name, cluster_ip, cluster_port, backdoor_port
             FROM T_NODES
             WHERE status IN ('active', 'starting')
             ORDER BY node_name
         "#;
-    }
-  
-    async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError> {
-        let query = "SELECT id FROM T_DEVICES ORDER BY id";
 
         let rows = sqlx::query(query)
             .fetch_all(&self.pool)
@@ -645,7 +643,11 @@ impl Engine for PostgresDB {
         Ok(nodes)
     }
 
-    async fn update_cluster_node_status(&self, node_id: Uuid, status: &str) -> Result<(), DatabaseError> {
+    async fn update_cluster_node_status(
+        &self,
+        node_id: Uuid,
+        status: &str,
+    ) -> Result<(), DatabaseError> {
         let query = "UPDATE T_NODES SET status = $1, last_seen = NOW() WHERE id = $2";
 
         sqlx::query(query)
@@ -749,10 +751,17 @@ impl Engine for PostgresDB {
             .collect::<Result<Vec<_>, DatabaseError>>()?;
 
         Ok(scheduled)
-        let device_ids: Vec<Uuid> = rows
-            .iter()
-            .map(|row| row.get("id"))
-            .collect();
+    }
+
+    async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError> {
+        let query = "SELECT id FROM T_DEVICES ORDER BY id";
+
+        let rows = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let device_ids: Vec<Uuid> = rows.iter().map(|row| row.get("id")).collect();
 
         Ok(device_ids)
     }
