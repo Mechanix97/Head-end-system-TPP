@@ -380,9 +380,12 @@ async fn handle_node_join(
     );
 
     // Determine if this is a direct NODE_JOIN or a relayed one
-    // Direct: from_addr.port() matches join.cluster_addr.port()
-    // Relayed: from_addr.port() is different (comes from another node's cluster port)
-    let is_direct_join = from_addr.port() == join.cluster_addr.port();
+    // If the node already exists in our membership, this is a relayed message
+    // (the first node to receive it would have added it)
+    let is_direct_join = {
+        let m = membership.read().await;
+        m.get_node(node_id).is_none()
+    };
 
     // Add to membership
     {
@@ -390,9 +393,13 @@ async fn handle_node_join(
         let node = NodeInfo {
             node_id,
             node_name: join.node_name,
-            // Use actual source IP instead of advertised IP (which might be 0.0.0.0)
-            // but preserve the cluster port from the payload
-            cluster_addr: std::net::SocketAddr::new(from_addr.ip(), join.cluster_addr.port()),
+            // Direct join: Use actual source IP (from UDP packet) to handle 0.0.0.0 binding
+            // Relayed join: Use IP from payload (already detected by the sender)
+            cluster_addr: if is_direct_join {
+                std::net::SocketAddr::new(from_addr.ip(), join.cluster_addr.port())
+            } else {
+                join.cluster_addr
+            },
             backdoor_port: join.backdoor_port,
             status: NodeStatus::Starting,
             started_at: chrono::Utc::now(),
