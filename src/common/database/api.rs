@@ -244,6 +244,13 @@ impl Database {
     ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
         self.engine.get_scheduled_connections_by_owner(node_id).await
     }
+  
+    // ========== Device queries ==========
+
+    /// Returns a list of all device UUIDs in the database.
+    pub async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError> {
+        self.engine.get_all_device_ids().await
+    }
 }
 
 /// Database engine trait that defines the interface for database operations.
@@ -360,4 +367,6 @@ pub trait Engine: Debug + Send + Sync {
         &self,
         node_id: Uuid,
     ) -> Result<Vec<ScheduledConnection>, DatabaseError>;
+    // ========== Device queries ==========
+    async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError>;
 }

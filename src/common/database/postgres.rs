@@ -610,6 +610,10 @@ impl Engine for PostgresDB {
             WHERE status IN ('active', 'starting')
             ORDER BY node_name
         "#;
+    }
+  
+    async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError> {
+        let query = "SELECT id FROM T_DEVICES ORDER BY id";
 
         let rows = sqlx::query(query)
             .fetch_all(&self.pool)
@@ -745,5 +749,11 @@ impl Engine for PostgresDB {
             .collect::<Result<Vec<_>, DatabaseError>>()?;
 
         Ok(scheduled)
+        let device_ids: Vec<Uuid> = rows
+            .iter()
+            .map(|row| row.get("id"))
+            .collect();
+
+        Ok(device_ids)
     }
 }

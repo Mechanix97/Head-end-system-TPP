@@ -316,6 +316,12 @@ impl Engine for InMemoryDB {
             })
             .cloned()
             .collect())
+  }
+  
+    async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError> {
+        let inner = self.inner.lock().await;
+        let device_ids: Vec<Uuid> = inner.devices.keys().copied().collect();
+        Ok(device_ids)
     }
 }
 
