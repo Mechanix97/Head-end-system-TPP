@@ -1,10 +1,10 @@
+use std::collections::HashSet;
 use std::time::Duration;
 
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
 use tokio_cron_scheduler::{Job, JobScheduler};
-use tracing::error;
-use tracing::info;
+use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::error::SchedulerError;
@@ -15,6 +15,15 @@ use common::device::Device;
 use common::scheduled_connection::ScheduledConnection;
 use common::scheduled_connection::ScheduledStatus;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
+
+/// Trait for cluster synchronization with the scheduler.
+///
+/// This trait allows the cluster manager to configure the scheduler
+/// without creating a circular dependency.
+pub trait SchedulerClusterSync {
+    /// Enables cluster mode with the given owned devices.
+    fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>);
+}
 
 /// Manages scheduled connections to IoT devices using a time-bucket algorithm.
 ///
@@ -32,6 +41,10 @@ pub struct Scheduler {
     pub job_scheduler: JobScheduler,
     /// Database handle for persisting scheduler state
     pub database: Database,
+    /// Devices owned by this node (only used in cluster mode, None = owns all)
+    pub owned_devices: Option<HashSet<Uuid>>,
+    /// UUID of this node (used to tag bucket assignments in the database)
+    pub local_node_id: Uuid,
 }
 
 impl Scheduler {
@@ -39,11 +52,13 @@ impl Scheduler {
     ///
     /// Initializes the job scheduler and attempts to restore any previously
     /// scheduled connections from the database (for HES restarts).
-    pub async fn new(bucket_number: usize, database: Database) -> Result<Self, SchedulerError> {
+    pub async fn new(bucket_number: usize, database: Database, local_node_id: Uuid) -> Result<Self, SchedulerError> {
         let mut scheduler = Self {
             bucket_number: bucket_number as i32,
             job_scheduler: JobScheduler::new().await?,
             database,
+            owned_devices: None, // None means single-node mode, owns all devices
+            local_node_id,
         };
         scheduler.start().await?;
         scheduler.reload_active_connections().await?;
@@ -79,7 +94,7 @@ impl Scheduler {
         let next_wake_up = self.get_next_schedule(bucket_number);
 
         self.database
-            .add_device_to_bucket(device.id, bucket_number as i32)
+            .add_device_to_bucket(device.id, bucket_number as i32, self.local_node_id)
             .await?;
 
         // Update scheduler metrics
@@ -99,13 +114,22 @@ impl Scheduler {
     /// Restores scheduled connections from the database after HES restart.
     ///
     /// This checks for any previously scheduled connections and reschedules them
-    /// if their next wake-up time hasn't expired yet (with a 5-minute safety margin).from_secs
+    /// if their next wake-up time hasn't expired yet (with a 5-minute safety margin).
+    ///
+    /// In cluster mode, only loads connections for buckets owned by this node.
     async fn reload_active_connections(&mut self) -> Result<(), SchedulerError> {
-        // TODO: Re-implement this after finalizing database schema
-        // Currently commented out due to schema changes in progress
         let scheduled_connections = self.database.get_scheduled_connections().await?;
 
         for mut connection in scheduled_connections {
+            // In cluster mode, check if we own this device
+            if !self.owns_device(connection.fk_device) {
+                info!(
+                    "Device {:#x} not owned by this node, skipping",
+                    connection.fk_device
+                );
+                continue;
+            }
+
             info!("Loading connection from db {:#x}", connection.fk_device);
             if connection.schedule_time < Utc::now().naive_local() + Duration::from_secs(300) {
                 info!(
@@ -227,6 +251,103 @@ impl Scheduler {
             .map_err(SchedulerError::DatabaseError)
     }
 
+    /// Sets the devices owned by this node (for cluster mode).
+    pub fn set_owned_devices(&mut self, devices: HashSet<Uuid>) {
+        self.owned_devices = Some(devices);
+    }
+
+    /// Checks if this node owns a specific device.
+    ///
+    /// In single-node mode (owned_devices = None), owns all devices.
+    /// In cluster mode, only owns devices in the owned_devices set.
+    pub fn owns_device(&self, device_id: Uuid) -> bool {
+        match &self.owned_devices {
+            None => true, // Single-node mode, owns all devices
+            Some(owned) => owned.contains(&device_id),
+        }
+    }
+
+    /// Enables cluster mode with the given owned devices.
+    pub fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>) {
+        info!(
+            "Enabling cluster mode with {} owned devices",
+            owned_devices.len()
+        );
+        self.owned_devices = Some(owned_devices);
+    }
+
+    /// Adds a device to the owned set (cluster mode only).
+    pub fn add_owned_device(&mut self, device_id: Uuid) {
+        if let Some(owned) = &mut self.owned_devices {
+            owned.insert(device_id);
+            info!(
+                "Added device {:?} to owned set (now have {})",
+                device_id,
+                owned.len()
+            );
+        }
+    }
+
+    /// Removes a device from the owned set (cluster mode only).
+    pub fn remove_owned_device(&mut self, device_id: Uuid) {
+        if let Some(owned) = &mut self.owned_devices {
+            owned.remove(&device_id);
+            info!(
+                "Removed device {:?} from owned set (now have {})",
+                device_id,
+                owned.len()
+            );
+        }
+    }
+
+    /// Schedules a delegated device at its original schedule time.
+    ///
+    /// This is called when accepting delegation from another node.
+    /// The device will be connected at the specified time, then reassigned to a local bucket.
+    pub async fn schedule_delegated_device(
+        &mut self,
+        device_id: Uuid,
+        schedule_time: NaiveDateTime,
+    ) -> Result<(), SchedulerError> {
+        info!(
+            "Scheduling delegated device {:?} at original time {}",
+            device_id, schedule_time
+        );
+
+        let job_id = self.create_wakeup_job(device_id, schedule_time).await?;
+
+        self.database
+            .schedule_connection(device_id, schedule_time, job_id)
+            .await?;
+
+        // Add to owned devices set
+        self.add_owned_device(device_id);
+
+        Ok(())
+    }
+
+    /// Assigns a device to a local bucket after successful connection.
+    ///
+    /// This is called after a delegated device connects successfully.
+    /// The device is assigned to the least-loaded local bucket.
+    pub async fn assign_local_bucket_after_connection(
+        &mut self,
+        device_id: Uuid,
+    ) -> Result<i32, SchedulerError> {
+        let bucket_number = self.get_bucket_number().await;
+
+        self.database
+            .add_device_to_bucket(device_id, bucket_number as i32, self.local_node_id)
+            .await?;
+
+        info!(
+            "Assigned device {:?} to local bucket {} after connection",
+            device_id, bucket_number
+        );
+
+        Ok(bucket_number as i32)
+    }
+
     async fn create_wakeup_job(
         &mut self,
         device_id: Uuid,
@@ -246,7 +367,12 @@ impl Scheduler {
                         let mut connection = db_clone
                             .get_scheduled_connection(device_id)
                             .await
-                            .inspect_err(|e| error!("[Job {:#x}] Failed to get scheduled connection: {}", job_id, e))
+                            .inspect_err(|e| {
+                                error!(
+                                    "[Job {:#x}] Failed to get scheduled connection: {}",
+                                    job_id, e
+                                )
+                            })
                             .ok();
 
                         if let Some(conn) = &mut connection {
@@ -257,7 +383,12 @@ impl Scheduler {
                             db_clone
                                 .update_scheduled_connection(conn)
                                 .await
-                                .inspect_err(|e| error!("[Job {:#x}] Failed to update connection status: {}", job_id, e))
+                                .inspect_err(|e| {
+                                    error!(
+                                        "[Job {:#x}] Failed to update connection status: {}",
+                                        job_id, e
+                                    )
+                                })
                                 .ok();
                         }
                     }
@@ -275,6 +406,12 @@ impl Scheduler {
         })?;
 
         Ok(job_id)
+    }
+}
+
+impl SchedulerClusterSync for Scheduler {
+    fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>) {
+        self.enable_cluster_mode(owned_devices);
     }
 }
 

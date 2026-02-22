@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::udp::UdpFramed;
@@ -25,20 +25,22 @@ use scheduler::scheduler::Scheduler;
 const ACK_TIMEOUT_DURATION_MS: u64 = 30000;
 
 pub async fn init_backdoor(
-    scheduler: Arc<Mutex<Scheduler>>,
+    scheduler: Arc<RwLock<Scheduler>>,
     ip: String,
     port: String,
     ack_timeout_duration: Option<u64>,
     database: Database,
+    node_id: uuid::Uuid,
 ) -> Result<JoinHandle<()>, BackdoorError> {
     let socket = UdpSocket::bind(format!("{ip}:{port}")).await?;
     info!("Listening for device registration on {ip}:{port} via UDP");
 
     let ack_timeout_duration = ack_timeout_duration.unwrap_or(ACK_TIMEOUT_DURATION_MS);
 
-    let scheduler_clone: Arc<Mutex<Scheduler>> = scheduler.clone();
+    let scheduler_clone: Arc<RwLock<Scheduler>> = scheduler.clone();
     let codec = MessageCodec;
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
+    let local_node_id = node_id; // Uuid is Copy
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         // TODO have multiple threads receiving requests, maybe a threadpool
@@ -71,6 +73,7 @@ pub async fn init_backdoor(
                             &scheduler_clone,
                             ack_timeout_duration,
                             database.clone(),
+                            local_node_id,
                         )
                         .await
                         {
@@ -128,9 +131,10 @@ async fn handle_backdoor_register_msg(
     framed: &mut UdpFramed<MessageCodec>,
     msg: Message,
     socket_addr: SocketAddr,
-    scheduler: &Arc<Mutex<Scheduler>>,
+    scheduler: &Arc<RwLock<Scheduler>>,
     ack_timeout_duration: u64,
     database: Database,
+    _node_id: uuid::Uuid,
 ) -> Result<(), BackdoorError> {
     // TODO: check that the information provided is correct #10
     if msg.device_id != 0 {
@@ -141,7 +145,7 @@ async fn handle_backdoor_register_msg(
     let device = Device::new(socket_addr, None, None, None);
 
     database.add_device(&device).await?;
-    scheduler.lock().await.register_device(&device).await?;
+    scheduler.write().await.register_device(&device).await?;
     database
         .register_device(device.id, msg.get_timestamp()?)
         .await?;
@@ -170,7 +174,7 @@ async fn handle_backdoor_register_msg(
 /// Checks if the device has requested the registration in the interval (300 ms)
 /// and starts the scheduler sequence.
 async fn handle_backdoor_ack_msg(
-    scheduler: &Arc<Mutex<Scheduler>>,
+    scheduler: &Arc<RwLock<Scheduler>>,
     msg: Message,
     socket_addr: SocketAddr,
     database: Database,
@@ -221,7 +225,7 @@ async fn handle_backdoor_ack_msg(
                 .await?;
 
             scheduler
-                .lock()
+                .write()
                 .await
                 .schedule_next_wakeup_job(device.id)
                 .await?;
@@ -256,22 +260,24 @@ mod tests {
     use common::database::api::Database;
     use scheduler::scheduler::Scheduler;
     use std::sync::Arc;
-    use tokio::sync::Mutex;
+    use tokio::sync::RwLock;
     use tokio_util::codec::Decoder;
     use tokio_util::codec::Encoder;
 
     use super::*;
 
-    async fn set_up_hes(backdoor_port: &str) -> Arc<Mutex<Scheduler>> {
+    async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<Scheduler>> {
         let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
-        let scheduler: Arc<Mutex<Scheduler>> =
-            Arc::new(Mutex::new(Scheduler::new(1, db.clone()).await.unwrap()));
+        let node_id = uuid::Uuid::new_v4();
+        let scheduler: Arc<RwLock<Scheduler>> =
+            Arc::new(RwLock::new(Scheduler::new(1, db.clone(), node_id).await.unwrap()));
         init_backdoor(
             scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
             Some(300),
             db.clone(),
+            node_id,
         )
         .await
         .unwrap();
@@ -302,7 +308,7 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -328,7 +334,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -349,7 +355,7 @@ mod tests {
         let scheduler = set_up_hes(backdoor_port).await;
 
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -369,7 +375,7 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -397,7 +403,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -428,7 +434,7 @@ mod tests {
                 .expect("Failed to send RegisterRequest");
             sleep(Duration::from_millis(100)).await;
             let connecitons_number = scheduler
-                .lock()
+                .read()
                 .await
                 .get_scheduled_connections()
                 .await
@@ -453,7 +459,7 @@ mod tests {
             sleep(Duration::from_millis(100)).await;
         }
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -483,7 +489,7 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -505,7 +511,7 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await
@@ -548,7 +554,7 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let connecitons_number = scheduler
-            .lock()
+            .read()
             .await
             .get_scheduled_connections()
             .await

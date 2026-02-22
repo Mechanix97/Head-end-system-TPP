@@ -20,7 +20,7 @@ pub struct InMemoryDB {
 pub struct InnerDB {
     devices: HashMap<Uuid, Device>,
     device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
-    buckets: HashMap<Uuid, i32>,
+    buckets: HashMap<Uuid, (i32, Uuid)>, // device_id -> (bucket_number, node_id)
     scheduled_connections: HashMap<Uuid, ScheduledConnection>,
 }
 
@@ -99,7 +99,7 @@ impl Engine for InMemoryDB {
 
         let mut counts = vec![0usize; total_buckets as usize];
 
-        for &bucket in inner.buckets.values() {
+        for &(bucket, _) in inner.buckets.values() {
             let bucket_usize = bucket as usize;
             if bucket >= 0 && bucket_usize < counts.len() {
                 counts[bucket_usize] += 1;
@@ -116,12 +116,13 @@ impl Engine for InMemoryDB {
         &self,
         device_id: Uuid,
         bucket_number: i32,
+        node_id: Uuid,
     ) -> Result<(), DatabaseError> {
         self.inner
             .lock()
             .await
             .buckets
-            .insert(device_id, bucket_number);
+            .insert(device_id, (bucket_number, node_id));
         Ok(())
     }
 
@@ -131,7 +132,7 @@ impl Engine for InMemoryDB {
             .await
             .buckets
             .get(&device_id)
-            .cloned()
+            .map(|&(bucket, _)| bucket)
             .ok_or(DatabaseError::NoDataFound)
     }
 
@@ -238,6 +239,85 @@ impl Engine for InMemoryDB {
         Ok(())
     }
 
+    // ========== Cluster management ==========
+
+    async fn register_cluster_node(
+        &self,
+        _node_id: Uuid,
+        _node_name: String,
+        _cluster_ip: String,
+        _cluster_port: i32,
+        _backdoor_port: i32,
+    ) -> Result<(), DatabaseError> {
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
+    }
+
+    async fn get_active_cluster_nodes(&self) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError> {
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
+    }
+
+    async fn update_cluster_node_status(&self, _node_id: Uuid, _status: &str) -> Result<(), DatabaseError> {
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
+    }
+
+    async fn update_cluster_node_last_seen(&self, _node_id: Uuid) -> Result<(), DatabaseError> {
+        Err(DatabaseError::QueryError(
+            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
+        ))
+    }
+
+        // ========== Device ownership ==========
+
+    async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
+        let lock = self.inner.lock().await;
+        Ok(lock
+            .buckets
+            .iter()
+            .filter(|(_, (_, owner))| *owner == node_id)
+            .map(|(device_id, _)| *device_id)
+            .collect())
+    }
+
+    async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError> {
+        let mut lock = self.inner.lock().await;
+        if let Some(entry) = lock.buckets.get_mut(&device_id) {
+            entry.1 = node_id;
+        }
+        Ok(())
+    }
+
+    async fn get_scheduled_connections_by_owner(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        let lock = self.inner.lock().await;
+
+        // Get device IDs owned by this node via bucket assignments
+        let owned_devices: std::collections::HashSet<Uuid> = lock
+            .buckets
+            .iter()
+            .filter(|(_, (_, owner))| *owner == node_id)
+            .map(|(device_id, _)| *device_id)
+            .collect();
+
+        // Filter scheduled connections for owned devices with 'awaiting' status
+        Ok(lock
+            .scheduled_connections
+            .values()
+            .filter(|conn| {
+                owned_devices.contains(&conn.fk_device)
+                    && matches!(conn.status, ScheduledStatus::Awaiting)
+            })
+            .cloned()
+            .collect())
+  }
+  
     async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError> {
         let inner = self.inner.lock().await;
         let device_ids: Vec<Uuid> = inner.devices.keys().copied().collect();

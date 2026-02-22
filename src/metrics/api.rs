@@ -31,12 +31,16 @@ pub async fn start_prometheus_metrics_api(
             .route("/metrics", get(get_metrics))
             .route("/health", get(|| async { "Service Up" }));
 
-        let listener = tokio::net::TcpListener::bind(&format!("{address}:{port}"))
-            .await
-            .expect("Unable to bind port");
-        axum::serve(listener, app)
-            .await
-            .expect("Unable to serve app");
+        let listener = match tokio::net::TcpListener::bind(&format!("{address}:{port}")).await {
+            Ok(l) => l,
+            Err(e) => {
+                error!("Unable to bind metrics port {}:{}: {}", address, port, e);
+                return;
+            }
+        };
+        if let Err(e) = axum::serve(listener, app).await {
+            error!("Metrics server error: {}", e);
+        }
     });
     Ok(join_handle)
 }

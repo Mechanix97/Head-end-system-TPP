@@ -282,6 +282,7 @@ impl Engine for PostgresDB {
         &self,
         device_id: Uuid,
         bucket_number: i32,
+        node_id: Uuid,
     ) -> Result<(), DatabaseError> {
         let query = "DELETE FROM T_BUCKETS WHERE FK_DEVICE = $1";
 
@@ -292,11 +293,12 @@ impl Engine for PostgresDB {
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         let query = "INSERT INTO T_BUCKETS
-                    (fk_device, bucket) 
-                    VALUES ($1, $2)";
+                    (fk_device, fk_node, bucket)
+                    VALUES ($1, $2, $3)";
 
         sqlx::query(query)
             .bind(device_id)
+            .bind(node_id)
             .bind(bucket_number)
             .execute(&self.pool)
             .await
@@ -566,6 +568,191 @@ impl Engine for PostgresDB {
         Ok(())
     }
 
+    // ========== Cluster management ==========
+
+    async fn register_cluster_node(
+        &self,
+        node_id: Uuid,
+        node_name: String,
+        cluster_ip: String,
+        cluster_port: i32,
+        backdoor_port: i32,
+    ) -> Result<(), DatabaseError> {
+        let query = r#"
+            INSERT INTO T_NODES (id, node_name, cluster_ip, cluster_port, backdoor_port, status, started_at, last_seen)
+            VALUES ($1, $2, $3, $4, $5, 'active', NOW(), NOW())
+            ON CONFLICT (id)
+            DO UPDATE SET
+                status = 'active',
+                cluster_ip = EXCLUDED.cluster_ip,
+                cluster_port = EXCLUDED.cluster_port,
+                backdoor_port = EXCLUDED.backdoor_port,
+                last_seen = NOW()
+        "#;
+
+        sqlx::query(query)
+            .bind(node_id)
+            .bind(node_name)
+            .bind(cluster_ip)
+            .bind(cluster_port)
+            .bind(backdoor_port)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_active_cluster_nodes(
+        &self,
+    ) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError> {
+        let query = r#"
+            SELECT id, node_name, cluster_ip, cluster_port, backdoor_port
+            FROM T_NODES
+            WHERE status IN ('active', 'starting')
+            ORDER BY node_name
+        "#;
+
+        let rows = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let nodes = rows
+            .into_iter()
+            .map(|row| {
+                let node_id: Uuid = row
+                    .try_get("id")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let node_name: String = row
+                    .try_get("node_name")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let cluster_ip: String = row
+                    .try_get("cluster_ip")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let cluster_port: i32 = row
+                    .try_get("cluster_port")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let backdoor_port: i32 = row
+                    .try_get("backdoor_port")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                Ok((node_id, node_name, cluster_ip, cluster_port, backdoor_port))
+            })
+            .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+        Ok(nodes)
+    }
+
+    async fn update_cluster_node_status(
+        &self,
+        node_id: Uuid,
+        status: &str,
+    ) -> Result<(), DatabaseError> {
+        let query = "UPDATE T_NODES SET status = $1, last_seen = NOW() WHERE id = $2";
+
+        sqlx::query(query)
+            .bind(status)
+            .bind(node_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn update_cluster_node_last_seen(&self, node_id: Uuid) -> Result<(), DatabaseError> {
+        let query = "UPDATE T_NODES SET last_seen = NOW() WHERE id = $1";
+
+        sqlx::query(query)
+            .bind(node_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    // ========== Device ownership (for cluster delegation) ==========
+
+    async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
+        let query = "SELECT FK_DEVICE FROM T_BUCKETS WHERE FK_NODE = $1";
+
+        let devices: Vec<Uuid> = sqlx::query_scalar(query)
+            .bind(node_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(devices)
+    }
+
+    async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError> {
+        let query = "UPDATE T_BUCKETS SET FK_NODE = $1 WHERE FK_DEVICE = $2";
+
+        sqlx::query(query)
+            .bind(node_id)
+            .bind(device_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_scheduled_connections_by_owner(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        let query = r#"
+            SELECT sc.fk_device, sc.schedule_time, sc.connection_time, sc.status, sc.job_id, sc.renewable
+            FROM T_SCHEDULED_CONNECTIONS sc
+            INNER JOIN T_BUCKETS b ON sc.fk_device = b.fk_device
+            WHERE b.FK_NODE = $1 AND sc.status = 'awaiting'
+            ORDER BY sc.schedule_time ASC
+        "#;
+
+        let rows = sqlx::query(query)
+            .bind(node_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+        let scheduled = rows
+            .into_iter()
+            .map(|row| {
+                let fk_device: Uuid = row
+                    .try_get("fk_device")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let schedule_time: NaiveDateTime = row
+                    .try_get("schedule_time")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let connection_time: Option<NaiveDateTime> = row
+                    .try_get("connection_time")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let status = row
+                    .try_get("status")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let job_id: Option<Uuid> = row
+                    .try_get("job_id")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+                let renewable: bool = row
+                    .try_get("renewable")
+                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+
+                Ok(ScheduledConnection {
+                    fk_device,
+                    schedule_time,
+                    connection_time,
+                    status,
+                    job_id,
+                    renewable,
+                })
+            })
+            .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+        Ok(scheduled)
+    }
+
     async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError> {
         let query = "SELECT id FROM T_DEVICES ORDER BY id";
 
@@ -574,10 +761,7 @@ impl Engine for PostgresDB {
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
-        let device_ids: Vec<Uuid> = rows
-            .iter()
-            .map(|row| row.get("id"))
-            .collect();
+        let device_ids: Vec<Uuid> = rows.iter().map(|row| row.get("id")).collect();
 
         Ok(device_ids)
     }

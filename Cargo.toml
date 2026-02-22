@@ -4,6 +4,7 @@ members = [
     "src/backdoor",
     "src/common",
     "src/metrics",
+    "src/cluster",
     "tools/mock_registry",
     "tools/malformed_registry",
 ]
@@ -19,17 +20,21 @@ scheduler = { path = "src/scheduler" }
 backdoor = { path = "src/backdoor" }
 common = { path = "src/common" }
 metrics = { path = "src/metrics" }
+cluster = { path = "src/cluster" }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tokio = { version = "1.47", features = ["full", "macros"] }
 clap = { version = "4.5.47", features = ["derive"] }
+hostname = "0.4"
+uuid = { workspace = true }
 
 [workspace.dependencies]
 scheduler = { path = "src/scheduler" }
 backdoor = { path = "src/backdoor" }
 common = { path = "src/common" }
 metrics = { path = "src/metrics" }
+cluster = { path = "src/cluster" }
 
 futures-util = "0.3"
 futures = "0.3"
@@ -43,7 +48,7 @@ thiserror = "2.0"
 axum = "0.8"
 prometheus = "0.14"
 bytes = "1.10"
-rand = "0.9"
+rand = "0.8"
 uuid = { version = "1.18", features = ["v4"] }
 chrono = "0.4"
 chrono-tz = "0.10"

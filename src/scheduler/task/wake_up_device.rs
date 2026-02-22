@@ -51,6 +51,12 @@ pub async fn wake_up_device(
                 // TODO: Send WRITE_REQUEST to update next wake time
                 // TODO: Send ACK and close
 
+                // TODO: Assign bucket to delegated devices after first successful connection
+                // Check if device has bucket assigned (delegated devices don't have one initially)
+                // If not: assign to least-loaded local bucket using get_bucket_with_less_devices()
+                // This allows delegated devices to connect at original schedule_time once,
+                // then subsequent connections use the new bucket-based schedule
+
                 return Ok(());
             }
             Err(e) => {

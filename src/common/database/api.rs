@@ -137,9 +137,10 @@ impl Database {
         &self,
         device_id: Uuid,
         bucket_number: i32,
+        node_id: Uuid,
     ) -> Result<(), DatabaseError> {
         self.engine
-            .add_device_to_bucket(device_id, bucket_number)
+            .add_device_to_bucket(device_id, bucket_number, node_id)
             .await
     }
 
@@ -193,6 +194,57 @@ impl Database {
         self.engine.update_scheduled_connection(connection).await
     }
 
+    // ========== Cluster management ==========
+
+    /// Registers a new node in the cluster.
+    pub async fn register_cluster_node(
+        &self,
+        node_id: Uuid,
+        node_name: String,
+        cluster_ip: String,
+        cluster_port: i32,
+        backdoor_port: i32,
+    ) -> Result<(), DatabaseError> {
+        self.engine
+            .register_cluster_node(node_id, node_name, cluster_ip, cluster_port, backdoor_port)
+            .await
+    }
+
+    /// Gets all active nodes in the cluster.
+    pub async fn get_active_cluster_nodes(&self) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError> {
+        self.engine.get_active_cluster_nodes().await
+    }
+
+    /// Updates a cluster node's status.
+    pub async fn update_cluster_node_status(&self, node_id: Uuid, status: &str) -> Result<(), DatabaseError> {
+        self.engine.update_cluster_node_status(node_id, status).await
+    }
+
+    /// Updates a cluster node's last_seen timestamp.
+    pub async fn update_cluster_node_last_seen(&self, node_id: Uuid) -> Result<(), DatabaseError> {
+        self.engine.update_cluster_node_last_seen(node_id).await
+    }
+
+    // ========== Device ownership (for cluster delegation) ==========
+
+    /// Gets all device UUIDs owned by a specific node.
+    pub async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError> {
+        self.engine.get_devices_by_owner(node_id).await
+    }
+
+    /// Sets the owner node for a device.
+    pub async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError> {
+        self.engine.set_device_owner(device_id, node_id).await
+    }
+
+    /// Gets scheduled connections for devices owned by a specific node.
+    pub async fn get_scheduled_connections_by_owner(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        self.engine.get_scheduled_connections_by_owner(node_id).await
+    }
+  
     // ========== Device queries ==========
 
     /// Returns a list of all device UUIDs in the database.
@@ -260,6 +312,7 @@ pub trait Engine: Debug + Send + Sync {
         &self,
         device_id: Uuid,
         bucket_number: i32,
+        node_id: Uuid,
     ) -> Result<(), DatabaseError>;
     async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError>;
     async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError>;
@@ -281,6 +334,39 @@ pub trait Engine: Debug + Send + Sync {
         connection: &ScheduledConnection,
     ) -> Result<(), DatabaseError>;
 
+    // ========== Cluster management ==========
+    /// Registers a new node in the cluster
+    async fn register_cluster_node(
+        &self,
+        node_id: Uuid,
+        node_name: String,
+        cluster_ip: String,
+        cluster_port: i32,
+        backdoor_port: i32,
+    ) -> Result<(), DatabaseError>;
+
+    /// Gets all active nodes in the cluster
+    async fn get_active_cluster_nodes(&self) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError>;
+
+    /// Updates a cluster node's status
+    async fn update_cluster_node_status(&self, node_id: Uuid, status: &str) -> Result<(), DatabaseError>;
+
+    /// Updates a cluster node's last_seen timestamp
+    async fn update_cluster_node_last_seen(&self, node_id: Uuid) -> Result<(), DatabaseError>;
+
+    // ========== Device ownership (for cluster delegation) ==========
+
+    /// Gets all device UUIDs owned by a specific node
+    async fn get_devices_by_owner(&self, node_id: Uuid) -> Result<Vec<Uuid>, DatabaseError>;
+
+    /// Sets the owner node for a device
+    async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError>;
+
+    /// Gets scheduled connections for devices owned by a specific node
+    async fn get_scheduled_connections_by_owner(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError>;
     // ========== Device queries ==========
     async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError>;
 }
