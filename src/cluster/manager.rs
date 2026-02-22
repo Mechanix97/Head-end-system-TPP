@@ -98,8 +98,8 @@ impl ClusterManager {
         if !self.config.cluster_seeds.is_empty() {
             self.join_cluster().await?;
         } else {
-            // First node in cluster - claim unassigned devices
-            info!("First node in cluster, claiming unassigned devices");
+            // First node in cluster - claim all devices
+            info!("First node in cluster, claiming all devices");
             let mut dm = self.device_manager.write().await;
             let claimed = dm.claim_all_devices().await?;
             info!("Claimed {} unassigned devices", claimed.len());

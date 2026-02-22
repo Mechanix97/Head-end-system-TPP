@@ -17,7 +17,8 @@ use crate::failure_detector::handle_probe_request;
 use crate::membership::MembershipList;
 use crate::node::{NodeInfo, NodeStatus};
 use crate::protocol::{
-    ClusterMessage, ClusterMessageCodec, ClusterMessageType, ClusterPayload, StatusResponsePayload,
+    ClusterMessage, ClusterMessageCodec, ClusterMessageType, ClusterPayload, KnownNodeInfo,
+    StatusResponsePayload,
 };
 
 use common::database::api::Database;
@@ -264,7 +265,7 @@ async fn handle_heartbeat_ack(
 
 /// Handles a status request.
 async fn handle_status_request(
-    _from_node_id: Uuid,
+    from_node_id: Uuid,
     from_addr: SocketAddr,
     membership: &RwLock<MembershipList>,
     device_manager: &RwLock<DeviceManager>,
@@ -278,6 +279,19 @@ async fn handle_status_request(
         let bucket_count = dm.local_bucket_count() as u16;
         let device_count = dm.device_count() as u32;
 
+        let known_nodes: Vec<KnownNodeInfo> = m
+            .reachable_nodes()
+            .iter()
+            .filter(|n| n.node_id != from_node_id)
+            .map(|n| KnownNodeInfo {
+                node_id: n.node_id,
+                node_name: n.node_name.clone(),
+                cluster_addr: n.cluster_addr,
+                backdoor_port: n.backdoor_port,
+                status: n.status,
+            })
+            .collect();
+
         let payload = StatusResponsePayload {
             node_name: local.node_name.clone(),
             status: local.status,
@@ -285,6 +299,7 @@ async fn handle_status_request(
             device_count,
             load_percent: local.load_percent as u8,
             max_device_suggested: local.max_device_suggested,
+            known_nodes,
         };
 
         let seq = m.next_seq();
@@ -315,7 +330,7 @@ async fn handle_status_response(
 
     let mut m = membership.write().await;
     if let Some(node) = m.get_node_mut(node_id) {
-        node.node_name = status.node_name;
+        node.node_name = status.node_name.clone();
         node.status = status.status;
         node.bucket_count = status.bucket_count as u32;
         node.device_count = status.device_count;
@@ -326,7 +341,7 @@ async fn handle_status_response(
         // New node responding to our join - add to membership
         let node = NodeInfo {
             node_id,
-            node_name: status.node_name,
+            node_name: status.node_name.clone(),
             // Use actual source IP from UDP packet
             cluster_addr: std::net::SocketAddr::new(from_addr.ip(), from_addr.port()),
             backdoor_port: 6565, // Default, might not be used
@@ -339,6 +354,26 @@ async fn handle_status_response(
             load_percent: f32::from(status.load_percent),
         };
         m.add_or_update_node(node);
+    }
+
+    // Add known nodes from the response for fast cluster discovery
+    for known in &status.known_nodes {
+        if m.get_node(known.node_id).is_none() {
+            let node = NodeInfo {
+                node_id: known.node_id,
+                node_name: known.node_name.clone(),
+                cluster_addr: known.cluster_addr,
+                backdoor_port: known.backdoor_port,
+                status: known.status,
+                started_at: chrono::Utc::now(),
+                last_heartbeat: chrono::Utc::now(),
+                bucket_count: 0,
+                device_count: 0,
+                max_device_suggested: 0,
+                load_percent: 0.0,
+            };
+            m.add_or_update_node(node);
+        }
     }
 
     Ok(())
@@ -367,26 +402,13 @@ async fn handle_node_join(
         join.node_name, node_id
     );
 
-    // Determine if this is a direct NODE_JOIN or a relayed one
-    // Direct: The UDP packet comes from the same IP:PORT as join.cluster_addr
-    // Relayed: The UDP packet comes from a different node (different IP or port)
-    // Need to compare both IP and port to handle multiple nodes on same machine
-    let is_direct_join =
-        from_addr.ip() == join.cluster_addr.ip() && from_addr.port() == join.cluster_addr.port();
-
     // Add to membership
     {
         let mut m = membership.write().await;
         let node = NodeInfo {
             node_id,
             node_name: join.node_name,
-            // Direct join: Use actual source IP (from UDP packet) to handle 0.0.0.0 binding
-            // Relayed join: Use IP from payload (already detected by the sender)
-            cluster_addr: if is_direct_join {
-                std::net::SocketAddr::new(from_addr.ip(), join.cluster_addr.port())
-            } else {
-                join.cluster_addr
-            },
+            cluster_addr: std::net::SocketAddr::new(from_addr.ip(), join.cluster_addr.port()),
             backdoor_port: join.backdoor_port,
             status: NodeStatus::Starting,
             started_at: chrono::Utc::now(),
@@ -397,22 +419,6 @@ async fn handle_node_join(
             load_percent: 0.0,
         };
         m.add_or_update_node(node);
-    }
-
-    // Get devices for delegation to the new node
-    let devices_to_delegate = {
-        let mut dm = device_manager.write().await;
-        dm.get_devices_for_delegation(node_id).await?
-    };
-
-    if !devices_to_delegate.is_empty() {
-        info!(
-            "Prepared {} devices for delegation to new node {}",
-            devices_to_delegate.len(),
-            node_id
-        );
-        // Note: Actual delegation happens via DelegationHandler, which requires scheduler
-        // For now, just log the intent
     }
 
     // Send our status back to the joining node
@@ -427,12 +433,6 @@ async fn handle_node_join(
     }
 
     // Broadcast NODE_JOIN to all other nodes so they also discover the new node
-    // Only do this if this is a DIRECT join (not a relayed message)
-    // This prevents broadcast loops
-    if !is_direct_join {
-        return Ok(());
-    }
-
     let (seq, join_payload) = {
         let mut m = membership.write().await;
         let seq = m.next_seq();

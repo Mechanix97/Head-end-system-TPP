@@ -457,6 +457,16 @@ impl NodeDeadPayload {
     }
 }
 
+/// Info about a known node, sent in STATUS_RESPONSE for fast cluster discovery.
+#[derive(Debug, Clone)]
+pub struct KnownNodeInfo {
+    pub node_id: Uuid,
+    pub node_name: String,
+    pub cluster_addr: SocketAddr,
+    pub backdoor_port: u16,
+    pub status: NodeStatus,
+}
+
 /// Payload for STATUS_RESPONSE messages.
 #[derive(Debug, Clone)]
 pub struct StatusResponsePayload {
@@ -472,6 +482,8 @@ pub struct StatusResponsePayload {
     pub load_percent: u8,
     /// Suggested maximum number of devices for this node
     pub max_device_suggested: u32,
+    /// Known nodes in the cluster (for fast discovery on join)
+    pub known_nodes: Vec<KnownNodeInfo>,
 }
 
 impl StatusResponsePayload {
@@ -489,6 +501,21 @@ impl StatusResponsePayload {
         buf.put_u32(self.device_count);
         buf.put_u8(self.load_percent);
         buf.put_u32(self.max_device_suggested);
+
+        // Encode known_nodes list
+        buf.put_u16(self.known_nodes.len() as u16);
+        for node in &self.known_nodes {
+            buf.put_u128(node.node_id.as_u128());
+            let name_bytes = node.node_name.as_bytes();
+            buf.put_u16(name_bytes.len() as u16);
+            buf.put_slice(name_bytes);
+            let addr_str = node.cluster_addr.to_string();
+            let addr_bytes = addr_str.as_bytes();
+            buf.put_u16(addr_bytes.len() as u16);
+            buf.put_slice(addr_bytes);
+            buf.put_u16(node.backdoor_port);
+            buf.put_u8(node.status.code());
+        }
     }
 
     pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
@@ -514,6 +541,60 @@ impl StatusResponsePayload {
         let load_percent = buf.get_u8();
         let max_device_suggested = buf.get_u32();
 
+        // Decode known_nodes (backward compatible: empty if no more bytes)
+        let known_nodes = if buf.remaining() >= U16_SIZE {
+            let count = buf.get_u16() as usize;
+            let mut nodes = Vec::with_capacity(count);
+            for _ in 0..count {
+                if buf.remaining() < UUID_SIZE + U16_SIZE {
+                    return Err(ClusterCodecError::InvalidLength);
+                }
+                let node_id = Uuid::from_u128(buf.get_u128());
+
+                let nname_len = buf.get_u16() as usize;
+                if buf.remaining() < nname_len {
+                    return Err(ClusterCodecError::InvalidLength);
+                }
+                let mut nname_bytes = vec![0u8; nname_len];
+                buf.copy_to_slice(&mut nname_bytes);
+                let node_name = String::from_utf8(nname_bytes)
+                    .map_err(|e| ClusterCodecError::InvalidPayload(e.to_string()))?;
+
+                if buf.remaining() < U16_SIZE {
+                    return Err(ClusterCodecError::InvalidLength);
+                }
+                let addr_len = buf.get_u16() as usize;
+                if buf.remaining() < addr_len {
+                    return Err(ClusterCodecError::InvalidLength);
+                }
+                let mut addr_bytes = vec![0u8; addr_len];
+                buf.copy_to_slice(&mut addr_bytes);
+                let addr_str = String::from_utf8(addr_bytes)
+                    .map_err(|e| ClusterCodecError::InvalidPayload(e.to_string()))?;
+                let cluster_addr: SocketAddr = addr_str.parse()
+                    .map_err(|e: std::net::AddrParseError| ClusterCodecError::InvalidPayload(e.to_string()))?;
+
+                if buf.remaining() < U16_SIZE + U8_SIZE {
+                    return Err(ClusterCodecError::InvalidLength);
+                }
+                let backdoor_port = buf.get_u16();
+                let status_code = buf.get_u8();
+                let status = NodeStatus::from_code(status_code)
+                    .ok_or_else(|| ClusterCodecError::InvalidPayload(format!("Invalid status: {status_code}")))?;
+
+                nodes.push(KnownNodeInfo {
+                    node_id,
+                    node_name,
+                    cluster_addr,
+                    backdoor_port,
+                    status,
+                });
+            }
+            nodes
+        } else {
+            vec![]
+        };
+
         Ok(Self {
             node_name,
             status,
@@ -521,6 +602,7 @@ impl StatusResponsePayload {
             device_count,
             load_percent,
             max_device_suggested,
+            known_nodes,
         })
     }
 }

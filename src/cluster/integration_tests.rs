@@ -126,6 +126,9 @@ mod tests {
         let mut codec = ClusterMessageCodec;
         let node_id = Uuid::new_v4();
 
+        let known1_id = Uuid::new_v4();
+        let known2_id = Uuid::new_v4();
+
         let payload = StatusResponsePayload {
             node_name: "cluster-node-alpha".to_string(),
             status: NodeStatus::Active,
@@ -133,6 +136,22 @@ mod tests {
             device_count: 350,
             load_percent: 45,
             max_device_suggested: 500,
+            known_nodes: vec![
+                KnownNodeInfo {
+                    node_id: known1_id,
+                    node_name: "node-beta".to_string(),
+                    cluster_addr: "192.168.1.10:7070".parse().unwrap(),
+                    backdoor_port: 6565,
+                    status: NodeStatus::Active,
+                },
+                KnownNodeInfo {
+                    node_id: known2_id,
+                    node_name: "node-gamma".to_string(),
+                    cluster_addr: "10.0.0.5:7070".parse().unwrap(),
+                    backdoor_port: 6566,
+                    status: NodeStatus::Starting,
+                },
+            ],
         };
 
         let msg = ClusterMessage::status_response(node_id, 100, payload);
@@ -152,6 +171,18 @@ mod tests {
             assert_eq!(p.device_count, 350);
             assert_eq!(p.load_percent, 45);
             assert_eq!(p.max_device_suggested, 500);
+
+            assert_eq!(p.known_nodes.len(), 2);
+            assert_eq!(p.known_nodes[0].node_id, known1_id);
+            assert_eq!(p.known_nodes[0].node_name, "node-beta");
+            assert_eq!(p.known_nodes[0].cluster_addr, "192.168.1.10:7070".parse::<std::net::SocketAddr>().unwrap());
+            assert_eq!(p.known_nodes[0].backdoor_port, 6565);
+            assert_eq!(p.known_nodes[0].status, NodeStatus::Active);
+
+            assert_eq!(p.known_nodes[1].node_id, known2_id);
+            assert_eq!(p.known_nodes[1].node_name, "node-gamma");
+            assert_eq!(p.known_nodes[1].backdoor_port, 6566);
+            assert_eq!(p.known_nodes[1].status, NodeStatus::Starting);
         } else {
             panic!("Expected StatusResponse payload");
         }
