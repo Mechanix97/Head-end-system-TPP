@@ -299,6 +299,7 @@ async fn handle_status_request(
             device_count,
             load_percent: local.load_percent as u8,
             max_device_suggested: local.max_device_suggested,
+            backdoor_port: local.backdoor_port,
             known_nodes,
         };
 
@@ -337,7 +338,7 @@ async fn handle_status_response(
         node_name: status.node_name.clone(),
         // Use actual source IP from UDP packet
         cluster_addr: std::net::SocketAddr::new(from_addr.ip(), from_addr.port()),
-        backdoor_port: 6565, // Default, might not be used
+        backdoor_port: status.backdoor_port,
         status: status.status,
         started_at: chrono::Utc::now(),
         last_heartbeat: chrono::Utc::now(),

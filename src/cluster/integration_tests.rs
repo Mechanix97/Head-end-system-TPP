@@ -136,6 +136,7 @@ mod tests {
             device_count: 350,
             load_percent: 45,
             max_device_suggested: 500,
+            backdoor_port: 6565,
             known_nodes: vec![
                 KnownNodeInfo {
                     node_id: known1_id,
@@ -171,6 +172,7 @@ mod tests {
             assert_eq!(p.device_count, 350);
             assert_eq!(p.load_percent, 45);
             assert_eq!(p.max_device_suggested, 500);
+            assert_eq!(p.backdoor_port, 6565);
 
             assert_eq!(p.known_nodes.len(), 2);
             assert_eq!(p.known_nodes[0].node_id, known1_id);

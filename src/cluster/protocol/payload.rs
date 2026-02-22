@@ -482,15 +482,17 @@ pub struct StatusResponsePayload {
     pub load_percent: u8,
     /// Suggested maximum number of devices for this node
     pub max_device_suggested: u32,
+    /// Backdoor port for device registration
+    pub backdoor_port: u16,
     /// Known nodes in the cluster (for fast discovery on join)
     pub known_nodes: Vec<KnownNodeInfo>,
 }
 
 impl StatusResponsePayload {
-    // Minimum size: name_len + status + bucket_count + device_count + load + max_device_suggested
-    const MIN_SIZE: usize = U16_SIZE + U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U32_SIZE;
-    // Size after name_len: status + bucket_count + device_count + load + max_device_suggested
-    const FIELDS_AFTER_NAME: usize = U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U32_SIZE;
+    // Minimum size: name_len + status + bucket_count + device_count + load + max_device_suggested + backdoor_port
+    const MIN_SIZE: usize = U16_SIZE + U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U32_SIZE + U16_SIZE;
+    // Size after name_len: status + bucket_count + device_count + load + max_device_suggested + backdoor_port
+    const FIELDS_AFTER_NAME: usize = U8_SIZE + U16_SIZE + U32_SIZE + U8_SIZE + U32_SIZE + U16_SIZE;
 
     pub fn encode(&self, buf: &mut impl BufMut) {
         let name_bytes = self.node_name.as_bytes();
@@ -501,6 +503,7 @@ impl StatusResponsePayload {
         buf.put_u32(self.device_count);
         buf.put_u8(self.load_percent);
         buf.put_u32(self.max_device_suggested);
+        buf.put_u16(self.backdoor_port);
 
         // Encode known_nodes list
         buf.put_u16(self.known_nodes.len() as u16);
@@ -540,6 +543,7 @@ impl StatusResponsePayload {
         let device_count = buf.get_u32();
         let load_percent = buf.get_u8();
         let max_device_suggested = buf.get_u32();
+        let backdoor_port = buf.get_u16();
 
         // Decode known_nodes (backward compatible: empty if no more bytes)
         let known_nodes = if buf.remaining() >= U16_SIZE {
@@ -602,6 +606,7 @@ impl StatusResponsePayload {
             device_count,
             load_percent,
             max_device_suggested,
+            backdoor_port,
             known_nodes,
         })
     }
