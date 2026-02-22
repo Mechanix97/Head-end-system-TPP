@@ -329,32 +329,23 @@ async fn handle_status_response(
     };
 
     let mut m = membership.write().await;
-    if let Some(node) = m.get_node_mut(node_id) {
-        node.node_name = status.node_name.clone();
-        node.status = status.status;
-        node.bucket_count = status.bucket_count as u32;
-        node.device_count = status.device_count;
-        node.load_percent = f32::from(status.load_percent);
-        node.max_device_suggested = status.max_device_suggested;
-        node.update_heartbeat();
-    } else {
-        // New node responding to our join - add to membership
-        let node = NodeInfo {
-            node_id,
-            node_name: status.node_name.clone(),
-            // Use actual source IP from UDP packet
-            cluster_addr: std::net::SocketAddr::new(from_addr.ip(), from_addr.port()),
-            backdoor_port: 6565, // Default, might not be used
-            status: status.status,
-            started_at: chrono::Utc::now(),
-            last_heartbeat: chrono::Utc::now(),
-            bucket_count: status.bucket_count as u32,
-            device_count: status.device_count,
-            max_device_suggested: status.max_device_suggested,
-            load_percent: f32::from(status.load_percent),
-        };
-        m.add_or_update_node(node);
-    }
+
+    // New node responding to our join - add to membership
+    let node = NodeInfo {
+        node_id,
+        node_name: status.node_name.clone(),
+        // Use actual source IP from UDP packet
+        cluster_addr: std::net::SocketAddr::new(from_addr.ip(), from_addr.port()),
+        backdoor_port: 6565, // Default, might not be used
+        status: status.status,
+        started_at: chrono::Utc::now(),
+        last_heartbeat: chrono::Utc::now(),
+        bucket_count: status.bucket_count as u32,
+        device_count: status.device_count,
+        max_device_suggested: status.max_device_suggested,
+        load_percent: f32::from(status.load_percent),
+    };
+    m.add_or_update_node(node);
 
     // Add known nodes from the response for fast cluster discovery
     for known in &status.known_nodes {

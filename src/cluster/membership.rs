@@ -111,6 +111,7 @@ impl MembershipList {
 
         if let Some(existing) = self.nodes.get_mut(&node.node_id) {
             // Update existing node
+            existing.node_name = node.node_name.clone();
             existing.status = node.status;
             existing.bucket_count = node.bucket_count;
             existing.device_count = node.device_count;
