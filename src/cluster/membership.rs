@@ -121,8 +121,8 @@ impl MembershipList {
         } else {
             // Add new node
             info!(
-                "Adding new node to membership: {} ({})",
-                node.node_name, node.node_id
+                "Adding new node to membership: {} ({}) at {}",
+                node.node_name, node.node_id, node.cluster_addr
             );
             self.nodes.insert(node.node_id, node);
         }

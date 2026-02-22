@@ -18,7 +18,7 @@ use crate::membership::MembershipList;
 use crate::node::{NodeInfo, NodeStatus};
 use crate::protocol::{
     ClusterMessage, ClusterMessageCodec, ClusterMessageType, ClusterPayload, KnownNodeInfo,
-    StatusResponsePayload,
+    NodeJoinPayload, StatusResponsePayload,
 };
 
 use common::database::api::Database;
@@ -124,7 +124,7 @@ async fn handle_message(
             handle_status_request(msg.node_id, from_addr, membership, device_manager, socket).await
         }
         ClusterMessageType::StatusResponse => {
-            handle_status_response(msg.node_id, from_addr, msg.payload, membership).await
+            handle_status_response(msg.node_id, from_addr, msg.payload, membership, socket).await
         }
         ClusterMessageType::DelegateRequest => {
             if let ClusterPayload::DelegateRequest(payload) = msg.payload {
@@ -318,6 +318,7 @@ async fn handle_status_response(
     from_addr: SocketAddr,
     payload: ClusterPayload,
     membership: &RwLock<MembershipList>,
+    socket: &UdpSocket,
 ) -> Result<(), ClusterError> {
     let status = match payload {
         ClusterPayload::StatusResponse(s) => s,
@@ -347,23 +348,30 @@ async fn handle_status_response(
     };
     m.add_or_update_node(node);
 
-    // Add known nodes from the response for fast cluster discovery
-    for known in &status.known_nodes {
-        if m.get_node(known.node_id).is_none() {
-            let node = NodeInfo {
-                node_id: known.node_id,
-                node_name: known.node_name.clone(),
-                cluster_addr: known.cluster_addr,
-                backdoor_port: known.backdoor_port,
-                status: known.status,
-                started_at: chrono::Utc::now(),
-                last_heartbeat: chrono::Utc::now(),
-                bucket_count: 0,
-                device_count: 0,
-                max_device_suggested: 0,
-                load_percent: 0.0,
-            };
-            m.add_or_update_node(node);
+    // Send NODE_JOIN to unknown nodes discovered via the status response
+    let local = m.local_node();
+    let local_id = local.node_id;
+    let join_payload = NodeJoinPayload {
+        node_name: local.node_name.clone(),
+        cluster_addr: local.cluster_addr,
+        backdoor_port: local.backdoor_port,
+    };
+    let seq = m.next_seq();
+
+    let unknown_addrs: Vec<SocketAddr> = status
+        .known_nodes
+        .iter()
+        .filter(|known| m.get_node(known.node_id).is_none())
+        .map(|known| known.cluster_addr)
+        .collect();
+
+    // Release the lock before sending
+    drop(m);
+
+    for addr in unknown_addrs {
+        let msg = ClusterMessage::node_join(local_id, seq, join_payload.clone());
+        if let Err(e) = crate::membership::send_message(socket, addr, msg).await {
+            warn!("Failed to send NODE_JOIN to discovered node {}: {}", addr, e);
         }
     }
 
