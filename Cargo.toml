@@ -5,6 +5,7 @@ members = [
     "src/common",
     "src/metrics",
     "src/cluster",
+    "src/device_manager",
     "tools/mock_registry",
     "tools/malformed_registry",
 ]
@@ -21,6 +22,7 @@ backdoor = { path = "src/backdoor" }
 common = { path = "src/common" }
 metrics = { path = "src/metrics" }
 cluster = { path = "src/cluster" }
+device_manager = { path = "src/device_manager" }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
@@ -35,6 +37,7 @@ backdoor = { path = "src/backdoor" }
 common = { path = "src/common" }
 metrics = { path = "src/metrics" }
 cluster = { path = "src/cluster" }
+device_manager = { path = "src/device_manager" }
 
 futures-util = "0.3"
 futures = "0.3"

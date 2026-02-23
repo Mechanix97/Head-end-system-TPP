@@ -22,7 +22,6 @@ use crate::protocol::{
 };
 
 use common::database::api::Database;
-use scheduler::scheduler::Scheduler;
 
 /// Maximum UDP packet size.
 const MAX_PACKET_SIZE: usize = 65535;
@@ -32,7 +31,6 @@ pub async fn run_cluster_server(
     socket: Arc<UdpSocket>,
     membership: Arc<RwLock<MembershipList>>,
     device_manager: Arc<RwLock<DeviceManager>>,
-    scheduler: Arc<RwLock<Scheduler>>,
     database: Database,
 ) -> Result<(), ClusterError> {
     let local_node_id = {
@@ -43,7 +41,6 @@ pub async fn run_cluster_server(
     let delegation_handler = DelegationHandler::new(
         local_node_id,
         device_manager.clone(),
-        scheduler.clone(),
         membership.clone(),
         socket.clone(),
         database.clone(),
@@ -443,15 +440,17 @@ async fn handle_node_join(
 }
 
 /// Handles a node leave announcement.
+///
+/// The leaving node has already delegated its devices before sending NODE_LEAVE,
+/// so we remove it from the membership list immediately.
 async fn handle_node_leave(
     node_id: Uuid,
     membership: &RwLock<MembershipList>,
 ) -> Result<(), ClusterError> {
     let mut m = membership.write().await;
 
-    if let Some(node) = m.get_node_mut(node_id) {
-        info!("Node {} is leaving the cluster gracefully", node.node_name);
-        node.status = NodeStatus::Draining;
+    if let Some(node) = m.remove_node(node_id) {
+        info!("Node {} left the cluster gracefully", node.node_name);
     }
 
     Ok(())
@@ -513,9 +512,18 @@ async fn handle_node_dead(
         .update_cluster_node_status(dead.dead_node_id, "dead")
         .await?;
 
+    // Extract active nodes from membership for redistribution
+    let other_active_nodes: Vec<(uuid::Uuid, usize)> = {
+        let m = membership.read().await;
+        m.active_nodes()
+            .iter()
+            .map(|n| (n.node_id, n.device_count as usize))
+            .collect()
+    };
+
     // Participate in redistribution of devices
     let mut dm = device_manager.write().await;
-    dm.redistribute_from_failed(dead.dead_node_id).await?;
+    dm.redistribute_from_failed(dead.dead_node_id, other_active_nodes).await?;
 
     // Remove from membership (in-memory only)
     let mut m = membership.write().await;

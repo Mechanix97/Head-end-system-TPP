@@ -21,8 +21,6 @@ use crate::node::{ClusterConfig, NodeStatus};
 use crate::protocol::ClusterMessage;
 use crate::server::run_cluster_server;
 
-use scheduler::scheduler::Scheduler;
-
 /// Main cluster manager that coordinates all cluster operations.
 pub struct ClusterManager {
     /// Cluster configuration
@@ -31,8 +29,6 @@ pub struct ClusterManager {
     membership: Arc<RwLock<MembershipList>>,
     /// Device manager
     device_manager: Arc<RwLock<DeviceManager>>,
-    /// Scheduler (optional, provided after creation)
-    scheduler: Arc<RwLock<Scheduler>>,
     /// UDP socket for cluster communication
     socket: Arc<UdpSocket>,
     /// Database handle
@@ -46,7 +42,7 @@ impl ClusterManager {
     pub async fn new(
         config: ClusterConfig,
         database: Database,
-        scheduler: Arc<RwLock<Scheduler>>,
+        device_manager: Arc<RwLock<DeviceManager>>,
     ) -> Result<Self, ClusterError> {
         // Create UDP socket for cluster communication
         let bind_addr = format!("{}:{}", config.cluster_ip, config.cluster_port);
@@ -58,20 +54,10 @@ impl ClusterManager {
         // Create membership list
         let membership = Arc::new(RwLock::new(MembershipList::new(config.clone())?));
 
-        // Create device manager
-        let local_node_id = config.node_id;
-        let device_manager = Arc::new(RwLock::new(DeviceManager::new(
-            local_node_id,
-            config.total_buckets,
-            database.clone(),
-            membership.clone(),
-        )));
-
         Ok(Self {
             config,
             membership,
             device_manager,
-            scheduler,
             socket,
             database,
             tasks: Vec::new(),
@@ -221,12 +207,11 @@ impl ClusterManager {
             let socket = self.socket.clone();
             let membership = self.membership.clone();
             let device_manager = self.device_manager.clone();
-            let scheduler = self.scheduler.clone();
             let database = self.database.clone();
 
             tokio::spawn(async move {
                 if let Err(e) =
-                    run_cluster_server(socket, membership, device_manager, scheduler, database)
+                    run_cluster_server(socket, membership, device_manager, database)
                         .await
                 {
                     error!("Cluster server error: {}", e);
@@ -254,7 +239,6 @@ impl ClusterManager {
         let delegation_handler = DelegationHandler::new(
             self.config.node_id,
             self.device_manager.clone(),
-            self.scheduler.clone(),
             self.membership.clone(),
             self.socket.clone(),
             self.database.clone(),
