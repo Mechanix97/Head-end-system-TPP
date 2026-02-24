@@ -34,13 +34,13 @@ pub enum DeviceManagerError {
 pub struct DeviceManager {
     /// This node's ID
     local_node_id: Uuid,
-    /// Total number of local buckets for this node (fixed)
+    /// Total number of local buckets for this node
     local_bucket_count: i32,
     /// Device UUIDs owned by this node
     owned_devices: HashSet<Uuid>,
     /// Database handle
     database: Database,
-    /// Scheduler (owned)
+    /// Scheduler
     scheduler: Scheduler,
 }
 
