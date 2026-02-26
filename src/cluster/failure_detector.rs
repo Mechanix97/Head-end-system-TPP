@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use common::database::api::Database;
 
-use crate::device_manager::DeviceManager;
+use device_manager::DeviceManager;
 use crate::membership::{MembershipList, broadcast_message, send_message};
 use crate::node::ClusterConfig;
 use crate::protocol::ClusterMessage;
@@ -166,10 +166,19 @@ async fn handle_dead_node(
         warn!("Failed to broadcast NODE_DEAD: {}", e);
     }
 
+    // Extract active nodes from membership for redistribution
+    let other_active_nodes: Vec<(uuid::Uuid, usize)> = {
+        let m = membership.read().await;
+        m.active_nodes()
+            .iter()
+            .map(|n| (n.node_id, n.device_count as usize))
+            .collect()
+    };
+
     // Trigger device redistribution
     let redistribute_result = {
         let mut device_manager = device_manager.write().await;
-        device_manager.redistribute_from_failed(node_id).await
+        device_manager.redistribute_from_failed(node_id, other_active_nodes).await
     };
 
     if let Err(e) = redistribute_result {

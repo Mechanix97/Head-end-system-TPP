@@ -1,12 +1,12 @@
 pub mod backdoor;
 
 use common::{database::DatabaseError, messages::MessageError};
-use scheduler::error::SchedulerError;
+use device_manager::DeviceManagerError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackdoorError {
-    #[error("Scheduler Error: {0}")]
-    SchedulerErr(#[from] SchedulerError),
+    #[error("Device Manager Error: {0}")]
+    DeviceManagerErr(#[from] DeviceManagerError),
     #[error("io error: {0}")]
     TcpError(#[from] std::io::Error),
     #[error("Message error: {0}")]

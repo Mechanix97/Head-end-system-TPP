@@ -182,6 +182,7 @@ dependencies = [
  "bytes",
  "chrono",
  "common",
+ "device_manager",
  "futures",
  "futures-util",
  "hex",
@@ -345,11 +346,11 @@ dependencies = [
  "bytes",
  "chrono",
  "common",
+ "device_manager",
  "hostname",
  "local-ip-address",
  "metrics",
  "rand",
- "scheduler",
  "thiserror 2.0.17",
  "tokio",
  "tokio-util",
@@ -535,6 +536,19 @@ checksum = "ab63b0e2bf4d5928aff72e83a7dace85d7bba5fe12dcc3c5a572d78caffd3f3c"
 dependencies = [
  "derive_builder_core",
  "syn 2.0.106",
+]
+
+[[package]]
+name = "device_manager"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "common",
+ "scheduler",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -814,6 +828,7 @@ dependencies = [
  "clap",
  "cluster",
  "common",
+ "device_manager",
  "hostname",
  "metrics",
  "scheduler",
