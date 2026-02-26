@@ -320,17 +320,6 @@ impl Engine for PostgresDB {
         Ok(bucket)
     }
 
-    async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError> {
-        let query = "DELETE FROM T_BUCKETS WHERE FK_DEVICE = $1";
-
-        sqlx::query(query)
-            .bind(device_id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-        Ok(())
-    }
-
     // schedule connection
     async fn schedule_connection(
         &self,
@@ -697,60 +686,6 @@ impl Engine for PostgresDB {
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         Ok(())
-    }
-
-    async fn get_scheduled_connections_by_owner(
-        &self,
-        node_id: Uuid,
-    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
-        let query = r#"
-            SELECT sc.fk_device, sc.schedule_time, sc.connection_time, sc.status, sc.job_id, sc.renewable
-            FROM T_SCHEDULED_CONNECTIONS sc
-            INNER JOIN T_BUCKETS b ON sc.fk_device = b.fk_device
-            WHERE b.FK_NODE = $1 AND sc.status = 'awaiting'
-            ORDER BY sc.schedule_time ASC
-        "#;
-
-        let rows = sqlx::query(query)
-            .bind(node_id)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
-        let scheduled = rows
-            .into_iter()
-            .map(|row| {
-                let fk_device: Uuid = row
-                    .try_get("fk_device")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                let schedule_time: NaiveDateTime = row
-                    .try_get("schedule_time")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                let connection_time: Option<NaiveDateTime> = row
-                    .try_get("connection_time")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                let status = row
-                    .try_get("status")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                let job_id: Option<Uuid> = row
-                    .try_get("job_id")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                let renewable: bool = row
-                    .try_get("renewable")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
-                Ok(ScheduledConnection {
-                    fk_device,
-                    schedule_time,
-                    connection_time,
-                    status,
-                    job_id,
-                    renewable,
-                })
-            })
-            .collect::<Result<Vec<_>, DatabaseError>>()?;
-
-        Ok(scheduled)
     }
 
     async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError> {

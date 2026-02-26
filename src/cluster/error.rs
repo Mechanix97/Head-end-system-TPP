@@ -1,6 +1,7 @@
 //! Error types for the cluster module.
 
 use common::database::DatabaseError;
+use device_manager::DeviceManagerError;
 
 /// Errors that can occur in cluster operations.
 #[derive(Debug, thiserror::Error)]
@@ -16,6 +17,10 @@ pub enum ClusterError {
     /// Database error
     #[error("Database error: {0}")]
     DatabaseError(#[from] DatabaseError),
+
+    /// Device manager error
+    #[error("Device manager error: {0}")]
+    DeviceManagerError(#[from] DeviceManagerError),
 
     /// Node not found in the cluster
     #[error("Node not found: {0}")]

@@ -9,15 +9,6 @@ pub struct Schedule {
     pub year: usize,
 }
 
-impl Schedule {
-    pub fn as_cron(&self) -> String {
-        format!(
-            "{} {} {} {} {} * {}",
-            self.sec, self.min, self.hour, self.day, self.mon, self.year
-        )
-    }
-}
-
 impl fmt::Display for Schedule {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(

@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # local crates
-scheduler.workspace = true
+device_manager.workspace = true
 common.workspace = true
 metrics.workspace = true
 
@@ -21,6 +21,9 @@ rand.workspace = true
 hex.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+
+[dev-dependencies]
+scheduler.workspace = true
 
 [lib]
 path = "./mod.rs"

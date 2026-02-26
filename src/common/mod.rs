@@ -1,4 +1,3 @@
-pub mod connection;
 pub mod database;
 pub mod delegated_device;
 pub mod device;
