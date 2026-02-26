@@ -136,11 +136,6 @@ impl Engine for InMemoryDB {
             .ok_or(DatabaseError::NoDataFound)
     }
 
-    async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError> {
-        self.inner.lock().await.buckets.remove(&device_id);
-        Ok(())
-    }
-
     // schedule connection
     async fn schedule_connection(
         &self,
@@ -292,32 +287,6 @@ impl Engine for InMemoryDB {
         Ok(())
     }
 
-    async fn get_scheduled_connections_by_owner(
-        &self,
-        node_id: Uuid,
-    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
-        let lock = self.inner.lock().await;
-
-        // Get device IDs owned by this node via bucket assignments
-        let owned_devices: std::collections::HashSet<Uuid> = lock
-            .buckets
-            .iter()
-            .filter(|(_, (_, owner))| *owner == node_id)
-            .map(|(device_id, _)| *device_id)
-            .collect();
-
-        // Filter scheduled connections for owned devices with 'awaiting' status
-        Ok(lock
-            .scheduled_connections
-            .values()
-            .filter(|conn| {
-                owned_devices.contains(&conn.fk_device)
-                    && matches!(conn.status, ScheduledStatus::Awaiting)
-            })
-            .cloned()
-            .collect())
-  }
-  
     async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError> {
         let inner = self.inner.lock().await;
         let device_ids: Vec<Uuid> = inner.devices.keys().copied().collect();

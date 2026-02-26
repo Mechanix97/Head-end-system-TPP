@@ -149,11 +149,6 @@ impl Database {
         self.engine.get_bucket_number(device_id).await
     }
 
-    /// Removes a device from its assigned bucket.
-    pub async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError> {
-        self.engine.remove_device_from_bucket(device_id).await
-    }
-
     // ========== Connection scheduling ==========
 
     /// Schedules a periodic connection for a device.
@@ -237,14 +232,6 @@ impl Database {
         self.engine.set_device_owner(device_id, node_id).await
     }
 
-    /// Gets scheduled connections for devices owned by a specific node.
-    pub async fn get_scheduled_connections_by_owner(
-        &self,
-        node_id: Uuid,
-    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
-        self.engine.get_scheduled_connections_by_owner(node_id).await
-    }
-  
     // ========== Device queries ==========
 
     /// Returns a list of all device UUIDs in the database.
@@ -315,7 +302,6 @@ pub trait Engine: Debug + Send + Sync {
         node_id: Uuid,
     ) -> Result<(), DatabaseError>;
     async fn get_bucket_number(&self, device_id: Uuid) -> Result<i32, DatabaseError>;
-    async fn remove_device_from_bucket(&self, device_id: Uuid) -> Result<(), DatabaseError>;
 
     // ========== Connection scheduling ==========
     async fn schedule_connection(
@@ -362,11 +348,6 @@ pub trait Engine: Debug + Send + Sync {
     /// Sets the owner node for a device
     async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError>;
 
-    /// Gets scheduled connections for devices owned by a specific node
-    async fn get_scheduled_connections_by_owner(
-        &self,
-        node_id: Uuid,
-    ) -> Result<Vec<ScheduledConnection>, DatabaseError>;
     // ========== Device queries ==========
     async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError>;
 }

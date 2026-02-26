@@ -19,7 +19,6 @@ pub static METRICS_CONNECTIONS: LazyLock<MetricsConns> =
 /// - `ack_timeout_count`: Counter for ACKs that exceeded the timeout threshold
 /// - `scheduled_devices_total`: Gauge for total number of scheduled devices
 /// - `devices_per_bucket`: Gauge for devices in each scheduler bucket
-/// - `scheduler_jobs_active`: Gauge for active scheduler jobs
 /// - `errors_total`: Counter for errors by component and type
 /// - `messages_total`: Counter for messages by type and direction
 #[derive(Debug)]
@@ -39,8 +38,6 @@ pub struct MetricsConns {
     pub scheduled_devices_total: IntGauge,
     /// Number of devices assigned to each bucket (label: bucket)
     pub devices_per_bucket: IntGaugeVec,
-    /// Number of active scheduler jobs
-    pub scheduler_jobs_active: IntGauge,
 
     // Error metrics
     /// Total errors by component and error type (labels: component, error_type)
@@ -107,12 +104,6 @@ impl MetricsConns {
         )
         .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
-        let scheduler_jobs_active = IntGauge::new(
-            "scheduler_jobs_active",
-            "Number of active scheduler jobs",
-        )
-        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-
         // Error metrics
         let errors_total = IntCounterVec::new(
             Opts::new("errors_total", "Total errors by component and type"),
@@ -144,9 +135,6 @@ impl MetricsConns {
             .register(Box::new(devices_per_bucket.clone()))
             .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
-            .register(Box::new(scheduler_jobs_active.clone()))
-            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-        registry
             .register(Box::new(errors_total.clone()))
             .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
@@ -160,7 +148,6 @@ impl MetricsConns {
             ack_timeout_count,
             scheduled_devices_total,
             devices_per_bucket,
-            scheduler_jobs_active,
             errors_total,
             messages_total,
         })
