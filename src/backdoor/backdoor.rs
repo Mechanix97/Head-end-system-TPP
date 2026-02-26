@@ -37,10 +37,8 @@ pub async fn init_backdoor(
 
     let ack_timeout_duration = ack_timeout_duration.unwrap_or(ACK_TIMEOUT_DURATION_MS);
 
-    let scheduler_clone: Arc<RwLock<Scheduler>> = scheduler.clone();
     let codec = MessageCodec;
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
-    let local_node_id = node_id; // Uuid is Copy
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         // TODO have multiple threads receiving requests, maybe a threadpool
@@ -70,10 +68,10 @@ pub async fn init_backdoor(
                             &mut framed,
                             msg,
                             socket_addr,
-                            &scheduler_clone,
+                            &scheduler,
                             ack_timeout_duration,
                             database.clone(),
-                            local_node_id,
+                            node_id,
                         )
                         .await
                         {
@@ -94,7 +92,7 @@ pub async fn init_backdoor(
                         .with_label_values(&["ack", "inbound"])
                         .inc();
                     if let Err(err) = handle_backdoor_ack_msg(
-                        &scheduler_clone,
+                        &scheduler,
                         msg,
                         socket_addr,
                         database.clone(),
