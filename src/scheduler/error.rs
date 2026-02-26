@@ -19,16 +19,8 @@ pub enum SchedulerError {
 
 #[derive(Error, Debug)]
 pub enum TaskError {
-    #[error("Error in job scheduler: {0}")]
-    JobSchedulerError(#[from] JobSchedulerError),
     #[error("Error in database: {0}")]
     DatabaseError(#[from] DatabaseError),
-    #[error("Parse Error: {0}")]
-    ParseError(String),
-    #[error("No schedule defined Error")]
-    NoScheduleDefined,
-    #[error("No bucket defined")]
-    NoBucketDefined,
     #[error("Device has no IP address")]
     DeviceWithNoIP,
     #[error("IO error: {0}")]

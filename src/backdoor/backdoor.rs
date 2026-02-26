@@ -39,7 +39,6 @@ pub async fn init_backdoor(
 
     let codec = MessageCodec;
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
-    let local_node_id = node_id; // Uuid is Copy
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         // TODO have multiple threads receiving requests, maybe a threadpool
@@ -71,7 +70,7 @@ pub async fn init_backdoor(
                             socket_addr,
                             ack_timeout_duration,
                             database.clone(),
-                            local_node_id,
+                            node_id,
                             device_manager.clone(),
                         )
                         .await

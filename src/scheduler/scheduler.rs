@@ -16,15 +16,6 @@ use common::scheduled_connection::ScheduledConnection;
 use common::scheduled_connection::ScheduledStatus;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
-/// Trait for cluster synchronization with the scheduler.
-///
-/// This trait allows the cluster manager to configure the scheduler
-/// without creating a circular dependency.
-pub trait SchedulerClusterSync {
-    /// Enables cluster mode with the given owned devices.
-    fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>);
-}
-
 /// Manages scheduled connections to IoT devices using a time-bucket algorithm.
 ///
 /// The scheduler divides the 24-hour day into N equal time slots (buckets) and
@@ -171,13 +162,10 @@ impl Scheduler {
 
         let next_wake_up = self.get_next_schedule(bucket_number as usize);
 
-        let next_wake_up =
-            NaiveDateTime::parse_from_str(&next_wake_up.to_string(), "%H:%M:%S %d/%m/%Y").map_err(
-                |e| {
-                    error!("Error parsing next_wakeup from Schedule: {}", e);
-                    SchedulerError::ParseError(e.to_string())
-                },
-            )?;
+        let next_wake_up = NaiveDateTime::try_from(&next_wake_up).map_err(|e| {
+            error!("Error building NaiveDateTime from Schedule: {}", e);
+            SchedulerError::ParseError(e)
+        })?;
 
         let job_id = self.create_wakeup_job(device_id, next_wake_up).await?;
 
@@ -331,43 +319,34 @@ impl Scheduler {
         device_id: Uuid,
         next_wake_up: NaiveDateTime,
     ) -> Result<Uuid, SchedulerError> {
-        let db_clone = self.database.clone();
+        let database = self.database.clone();
 
         let job = Job::new_async_tz(
             next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
             chrono_tz::UTC,
             move |job_id, _l| {
-                let db_clone = db_clone.clone();
+                let db = database.clone();
                 Box::pin(async move {
-                    if let Err(e) = wake_up_device(job_id, device_id, db_clone.clone()).await {
+                    if let Err(e) = wake_up_device(job_id, device_id, &db).await {
                         error!("[Job {:#x}] Wake up device failed: {}", job_id, e);
 
-                        let mut connection = db_clone
-                            .get_scheduled_connection(device_id)
-                            .await
-                            .inspect_err(|e| {
-                                error!(
-                                    "[Job {:#x}] Failed to get scheduled connection: {}",
-                                    job_id, e
-                                )
-                            })
-                            .ok();
+                        match db.get_scheduled_connection(device_id).await {
+                            Err(e) => error!(
+                                "[Job {:#x}] Failed to get scheduled connection: {}",
+                                job_id, e
+                            ),
+                            Ok(mut conn) => {
+                                conn.status = ScheduledStatus::Lost;
+                                conn.renewable = false;
+                                conn.job_id = None;
 
-                        if let Some(conn) = &mut connection {
-                            conn.status = ScheduledStatus::Lost;
-                            conn.renewable = false;
-                            conn.job_id = None;
-
-                            db_clone
-                                .update_scheduled_connection(conn)
-                                .await
-                                .inspect_err(|e| {
+                                if let Err(e) = db.update_scheduled_connection(&conn).await {
                                     error!(
                                         "[Job {:#x}] Failed to update connection status: {}",
                                         job_id, e
-                                    )
-                                })
-                                .ok();
+                                    );
+                                }
+                            }
                         }
                     }
                 })
@@ -384,12 +363,6 @@ impl Scheduler {
         })?;
 
         Ok(job_id)
-    }
-}
-
-impl SchedulerClusterSync for Scheduler {
-    fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>) {
-        self.enable_cluster_mode(owned_devices);
     }
 }
 

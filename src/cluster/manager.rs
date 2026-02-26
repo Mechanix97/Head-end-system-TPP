@@ -73,22 +73,21 @@ impl ClusterManager {
     pub async fn start(&mut self) -> Result<(), ClusterError> {
         info!("Starting cluster manager for node {}", self.config.node_id);
 
-        //  1. Loading device ownership from database
+        // 1. Load device ownership from database; if first node, also claim all devices
         {
             let mut dm = self.device_manager.write().await;
             dm.load_from_database().await?;
+
+            if self.config.cluster_seeds.is_empty() {
+                info!("First node in cluster, claiming all devices");
+                let claimed = dm.claim_all_devices().await?;
+                info!("Claimed {} unassigned devices", claimed.len());
+            }
         }
 
-        // 2. Contacting seed nodes if provided
-        // If this is a new node joining an existing cluster, announce ourselves
+        // 2. If joining an existing cluster, contact seed nodes
         if !self.config.cluster_seeds.is_empty() {
             self.join_cluster().await?;
-        } else {
-            // First node in cluster - claim all devices
-            info!("First node in cluster, claiming all devices");
-            let mut dm = self.device_manager.write().await;
-            let claimed = dm.claim_all_devices().await?;
-            info!("Claimed {} unassigned devices", claimed.len());
         }
 
         // Register this node in the database
