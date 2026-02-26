@@ -253,7 +253,7 @@ impl DelegationHandler {
             from_node_id, reason
         );
 
-        // In a production system, we'd try another node
+        // TODO: In a production system, we'd try another node
         Err(ClusterError::DelegationRejected(reason))
     }
 
