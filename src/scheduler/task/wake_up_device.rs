@@ -20,7 +20,7 @@ const RESPONSE_TIMEOUT_SECS: u64 = 30;
 pub async fn wake_up_device(
     job_id: Uuid,
     device_id: Uuid,
-    database: Database,
+    database: &Database,
 ) -> Result<(), TaskError> {
     info!("[Job {:#x}] Wake up device {:#x}", job_id, device_id);
 

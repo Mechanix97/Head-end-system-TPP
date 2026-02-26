@@ -16,15 +16,6 @@ use common::scheduled_connection::ScheduledConnection;
 use common::scheduled_connection::ScheduledStatus;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
-/// Trait for cluster synchronization with the scheduler.
-///
-/// This trait allows the cluster manager to configure the scheduler
-/// without creating a circular dependency.
-pub trait SchedulerClusterSync {
-    /// Enables cluster mode with the given owned devices.
-    fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>);
-}
-
 /// Manages scheduled connections to IoT devices using a time-bucket algorithm.
 ///
 /// The scheduler divides the 24-hour day into N equal time slots (buckets) and
@@ -328,18 +319,18 @@ impl Scheduler {
         device_id: Uuid,
         next_wake_up: NaiveDateTime,
     ) -> Result<Uuid, SchedulerError> {
-        let db_clone = self.database.clone();
+        let database = self.database.clone();
 
         let job = Job::new_async_tz(
             next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
             chrono_tz::UTC,
             move |job_id, _l| {
-                let db_clone = db_clone.clone();
+                let db = database.clone();
                 Box::pin(async move {
-                    if let Err(e) = wake_up_device(job_id, device_id, db_clone.clone()).await {
+                    if let Err(e) = wake_up_device(job_id, device_id, &db).await {
                         error!("[Job {:#x}] Wake up device failed: {}", job_id, e);
 
-                        let mut connection = db_clone
+                        let mut connection = db
                             .get_scheduled_connection(device_id)
                             .await
                             .inspect_err(|e| {
@@ -355,8 +346,7 @@ impl Scheduler {
                             conn.renewable = false;
                             conn.job_id = None;
 
-                            db_clone
-                                .update_scheduled_connection(conn)
+                            db.update_scheduled_connection(conn)
                                 .await
                                 .inspect_err(|e| {
                                     error!(
@@ -381,12 +371,6 @@ impl Scheduler {
         })?;
 
         Ok(job_id)
-    }
-}
-
-impl SchedulerClusterSync for Scheduler {
-    fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>) {
-        self.enable_cluster_mode(owned_devices);
     }
 }
 
