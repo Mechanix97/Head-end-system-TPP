@@ -326,28 +326,6 @@ impl Scheduler {
         Ok(())
     }
 
-    /// Assigns a device to a local bucket after successful connection.
-    ///
-    /// This is called after a delegated device connects successfully.
-    /// The device is assigned to the least-loaded local bucket.
-    pub async fn assign_local_bucket_after_connection(
-        &mut self,
-        device_id: Uuid,
-    ) -> Result<i32, SchedulerError> {
-        let bucket_number = self.get_bucket_number().await;
-
-        self.database
-            .add_device_to_bucket(device_id, bucket_number as i32, self.local_node_id)
-            .await?;
-
-        info!(
-            "Assigned device {:?} to local bucket {} after connection",
-            device_id, bucket_number
-        );
-
-        Ok(bucket_number as i32)
-    }
-
     async fn create_wakeup_job(
         &mut self,
         device_id: Uuid,
