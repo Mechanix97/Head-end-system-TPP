@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use common::database::api::Database;
 
-use crate::device_manager::DeviceManager;
+use device_manager::DeviceManager;
 use crate::membership::{MembershipList, broadcast_message, send_message};
 use crate::node::ClusterConfig;
 use crate::protocol::ClusterMessage;

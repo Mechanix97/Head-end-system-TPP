@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::delegation::DelegationHandler;
-use crate::device_manager::DeviceManager;
+use device_manager::DeviceManager;
 use crate::error::ClusterError;
 use crate::failure_detector::handle_probe_request;
 use crate::membership::MembershipList;

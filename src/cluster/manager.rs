@@ -12,7 +12,7 @@ use uuid::Uuid;
 use common::database::api::Database;
 
 use crate::delegation::DelegationHandler;
-use crate::device_manager::DeviceManager;
+use device_manager::DeviceManager;
 use crate::error::ClusterError;
 use crate::failure_detector::failure_detector_loop;
 use crate::heartbeat::heartbeat_loop;
