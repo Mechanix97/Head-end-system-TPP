@@ -22,7 +22,6 @@
 //! - `server`: UDP server for inter-node communication
 //! - `manager`: Main cluster manager that orchestrates everything
 
-pub mod device_manager;
 pub mod delegation;
 pub mod error;
 pub mod failure_detector;

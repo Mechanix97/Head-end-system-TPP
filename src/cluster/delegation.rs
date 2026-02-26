@@ -14,7 +14,7 @@ use uuid::Uuid;
 use common::database::api::Database;
 use common::delegated_device::DelegatedDevice;
 
-use crate::device_manager::DeviceManager;
+use device_manager::DeviceManager;
 use crate::error::ClusterError;
 use crate::membership::{send_message, MembershipList};
 use crate::protocol::{
@@ -22,16 +22,12 @@ use crate::protocol::{
     DelegationReason,
 };
 
-use scheduler::scheduler::Scheduler;
-
 /// Handles outgoing delegation requests.
 pub struct DelegationHandler {
     /// This node's ID
     local_node_id: Uuid,
     /// Device manager
     device_manager: Arc<RwLock<DeviceManager>>,
-    /// Scheduler (for scheduling delegated devices)
-    scheduler: Arc<RwLock<Scheduler>>,
     /// Membership list
     membership: Arc<RwLock<MembershipList>>,
     /// UDP socket for sending messages
@@ -45,7 +41,6 @@ impl DelegationHandler {
     pub fn new(
         local_node_id: Uuid,
         device_manager: Arc<RwLock<DeviceManager>>,
-        scheduler: Arc<RwLock<Scheduler>>,
         membership: Arc<RwLock<MembershipList>>,
         socket: Arc<UdpSocket>,
         database: Database,
@@ -53,7 +48,6 @@ impl DelegationHandler {
         Self {
             local_node_id,
             device_manager,
-            scheduler,
             membership,
             socket,
             database,
@@ -188,25 +182,11 @@ impl DelegationHandler {
             })
             .collect();
 
-        // Accept the delegation
+        // Accept the delegation: claim ownership in DB and schedule each device in one step
         let accepted_device_ids = {
-            let mut device_manager = self.device_manager.write().await;
-            device_manager.accept_delegation(delegated_devices.clone()).await?
+            let mut dm = self.device_manager.write().await;
+            dm.accept_delegation(delegated_devices).await?
         };
-
-        // Schedule the delegated devices at their original times
-        {
-            let mut scheduler = self.scheduler.write().await;
-            for device in &delegated_devices {
-                scheduler
-                    .schedule_delegated_device(device.device_id, device.schedule_time)
-                    .await
-                    .map_err(|e| {
-                        warn!("Failed to schedule delegated device {:?}: {}", device.device_id, e);
-                        ClusterError::SchedulerError(e.to_string())
-                    })?;
-            }
-        }
 
         // Send accept response
         let accept_payload = DelegateAcceptPayload {
@@ -250,17 +230,12 @@ impl DelegationHandler {
             payload.accepted_device_ids.len()
         );
 
-        // Update our device manager to release the devices
+        // Update our device manager to release the devices and remove from scheduler
         {
-            let mut device_manager = self.device_manager.write().await;
-            device_manager.release_devices(&payload.accepted_device_ids);
-        }
-
-        // Remove devices from scheduler's owned set
-        {
-            let mut scheduler = self.scheduler.write().await;
+            let mut dm = self.device_manager.write().await;
+            dm.release_devices(&payload.accepted_device_ids);
             for device_id in &payload.accepted_device_ids {
-                scheduler.remove_owned_device(*device_id);
+                dm.remove_scheduled_device(*device_id);
             }
         }
 
@@ -278,7 +253,7 @@ impl DelegationHandler {
             from_node_id, reason
         );
 
-        // In a production system, we'd try another node
+        // TODO: In a production system, we'd try another node
         Err(ClusterError::DelegationRejected(reason))
     }
 
@@ -351,4 +326,3 @@ impl DelegationHandler {
         Ok(())
     }
 }
-

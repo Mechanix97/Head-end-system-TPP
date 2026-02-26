@@ -20,24 +20,23 @@ use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
 use common::messages::message::MsgType;
 use common::registration_status::RegistrationStatus;
-use scheduler::scheduler::Scheduler;
+use device_manager::DeviceManager;
 
 const ACK_TIMEOUT_DURATION_MS: u64 = 30000;
 
 pub async fn init_backdoor(
-    scheduler: Arc<RwLock<Scheduler>>,
     ip: String,
     port: String,
     ack_timeout_duration: Option<u64>,
     database: Database,
     node_id: uuid::Uuid,
+    device_manager: Arc<RwLock<DeviceManager>>,
 ) -> Result<JoinHandle<()>, BackdoorError> {
     let socket = UdpSocket::bind(format!("{ip}:{port}")).await?;
     info!("Listening for device registration on {ip}:{port} via UDP");
 
     let ack_timeout_duration = ack_timeout_duration.unwrap_or(ACK_TIMEOUT_DURATION_MS);
 
-    let scheduler_clone: Arc<RwLock<Scheduler>> = scheduler.clone();
     let codec = MessageCodec;
     let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
     let local_node_id = node_id; // Uuid is Copy
@@ -70,10 +69,10 @@ pub async fn init_backdoor(
                             &mut framed,
                             msg,
                             socket_addr,
-                            &scheduler_clone,
                             ack_timeout_duration,
                             database.clone(),
                             local_node_id,
+                            device_manager.clone(),
                         )
                         .await
                         {
@@ -94,7 +93,7 @@ pub async fn init_backdoor(
                         .with_label_values(&["ack", "inbound"])
                         .inc();
                     if let Err(err) = handle_backdoor_ack_msg(
-                        &scheduler_clone,
+                        &device_manager,
                         msg,
                         socket_addr,
                         database.clone(),
@@ -131,10 +130,10 @@ async fn handle_backdoor_register_msg(
     framed: &mut UdpFramed<MessageCodec>,
     msg: Message,
     socket_addr: SocketAddr,
-    scheduler: &Arc<RwLock<Scheduler>>,
     ack_timeout_duration: u64,
     database: Database,
     _node_id: uuid::Uuid,
+    device_manager: Arc<RwLock<DeviceManager>>,
 ) -> Result<(), BackdoorError> {
     // TODO: check that the information provided is correct #10
     if msg.device_id != 0 {
@@ -145,7 +144,7 @@ async fn handle_backdoor_register_msg(
     let device = Device::new(socket_addr, None, None, None);
 
     database.add_device(&device).await?;
-    scheduler.write().await.register_device(&device).await?;
+    device_manager.write().await.register_device(&device).await?;
     database
         .register_device(device.id, msg.get_timestamp()?)
         .await?;
@@ -174,7 +173,7 @@ async fn handle_backdoor_register_msg(
 /// Checks if the device has requested the registration in the interval (300 ms)
 /// and starts the scheduler sequence.
 async fn handle_backdoor_ack_msg(
-    scheduler: &Arc<RwLock<Scheduler>>,
+    device_manager: &Arc<RwLock<DeviceManager>>,
     msg: Message,
     socket_addr: SocketAddr,
     database: Database,
@@ -224,10 +223,10 @@ async fn handle_backdoor_ack_msg(
                 )
                 .await?;
 
-            scheduler
+            device_manager
                 .write()
                 .await
-                .schedule_next_wakeup_job(device.id)
+                .schedule_next_wakeup(device.id)
                 .await?;
         }
     }
@@ -258,6 +257,7 @@ mod tests {
     use bytes::BytesMut;
     use common::database::DatabaseType;
     use common::database::api::Database;
+    use device_manager::DeviceManager;
     use scheduler::scheduler::Scheduler;
     use std::sync::Arc;
     use tokio::sync::RwLock;
@@ -266,22 +266,24 @@ mod tests {
 
     use super::*;
 
-    async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<Scheduler>> {
+    async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<DeviceManager>> {
         let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
         let node_id = uuid::Uuid::new_v4();
-        let scheduler: Arc<RwLock<Scheduler>> =
-            Arc::new(RwLock::new(Scheduler::new(1, db.clone(), node_id).await.unwrap()));
+        let scheduler = Scheduler::new(1, db.clone(), node_id).await.unwrap();
+        let device_manager = Arc::new(RwLock::new(
+            DeviceManager::new(node_id, 1, db.clone(), scheduler),
+        ));
         init_backdoor(
-            scheduler.clone(),
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
             Some(300),
             db.clone(),
             node_id,
+            device_manager.clone(),
         )
         .await
         .unwrap();
-        scheduler
+        device_manager
     }
 
     /// This test checks the normal backdoor registration event
@@ -292,7 +294,7 @@ mod tests {
     async fn test_new_connection() {
         // 0. intial backdoor setup
         let backdoor_port = "8081";
-        let scheduler = set_up_hes(backdoor_port).await;
+        let dm = set_up_hes(backdoor_port).await;
 
         // 1. sends registration request msg
         let register_request: Message = Message::new_register_request_message().unwrap();
@@ -307,7 +309,7 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
-        let connecitons_number = scheduler
+        let connecitons_number = dm
             .read()
             .await
             .get_scheduled_connections()
@@ -333,7 +335,7 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
 
-        let connecitons_number = scheduler
+        let connecitons_number = dm
             .read()
             .await
             .get_scheduled_connections()
@@ -352,9 +354,9 @@ mod tests {
     async fn test_ack_timeout() {
         // 0. intial backdoor setup
         let backdoor_port = "8082";
-        let scheduler = set_up_hes(backdoor_port).await;
+        let dm = set_up_hes(backdoor_port).await;
 
-        let connecitons_number = scheduler
+        let connecitons_number = dm
             .read()
             .await
             .get_scheduled_connections()
@@ -374,7 +376,7 @@ mod tests {
             .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
             .await
             .expect("Failed to send RegisterRequest");
-        let connecitons_number = scheduler
+        let connecitons_number = dm
             .read()
             .await
             .get_scheduled_connections()
@@ -402,7 +404,7 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
 
-        let connecitons_number = scheduler
+        let connecitons_number = dm
             .read()
             .await
             .get_scheduled_connections()
@@ -417,7 +419,7 @@ mod tests {
     async fn test_multiple_connections() {
         // 0. intial backdoor setup
         let backdoor_port = "8083";
-        let scheduler = set_up_hes(backdoor_port).await;
+        let dm = set_up_hes(backdoor_port).await;
 
         for i in 0..10 {
             // 1. sends registration request msg
@@ -433,7 +435,7 @@ mod tests {
                 .await
                 .expect("Failed to send RegisterRequest");
             sleep(Duration::from_millis(100)).await;
-            let connecitons_number = scheduler
+            let connecitons_number = dm
                 .read()
                 .await
                 .get_scheduled_connections()
@@ -458,7 +460,7 @@ mod tests {
                 .expect("Failed to send RegisterRequest");
             sleep(Duration::from_millis(100)).await;
         }
-        let connecitons_number = scheduler
+        let connecitons_number = dm
             .read()
             .await
             .get_scheduled_connections()
@@ -473,7 +475,7 @@ mod tests {
     async fn test_parallel_connections() {
         // 0. intial backdoor setup
         let backdoor_port = "8084";
-        let scheduler = set_up_hes(backdoor_port).await;
+        let dm = set_up_hes(backdoor_port).await;
 
         // 1a. sends registration request msg
         let register_request: Message = Message::new_register_request_message().unwrap();
@@ -488,7 +490,7 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
-        let connecitons_number = scheduler
+        let connecitons_number = dm
             .read()
             .await
             .get_scheduled_connections()
@@ -510,7 +512,7 @@ mod tests {
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
-        let connecitons_number = scheduler
+        let connecitons_number = dm
             .read()
             .await
             .get_scheduled_connections()
@@ -553,7 +555,7 @@ mod tests {
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
 
-        let connecitons_number = scheduler
+        let connecitons_number = dm
             .read()
             .await
             .get_scheduled_connections()

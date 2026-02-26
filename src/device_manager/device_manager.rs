@@ -1,50 +1,56 @@
-//! Device ownership and delegation management.
-//!
-//! Handles the distribution of devices across cluster nodes.
-
 use std::collections::HashSet;
-use std::sync::Arc;
 
-use chrono::Utc;
-use tokio::sync::RwLock;
+use chrono::{NaiveDateTime, Utc};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use common::database::DatabaseError;
 use common::database::api::Database;
 use common::delegated_device::DelegatedDevice;
+use common::device::Device;
+use common::scheduled_connection::ScheduledConnection;
+use scheduler::error::SchedulerError;
+use scheduler::scheduler::Scheduler;
 
-use crate::error::ClusterError;
-use crate::membership::MembershipList;
+/// Errors that can occur in device manager operations.
+#[derive(Debug, thiserror::Error)]
+pub enum DeviceManagerError {
+    #[error("Database error: {0}")]
+    Database(#[from] DatabaseError),
+    #[error("Scheduler error: {0}")]
+    Scheduler(#[from] SchedulerError),
+    #[error("No active nodes available for redistribution")]
+    NoNodesAvailable,
+}
 
-/// Manages device ownership across cluster nodes.
-#[derive(Debug)]
+/// Manages device ownership for a single node with integrated scheduling.
 pub struct DeviceManager {
     /// This node's ID
     local_node_id: Uuid,
-    /// Total number of local buckets for this node (fixed)
+    /// Total number of local buckets for this node
     local_bucket_count: i32,
     /// Device UUIDs owned by this node
     owned_devices: HashSet<Uuid>,
     /// Database handle
     database: Database,
-    /// Reference to membership list for node info
-    membership: Arc<RwLock<MembershipList>>,
+    /// Scheduler
+    scheduler: Scheduler,
 }
 
 impl DeviceManager {
-    /// Creates a new device manager.
+    /// Creates a new device manager with an owned scheduler.
     pub fn new(
         local_node_id: Uuid,
         local_bucket_count: i32,
         database: Database,
-        membership: Arc<RwLock<MembershipList>>,
+        scheduler: Scheduler,
     ) -> Self {
         Self {
             local_node_id,
             local_bucket_count,
             owned_devices: HashSet::new(),
             database,
-            membership,
+            scheduler,
         }
     }
 
@@ -68,8 +74,72 @@ impl DeviceManager {
         self.owned_devices.contains(&device_id)
     }
 
+    /// Gets the local bucket count for this node.
+    pub fn local_bucket_count(&self) -> i32 {
+        self.local_bucket_count
+    }
+
+    // --- Scheduler wrapper methods ---
+
+    /// Registers a device in the scheduler (assigns to a time bucket) and adds to owned set.
+    pub async fn register_device(&mut self, device: &Device) -> Result<(), DeviceManagerError> {
+        self.scheduler.register_device(device).await?;
+        self.owned_devices.insert(device.id);
+        Ok(())
+    }
+
+    /// Schedules the next wakeup job for a device.
+    pub async fn schedule_next_wakeup(
+        &mut self,
+        device_id: Uuid,
+    ) -> Result<(), DeviceManagerError> {
+        self.scheduler.schedule_next_wakeup_job(device_id).await?;
+        Ok(())
+    }
+
+    /// Schedules a delegated device at its original schedule time.
+    pub async fn schedule_delegated_device(
+        &mut self,
+        device_id: Uuid,
+        schedule_time: NaiveDateTime,
+    ) -> Result<(), DeviceManagerError> {
+        self.scheduler
+            .schedule_delegated_device(device_id, schedule_time)
+            .await?;
+        Ok(())
+    }
+
+    /// Removes a device from the scheduler's owned set.
+    pub fn remove_scheduled_device(&mut self, device_id: Uuid) {
+        self.scheduler.remove_owned_device(device_id);
+    }
+
+    /// Enables cluster mode on the scheduler with the given owned devices.
+    pub fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>) {
+        self.scheduler.enable_cluster_mode(owned_devices);
+    }
+
+    /// Gets scheduled connections (delegates to scheduler).
+    pub async fn get_scheduled_connections(
+        &self,
+    ) -> Result<Vec<ScheduledConnection>, DeviceManagerError> {
+        self.scheduler
+            .get_scheduled_connections()
+            .await
+            .map_err(DeviceManagerError::Scheduler)
+    }
+
+    // --- Device ownership methods ---
+
+    /// Adds a newly registered device to the owned set.
+    ///
+    /// Called when a device registers at runtime via the backdoor server.
+    pub fn add_owned_device(&mut self, device_id: Uuid) {
+        self.owned_devices.insert(device_id);
+    }
+
     /// Loads device ownership from the database on startup.
-    pub async fn load_from_database(&mut self) -> Result<(), ClusterError> {
+    pub async fn load_from_database(&mut self) -> Result<(), DeviceManagerError> {
         let devices = self
             .database
             .get_devices_by_owner(self.local_node_id)
@@ -91,8 +161,7 @@ impl DeviceManager {
     ///
     /// This is called when a new node joins. It will claim any devices that
     /// don't have an owner (orphaned from a dead node or never assigned).
-    pub async fn claim_unassigned_devices(&mut self) -> Result<Vec<Uuid>, ClusterError> {
-        // Query all devices
+    pub async fn claim_unassigned_devices(&mut self) -> Result<Vec<Uuid>, DeviceManagerError> {
         let all_devices = self.database.get_devices_by_owner(Uuid::nil()).await?;
 
         if all_devices.is_empty() {
@@ -102,7 +171,6 @@ impl DeviceManager {
 
         info!("Claiming {} unassigned devices", all_devices.len());
 
-        // Claim all unassigned devices
         for device_id in &all_devices {
             self.database
                 .set_device_owner(*device_id, self.local_node_id)
@@ -113,11 +181,8 @@ impl DeviceManager {
         Ok(all_devices)
     }
 
-    /// Claims all devices when creating a new cluster.
-    ///
-    /// This is called when a new node joins and there is no other node in the cluster
-    pub async fn claim_all_devices(&mut self) -> Result<Vec<Uuid>, ClusterError> {
-        // Query all devices
+    /// Claims all devices when creating a new cluster (first node).
+    pub async fn claim_all_devices(&mut self) -> Result<Vec<Uuid>, DeviceManagerError> {
         let all_devices = self.database.get_all_device_ids().await?;
 
         if all_devices.is_empty() {
@@ -127,7 +192,6 @@ impl DeviceManager {
 
         info!("Claiming {} devices", all_devices.len());
 
-        // Claim all  devices
         for device_id in &all_devices {
             self.database
                 .set_device_owner(*device_id, self.local_node_id)
@@ -140,18 +204,13 @@ impl DeviceManager {
 
     /// Gets devices to delegate when a new node joins for load balancing.
     ///
-    /// This is called when a new node joins to give it a fair share of devices.
-    /// Returns the devices that should be delegated.
+    /// `active_node_count` is the total number of active nodes in the cluster
+    /// (including this node), provided by the caller from the membership list.
     pub async fn get_devices_for_delegation(
         &mut self,
         target_node_id: Uuid,
-    ) -> Result<Vec<DelegatedDevice>, ClusterError> {
-        // Calculate fair share
-        let active_node_count = {
-            let membership = self.membership.read().await;
-            membership.active_node_count()
-        };
-
+        active_node_count: usize,
+    ) -> Result<Vec<DelegatedDevice>, DeviceManagerError> {
         if active_node_count <= 1 {
             return Ok(Vec::new());
         }
@@ -168,23 +227,17 @@ impl DeviceManager {
             return Ok(Vec::new());
         }
 
-        // Select devices to give away and get their scheduled connections
         let device_ids_to_give: Vec<Uuid> =
             self.owned_devices.iter().copied().take(to_give).collect();
 
         let mut delegated_devices = Vec::new();
 
         for device_id in &device_ids_to_give {
-            // Get device info
             let device = self.database.get_device(*device_id).await?;
 
-            // Get scheduled connection for this device
             let schedule_time = match self.database.get_scheduled_connection(*device_id).await {
                 Ok(conn) => conn.schedule_time,
-                Err(_) => {
-                    // No scheduled connection, use current time + 1 day as default
-                    Utc::now().naive_utc() + chrono::Duration::days(1)
-                }
+                Err(_) => Utc::now().naive_utc() + chrono::Duration::days(1),
             };
 
             delegated_devices.push(DelegatedDevice::new(
@@ -206,25 +259,23 @@ impl DeviceManager {
         Ok(delegated_devices)
     }
 
-    /// Accepts delegated devices from another node.
-    ///
-    /// Returns the list of device IDs that were successfully accepted.
+    /// Accepts delegated devices: claims ownership in DB and schedules them at their original times.
     pub async fn accept_delegation(
         &mut self,
         devices: Vec<DelegatedDevice>,
-    ) -> Result<Vec<Uuid>, ClusterError> {
+    ) -> Result<Vec<Uuid>, DeviceManagerError> {
         info!("Accepting delegation of {} devices", devices.len());
 
         let mut accepted_ids = Vec::new();
 
         for device in devices {
-            // Set ownership in database
             self.database
                 .set_device_owner(device.device_id, self.local_node_id)
                 .await?;
-
-            // Add to owned set
             self.owned_devices.insert(device.device_id);
+            self.scheduler
+                .schedule_delegated_device(device.device_id, device.schedule_time)
+                .await?;
             accepted_ids.push(device.device_id);
         }
 
@@ -241,19 +292,20 @@ impl DeviceManager {
         info!("Released {} devices from ownership", device_ids.len());
     }
 
-    /// Gets devices to delegate when shutting down.
+    /// Gets all owned device IDs for shutdown delegation.
     pub fn devices_for_shutdown(&self) -> Vec<Uuid> {
         self.owned_devices.iter().copied().collect()
     }
 
-    /// Redistributes devices from a failed node.
+    /// Redistributes devices from a failed node across the remaining nodes.
     ///
-    /// This distributes the failed node's devices among remaining active nodes.
+    /// `other_active_nodes` is `Vec<(node_id, device_count)>` for nodes OTHER than self,
+    /// provided by the caller from the membership list. Self is added internally.
     pub async fn redistribute_from_failed(
         &mut self,
         failed_node_id: Uuid,
-    ) -> Result<(), ClusterError> {
-        // Get devices owned by failed node
+        other_active_nodes: Vec<(Uuid, usize)>,
+    ) -> Result<(), DeviceManagerError> {
         let orphaned = self.database.get_devices_by_owner(failed_node_id).await?;
 
         if orphaned.is_empty() {
@@ -270,28 +322,18 @@ impl DeviceManager {
             failed_node_id
         );
 
-        // Get active nodes sorted by device count (least loaded first)
-        let active_nodes: Vec<(Uuid, usize)> = {
-            let membership = self.membership.read().await;
-            let mut nodes: Vec<_> = membership
-                .active_nodes()
-                .iter()
-                .map(|n| (n.node_id, n.device_count as usize))
-                .collect();
-            // Include self
-            nodes.push((self.local_node_id, self.owned_devices.len()));
-            nodes.sort_by_key(|(_, count)| *count);
-            nodes
-        };
+        // Build node list: other active nodes + self
+        let mut all_nodes = other_active_nodes;
+        all_nodes.push((self.local_node_id, self.owned_devices.len()));
+        all_nodes.sort_by_key(|(_, count)| *count);
 
-        if active_nodes.is_empty() {
+        if all_nodes.is_empty() {
             warn!("No active nodes to redistribute devices to!");
-            return Err(ClusterError::NoNodesAvailable);
+            return Err(DeviceManagerError::NoNodesAvailable);
         }
 
-        // Distribute devices round-robin among active nodes, least loaded first
         for (i, device_id) in orphaned.iter().enumerate() {
-            let (target_node_id, _) = active_nodes[i % active_nodes.len()];
+            let (target_node_id, _) = all_nodes[i % all_nodes.len()];
 
             self.database
                 .set_device_owner(*device_id, target_node_id)
@@ -313,45 +355,26 @@ impl DeviceManager {
 
     /// Rebalances devices across the cluster based on load percentage.
     ///
-    /// Calculates how many devices to shed based on the difference between local load
-    /// and the average load of underloaded nodes. Redistributes devices to nodes with
-    /// the lowest load_percent first.
-    pub async fn rebalance_cluster(&mut self) -> Result<(), ClusterError> {
-        let (active_nodes, local_load, local_max) = {
-            let membership = self.membership.read().await;
-            let local_node = membership.local_node();
-            let nodes: Vec<_> = membership
-                .active_nodes()
-                .iter()
-                .map(|n| {
-                    (
-                        n.node_id,
-                        n.device_count,
-                        n.load_percent,
-                        n.max_device_suggested,
-                    )
-                })
-                .collect();
-            (
-                nodes,
-                local_node.load_percent,
-                local_node.max_device_suggested,
-            )
-        };
-
-        if active_nodes.is_empty() {
+    /// `other_active_nodes` is `Vec<(node_id, device_count, load_percent, max_device_suggested)>`
+    /// for nodes OTHER than self, provided by the caller from the membership list.
+    /// `local_load` and `local_max` are this node's current load metrics.
+    pub async fn rebalance_cluster(
+        &mut self,
+        other_active_nodes: Vec<(Uuid, u32, f32, u32)>,
+        local_load: f32,
+        local_max: u32,
+    ) -> Result<(), DeviceManagerError> {
+        if other_active_nodes.is_empty() {
             debug!("No active nodes to rebalance with");
             return Ok(());
         }
 
         let my_count = self.owned_devices.len();
 
-        // Calculate average load of cluster
-        let total_load: f32 = active_nodes.iter().map(|(_, _, load, _)| load).sum();
-        let avg_load = (total_load + local_load) / (active_nodes.len() + 1) as f32;
+        let total_load: f32 = other_active_nodes.iter().map(|(_, _, load, _)| load).sum();
+        let avg_load = (total_load + local_load) / (other_active_nodes.len() + 1) as f32;
 
-        // Find underloaded nodes (below average)
-        let mut underloaded: Vec<_> = active_nodes
+        let mut underloaded: Vec<_> = other_active_nodes
             .into_iter()
             .filter(|(_, _, load, _)| *load < avg_load)
             .collect();
@@ -364,11 +387,8 @@ impl DeviceManager {
             return Ok(());
         }
 
-        // Sort by load (lowest first)
         underloaded.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Calculate how many devices to give away based on load difference
-        // Goal: reduce our load to approximately the average
         let target_load = avg_load;
         let devices_to_shed = if local_max > 0 {
             let target_count = (target_load / 100.0 * local_max as f32) as usize;
@@ -393,7 +413,6 @@ impl DeviceManager {
             underloaded.len()
         );
 
-        // Give devices to underloaded nodes (distribute evenly, prioritize lowest load)
         let devices_to_give: Vec<Uuid> = self
             .owned_devices
             .iter()
@@ -402,10 +421,9 @@ impl DeviceManager {
             .collect();
 
         let mut device_idx = 0;
-        let devices_per_node = devices_to_shed.div_ceil(underloaded.len()); // Round up
+        let devices_per_node = devices_to_shed.div_ceil(underloaded.len());
 
         for (node_id, current_count, current_load, max_suggested) in underloaded {
-            // Calculate how many devices this node can take without exceeding average load
             let max_acceptable_count = if max_suggested > 0 {
                 (avg_load / 100.0 * max_suggested as f32) as u32
             } else {
@@ -450,11 +468,6 @@ impl DeviceManager {
     pub fn test_add_device(&mut self, device_id: Uuid) {
         self.owned_devices.insert(device_id);
     }
-
-    /// Gets the local bucket count for this node.
-    pub fn local_bucket_count(&self) -> i32 {
-        self.local_bucket_count
-    }
 }
 
 #[cfg(test)]
@@ -462,29 +475,29 @@ mod tests {
     use super::*;
     use common::database::{DatabaseType, api::Database};
 
+    async fn create_test_scheduler(db: Database, node_id: Uuid) -> Scheduler {
+        Scheduler::new(1, db, node_id).await.unwrap()
+    }
+
     #[tokio::test]
     async fn test_device_manager_creation() {
         let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
         let node_id = Uuid::new_v4();
-        let membership = Arc::new(RwLock::new(
-            MembershipList::new(crate::node::ClusterConfig {
-                node_id,
-                node_name: "test".to_string(),
-                cluster_ip: "127.0.0.1".to_string(),
-                cluster_port: 6570,
-                backdoor_port: 6565,
-                total_buckets: 48,
-                heartbeat_interval: std::time::Duration::from_secs(15),
-                suspect_timeout: std::time::Duration::from_secs(30),
-                dead_timeout: std::time::Duration::from_secs(60),
-                cluster_seeds: vec![],
-            })
-            .unwrap(),
-        ));
-
-        let manager = DeviceManager::new(node_id, 48, db, membership);
-
+        let scheduler = create_test_scheduler(db.clone(), node_id).await;
+        let manager = DeviceManager::new(node_id, 48, db, scheduler);
         assert_eq!(manager.device_count(), 0);
         assert_eq!(manager.local_bucket_count(), 48);
+    }
+
+    #[tokio::test]
+    async fn test_add_owned_device() {
+        let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
+        let node_id = Uuid::new_v4();
+        let scheduler = create_test_scheduler(db.clone(), node_id).await;
+        let mut manager = DeviceManager::new(node_id, 48, db, scheduler);
+        let device_id = Uuid::new_v4();
+        manager.add_owned_device(device_id);
+        assert!(manager.owns_device(device_id));
+        assert_eq!(manager.device_count(), 1);
     }
 }

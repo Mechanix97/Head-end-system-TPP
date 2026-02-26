@@ -10,6 +10,7 @@ use uuid::Uuid;
 use backdoor::backdoor::init_backdoor;
 use cluster::{ClusterConfig, ClusterManager};
 use common::database::{DatabaseType, api::Database, postgres::PostgresConnectionArgs};
+use device_manager::DeviceManager;
 use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
 
@@ -162,9 +163,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let db = Database::new(args.database_type, db_params).await?;
 
-    let scheduler = Arc::new(RwLock::new(
-        Scheduler::new(args.buckets_number, db.clone(), node_id).await?,
-    ));
+    let scheduler = Scheduler::new(args.buckets_number, db.clone(), node_id).await?;
+
+    let device_manager = Arc::new(RwLock::new(DeviceManager::new(
+        node_id,
+        args.buckets_number as i32,
+        db.clone(),
+        scheduler,
+    )));
 
     // Initialize cluster unless disabled
     let cluster_manager = if !args.disable_cluster {
@@ -180,14 +186,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )?;
 
         // Initialize cluster manager
-        let mut manager = ClusterManager::new(config, db.clone(), scheduler.clone()).await?;
+        let mut manager = ClusterManager::new(config, db.clone(), device_manager.clone()).await?;
 
         // Start cluster manager
         manager.start().await?;
 
         // Sync scheduler with cluster-owned devices
         let owned_devices = manager.get_owned_devices().await;
-        scheduler.write().await.enable_cluster_mode(owned_devices);
+        device_manager.write().await.enable_cluster_mode(owned_devices);
 
         info!("Cluster mode enabled");
         Some(manager)
@@ -197,12 +203,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let backdoor_joinhandle = init_backdoor(
-        scheduler.clone(),
         args.backdoor_ip,
         args.backdoor_port,
         None,
         db.clone(),
         node_id,
+        device_manager.clone(),
     )
     .await?;
 
