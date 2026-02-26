@@ -330,31 +330,23 @@ impl Scheduler {
                     if let Err(e) = wake_up_device(job_id, device_id, &db).await {
                         error!("[Job {:#x}] Wake up device failed: {}", job_id, e);
 
-                        let mut connection = db
-                            .get_scheduled_connection(device_id)
-                            .await
-                            .inspect_err(|e| {
-                                error!(
-                                    "[Job {:#x}] Failed to get scheduled connection: {}",
-                                    job_id, e
-                                )
-                            })
-                            .ok();
+                        match db.get_scheduled_connection(device_id).await {
+                            Err(e) => error!(
+                                "[Job {:#x}] Failed to get scheduled connection: {}",
+                                job_id, e
+                            ),
+                            Ok(mut conn) => {
+                                conn.status = ScheduledStatus::Lost;
+                                conn.renewable = false;
+                                conn.job_id = None;
 
-                        if let Some(conn) = &mut connection {
-                            conn.status = ScheduledStatus::Lost;
-                            conn.renewable = false;
-                            conn.job_id = None;
-
-                            db.update_scheduled_connection(conn)
-                                .await
-                                .inspect_err(|e| {
+                                if let Err(e) = db.update_scheduled_connection(&conn).await {
                                     error!(
                                         "[Job {:#x}] Failed to update connection status: {}",
                                         job_id, e
-                                    )
-                                })
-                                .ok();
+                                    );
+                                }
+                            }
                         }
                     }
                 })
