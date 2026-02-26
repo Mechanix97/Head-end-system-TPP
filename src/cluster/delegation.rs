@@ -182,23 +182,11 @@ impl DelegationHandler {
             })
             .collect();
 
-        // Accept the delegation and schedule devices
-        {
+        // Accept the delegation: claim ownership in DB and schedule each device in one step
+        let accepted_device_ids = {
             let mut dm = self.device_manager.write().await;
-            dm.accept_delegation(delegated_devices.clone()).await?;
-
-            // Schedule the delegated devices at their original times
-            for device in &delegated_devices {
-                dm.schedule_delegated_device(device.device_id, device.schedule_time)
-                    .await
-                    .map_err(|e| {
-                        warn!("Failed to schedule delegated device {:?}: {}", device.device_id, e);
-                        ClusterError::SchedulerError(e.to_string())
-                    })?;
-            }
-        }
-
-        let accepted_device_ids: Vec<Uuid> = delegated_devices.iter().map(|d| d.device_id).collect();
+            dm.accept_delegation(delegated_devices).await?
+        };
 
         // Send accept response
         let accept_payload = DelegateAcceptPayload {

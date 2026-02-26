@@ -267,6 +267,7 @@ impl DeviceManager {
     }
 
     /// Accepts delegated devices from another node.
+    /// Accepts delegated devices: claims ownership in DB and schedules them at their original times.
     pub async fn accept_delegation(
         &mut self,
         devices: Vec<DelegatedDevice>,
@@ -280,6 +281,9 @@ impl DeviceManager {
                 .set_device_owner(device.device_id, self.local_node_id)
                 .await?;
             self.owned_devices.insert(device.device_id);
+            self.scheduler
+                .schedule_delegated_device(device.device_id, device.schedule_time)
+                .await?;
             accepted_ids.push(device.device_id);
         }
 
