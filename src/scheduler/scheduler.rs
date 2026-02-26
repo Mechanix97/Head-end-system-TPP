@@ -171,13 +171,10 @@ impl Scheduler {
 
         let next_wake_up = self.get_next_schedule(bucket_number as usize);
 
-        let next_wake_up =
-            NaiveDateTime::parse_from_str(&next_wake_up.to_string(), "%H:%M:%S %d/%m/%Y").map_err(
-                |e| {
-                    error!("Error parsing next_wakeup from Schedule: {}", e);
-                    SchedulerError::ParseError(e.to_string())
-                },
-            )?;
+        let next_wake_up = NaiveDateTime::try_from(&next_wake_up).map_err(|e| {
+            error!("Error building NaiveDateTime from Schedule: {}", e);
+            SchedulerError::ParseError(e)
+        })?;
 
         let job_id = self.create_wakeup_job(device_id, next_wake_up).await?;
 
