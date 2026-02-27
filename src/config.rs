@@ -1,64 +1,87 @@
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use common::database::DatabaseType;
 
 // ── YAML deserialization structs ─────────────────────────────────────────────
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct FileConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub node_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub backdoor: Option<BackdoorFileConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metrics: Option<MetricsFileConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scheduler: Option<SchedulerFileConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub database: Option<DatabaseFileConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cluster: Option<ClusterFileConfig>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct BackdoorFileConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct MetricsFileConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct SchedulerFileConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub buckets_number: Option<usize>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct DatabaseFileConfig {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub db_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub postgres: Option<PostgresFileConfig>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct PostgresFileConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct ClusterFileConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub node_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub seeds: Option<String>,
 }
 
@@ -109,6 +132,105 @@ impl Default for HesConfig {
     }
 }
 
+impl HesConfig {
+    /// Converts the resolved config back to the YAML file format.
+    pub fn to_file_config(&self) -> FileConfig {
+        FileConfig {
+            node_id: Some(self.node_id.to_string()),
+            backdoor: Some(BackdoorFileConfig {
+                ip: Some(self.backdoor_ip.clone()),
+                port: Some(self.backdoor_port.clone()),
+            }),
+            metrics: Some(MetricsFileConfig {
+                enabled: Some(self.metrics_enabled),
+                ip: Some(self.metrics_ip.clone()),
+                port: Some(self.metrics_port.clone()),
+            }),
+            scheduler: Some(SchedulerFileConfig {
+                buckets_number: Some(self.buckets_number),
+            }),
+            database: Some(DatabaseFileConfig {
+                db_type: Some(database_type_to_string(self.database_type)),
+                postgres: Some(PostgresFileConfig {
+                    user: Some(self.postgres_user.clone()),
+                    password: Some(self.postgres_password.clone()),
+                    url: Some(self.postgres_url.clone()),
+                    port: Some(self.postgres_port.clone()),
+                }),
+            }),
+            cluster: Some(ClusterFileConfig {
+                enabled: Some(self.cluster_enabled),
+                node_name: self.node_name.clone(),
+                ip: Some(self.cluster_ip.clone()),
+                port: Some(self.cluster_port),
+                seeds: self.cluster_seeds.clone(),
+            }),
+        }
+    }
+}
+
+// ── ConfigManager ─────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+struct ConfigManagerInner {
+    config: HesConfig,
+    config_path: PathBuf,
+}
+
+/// Thread-safe wrapper around `HesConfig` that auto-saves changes to disk.
+///
+/// Cheap to clone (clones only the `Arc`). Pass by value to components that need
+/// to mutate config at runtime.
+#[derive(Debug, Clone)]
+pub struct ConfigManager {
+    inner: Arc<RwLock<ConfigManagerInner>>,
+}
+
+impl ConfigManager {
+    fn new(config: HesConfig, config_path: PathBuf) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(ConfigManagerInner {
+                config,
+                config_path,
+            })),
+        }
+    }
+
+    /// Returns a snapshot of the current configuration.
+    pub async fn get(&self) -> HesConfig {
+        self.inner.read().await.config.clone()
+    }
+
+    /// Applies `f` to the config, then persists the result to disk.
+    pub async fn update<F>(&self, f: F) -> Result<(), ConfigError>
+    where
+        F: FnOnce(&mut HesConfig),
+    {
+        let mut guard = self.inner.write().await;
+        f(&mut guard.config);
+        let file_config = guard.config.to_file_config();
+        let path = guard.config_path.clone();
+        // Release the lock before doing I/O
+        drop(guard);
+        save_config_to_file(&path, &file_config)
+    }
+
+    /// Updates the cluster seeds and persists.
+    pub async fn set_cluster_seeds(&self, seeds: Option<String>) -> Result<(), ConfigError> {
+        self.update(|c| c.cluster_seeds = seeds).await
+    }
+
+    /// Updates the buckets number and persists.
+    pub async fn set_buckets_number(&self, n: usize) -> Result<(), ConfigError> {
+        self.update(|c| c.buckets_number = n).await
+    }
+
+    /// Updates the node name and persists.
+    pub async fn set_node_name(&self, name: Option<String>) -> Result<(), ConfigError> {
+        self.update(|c| c.node_name = name).await
+    }
+}
+
 // ── Error type ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, thiserror::Error)]
@@ -132,11 +254,12 @@ pub enum ConfigError {
 /// Resolves the final config by merging: defaults → config file → CLI args.
 ///
 /// If `cli_config_path` is `Some`, uses that path. Otherwise checks `~/.hes/config.yaml`.
-/// If no config file exists, creates one with the auto-generated `node_id`.
+/// If no config file exists, creates one with all resolved values.
+/// Returns a `ConfigManager` that auto-saves any future mutations to disk.
 pub fn resolve_config(
     cli_config_path: Option<String>,
     cli: CliOverrides,
-) -> Result<HesConfig, ConfigError> {
+) -> Result<ConfigManager, ConfigError> {
     let mut config = HesConfig::default();
 
     // Determine config file path
@@ -146,24 +269,19 @@ pub fn resolve_config(
     };
 
     // Load and apply file config if it exists
-    let node_id_from_file = if config_path.exists() {
+    if config_path.exists() {
         let file_config = load_file_config(&config_path)?;
-        let had_node_id = file_config.node_id.is_some();
         apply_file_config(&mut config, file_config)?;
-        had_node_id
-    } else {
-        false
-    };
+    }
 
     // Apply CLI overrides (CLI wins over file)
     apply_cli_overrides(&mut config, cli)?;
 
-    // Persist node_id if it wasn't loaded from file
-    if !node_id_from_file {
-        persist_node_id(&config_path, &config)?;
-    }
+    // Always persist the full resolved config (creates or updates the file)
+    let file_config = config.to_file_config();
+    save_config_to_file(&config_path, &file_config)?;
 
-    Ok(config)
+    Ok(ConfigManager::new(config, config_path))
 }
 
 /// CLI values that can override config file. All optional — only `Some` values override.
@@ -281,34 +399,20 @@ fn apply_cli_overrides(config: &mut HesConfig, cli: CliOverrides) -> Result<(), 
     Ok(())
 }
 
-/// Creates or updates the config file to persist the generated `node_id`.
-///
-/// If the file exists, reads it as a YAML value, inserts/updates `node_id`, writes back
-/// (preserving all other keys). If the file doesn't exist, creates it with just `node_id`.
-fn persist_node_id(path: &Path, config: &HesConfig) -> Result<(), ConfigError> {
+fn database_type_to_string(db_type: DatabaseType) -> String {
+    match db_type {
+        DatabaseType::Postgres => "postgres".to_string(),
+        DatabaseType::InMemory => "in-memory".to_string(),
+    }
+}
+
+/// Serializes `file_config` to YAML and writes it to `path`, creating parent dirs as needed.
+fn save_config_to_file(path: &Path, file_config: &FileConfig) -> Result<(), ConfigError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-
-    if path.exists() {
-        let raw = std::fs::read_to_string(path)?;
-        let mut value: serde_yaml::Value = serde_yaml::from_str(&raw)
-            .unwrap_or(serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
-
-        if let serde_yaml::Value::Mapping(ref mut map) = value {
-            map.insert(
-                serde_yaml::Value::String("node_id".to_string()),
-                serde_yaml::Value::String(config.node_id.to_string()),
-            );
-        }
-
-        let output = serde_yaml::to_string(&value)?;
-        std::fs::write(path, output)?;
-    } else {
-        let content = format!("node_id: \"{}\"\n", config.node_id);
-        std::fs::write(path, content)?;
-    }
-
+    let yaml = serde_yaml::to_string(file_config)?;
+    std::fs::write(path, yaml)?;
     Ok(())
 }
 
@@ -409,13 +513,14 @@ cluster:
         Ok(())
     }
 
-    #[test]
-    fn test_merge_file_over_defaults() -> Result<(), Box<dyn Error>> {
+    #[tokio::test]
+    async fn test_merge_file_over_defaults() -> Result<(), Box<dyn Error>> {
         let yaml = "backdoor:\n  port: \"9999\"\nscheduler:\n  buckets_number: 12\n";
         let path = tmp_path("hes_test_merge_file.yaml");
         fs::write(&path, yaml)?;
 
-        let config = resolve_config(Some(path.clone()), no_cli())?;
+        let manager = resolve_config(Some(path.clone()), no_cli())?;
+        let config = manager.get().await;
         assert_eq!(config.backdoor_port, "9999");
         assert_eq!(config.buckets_number, 12);
         assert_eq!(config.backdoor_ip, "0.0.0.0");
@@ -425,38 +530,41 @@ cluster:
         Ok(())
     }
 
-    #[test]
-    fn test_merge_cli_over_file() -> Result<(), Box<dyn Error>> {
+    #[tokio::test]
+    async fn test_merge_cli_over_file() -> Result<(), Box<dyn Error>> {
         let path = tmp_path("hes_test_merge_cli.yaml");
         fs::write(&path, "backdoor:\n  port: \"9999\"\n")?;
 
         let cli = CliOverrides { backdoor_port: Some("1234".to_string()), ..no_cli() };
-        let config = resolve_config(Some(path.clone()), cli)?;
+        let manager = resolve_config(Some(path.clone()), cli)?;
+        let config = manager.get().await;
         assert_eq!(config.backdoor_port, "1234");
 
         fs::remove_file(&path).ok();
         Ok(())
     }
 
-    #[test]
-    fn test_node_id_preserved_from_file() -> Result<(), Box<dyn Error>> {
+    #[tokio::test]
+    async fn test_node_id_preserved_from_file() -> Result<(), Box<dyn Error>> {
         let fixed_id = "550e8400-e29b-41d4-a716-446655440000";
         let path = tmp_path("hes_test_node_id.yaml");
         fs::write(&path, format!("node_id: \"{fixed_id}\"\n"))?;
 
-        let config = resolve_config(Some(path.clone()), no_cli())?;
+        let manager = resolve_config(Some(path.clone()), no_cli())?;
+        let config = manager.get().await;
         assert_eq!(config.node_id.to_string(), fixed_id);
 
         fs::remove_file(&path).ok();
         Ok(())
     }
 
-    #[test]
-    fn test_node_id_generated_and_persisted_when_missing() -> Result<(), Box<dyn Error>> {
+    #[tokio::test]
+    async fn test_node_id_generated_and_persisted_when_missing() -> Result<(), Box<dyn Error>> {
         let path = tmp_path("hes_test_node_id_generated.yaml");
         fs::remove_file(&path).ok();
 
-        let config = resolve_config(Some(path.clone()), no_cli())?;
+        let manager = resolve_config(Some(path.clone()), no_cli())?;
+        let config = manager.get().await;
         assert!(PathBuf::from(&path).exists(), "config file should have been created");
 
         let written = fs::read_to_string(&path)?;
@@ -491,27 +599,98 @@ cluster:
         Ok(())
     }
 
-    #[test]
-    fn test_no_metrics_cli_flag_disables_metrics() -> Result<(), Box<dyn Error>> {
+    #[tokio::test]
+    async fn test_no_metrics_cli_flag_disables_metrics() -> Result<(), Box<dyn Error>> {
         let path = tmp_path("hes_test_no_metrics.yaml");
         fs::remove_file(&path).ok();
 
         let cli = CliOverrides { no_metrics: true, ..no_cli() };
-        let config = resolve_config(Some(path.clone()), cli)?;
+        let manager = resolve_config(Some(path.clone()), cli)?;
+        let config = manager.get().await;
         assert!(!config.metrics_enabled);
 
         fs::remove_file(&path).ok();
         Ok(())
     }
 
-    #[test]
-    fn test_disable_cluster_cli_flag() -> Result<(), Box<dyn Error>> {
+    #[tokio::test]
+    async fn test_disable_cluster_cli_flag() -> Result<(), Box<dyn Error>> {
         let path = tmp_path("hes_test_disable_cluster.yaml");
         fs::remove_file(&path).ok();
 
         let cli = CliOverrides { disable_cluster: true, ..no_cli() };
-        let config = resolve_config(Some(path.clone()), cli)?;
+        let manager = resolve_config(Some(path.clone()), cli)?;
+        let config = manager.get().await;
         assert!(!config.cluster_enabled);
+
+        fs::remove_file(&path).ok();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_auto_save_persists_change() -> Result<(), Box<dyn Error>> {
+        let path = tmp_path("hes_test_auto_save.yaml");
+        fs::remove_file(&path).ok();
+
+        let manager = resolve_config(Some(path.clone()), no_cli())?;
+        manager.set_buckets_number(99).await?;
+
+        let written = fs::read_to_string(&path)?;
+        assert!(written.contains("99"), "YAML should contain updated buckets_number");
+
+        // Re-load and verify the value round-trips
+        let manager2 = resolve_config(Some(path.clone()), no_cli())?;
+        let config2 = manager2.get().await;
+        assert_eq!(config2.buckets_number, 99);
+
+        fs::remove_file(&path).ok();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_auto_save_preserves_all_fields() -> Result<(), Box<dyn Error>> {
+        let path = tmp_path("hes_test_auto_save_full.yaml");
+        fs::remove_file(&path).ok();
+
+        let cli = CliOverrides {
+            backdoor_port: Some("7777".to_string()),
+            buckets_number: Some(24),
+            ..no_cli()
+        };
+        let manager = resolve_config(Some(path.clone()), cli)?;
+
+        // Mutate one field
+        manager.set_node_name(Some("test-node".to_string())).await?;
+
+        // Re-load: both CLI-overridden fields and the new mutation should be present
+        let manager2 = resolve_config(Some(path.clone()), no_cli())?;
+        let config2 = manager2.get().await;
+        assert_eq!(config2.backdoor_port, "7777");
+        assert_eq!(config2.buckets_number, 24);
+        assert_eq!(config2.node_name.as_deref(), Some("test-node"));
+
+        fs::remove_file(&path).ok();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_batch_update() -> Result<(), Box<dyn Error>> {
+        let path = tmp_path("hes_test_batch_update.yaml");
+        fs::remove_file(&path).ok();
+
+        let manager = resolve_config(Some(path.clone()), no_cli())?;
+
+        // Apply multiple mutations in one update call
+        manager.update(|c| {
+            c.buckets_number = 12;
+            c.cluster_seeds = Some("10.0.0.1:6570".to_string());
+            c.node_name = Some("batch-node".to_string());
+        }).await?;
+
+        let written = fs::read_to_string(&path)?;
+        assert!(written.contains("12"));
+        assert!(written.contains("10.0.0.1:6570"));
+        assert!(written.contains("batch-node"));
 
         fs::remove_file(&path).ok();
         Ok(())

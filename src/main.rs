@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt().init();
 
     // Resolve config: defaults → config file → CLI args
-    let config = resolve_config(
+    let config_manager = resolve_config(
         args.config,
         CliOverrides {
             backdoor_ip: args.backdoor_ip,
@@ -119,6 +119,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             cluster_seeds: args.cluster_seeds,
         },
     )?;
+    let config = config_manager.get().await;
 
     // Validate: cluster mode requires a shared database
     if config.cluster_enabled && config.database_type == DatabaseType::InMemory {
