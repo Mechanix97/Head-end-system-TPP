@@ -1,3 +1,4 @@
+pub mod config_store;
 pub mod database;
 pub mod delegated_device;
 pub mod device;

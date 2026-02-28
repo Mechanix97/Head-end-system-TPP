@@ -215,20 +215,15 @@ impl ConfigManager {
         drop(guard);
         save_config_to_file(&path, &file_config)
     }
+}
 
-    /// Updates the cluster seeds and persists.
-    pub async fn set_cluster_seeds(&self, seeds: Option<String>) -> Result<(), ConfigError> {
-        self.update(|c| c.cluster_seeds = seeds).await
-    }
-
-    /// Updates the buckets number and persists.
-    pub async fn set_buckets_number(&self, n: usize) -> Result<(), ConfigError> {
-        self.update(|c| c.buckets_number = n).await
-    }
-
-    /// Updates the node name and persists.
-    pub async fn set_node_name(&self, name: Option<String>) -> Result<(), ConfigError> {
-        self.update(|c| c.node_name = name).await
+#[async_trait::async_trait]
+impl common::config_store::ConfigStore for ConfigManager {
+    async fn set_cluster_seeds(
+        &self,
+        seeds: Option<String>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.update(|c| c.cluster_seeds = seeds).await.map_err(Into::into)
     }
 }
 
@@ -639,7 +634,7 @@ cluster:
         fs::remove_file(&path).ok();
 
         let manager = resolve_config(Some(path.clone()), no_cli())?;
-        manager.set_buckets_number(99).await?;
+        manager.update(|c| c.buckets_number = 99).await?;
 
         let written = fs::read_to_string(&path)?;
         assert!(written.contains("99"), "YAML should contain updated buckets_number");
@@ -666,7 +661,7 @@ cluster:
         let manager = resolve_config(Some(path.clone()), cli)?;
 
         // Mutate one field
-        manager.set_node_name(Some("test-node".to_string())).await?;
+        manager.update(|c| c.node_name = Some("test-node".to_string())).await?;
 
         // Re-load: both CLI-overridden fields and the new mutation should be present
         let manager2 = resolve_config(Some(path.clone()), no_cli())?;

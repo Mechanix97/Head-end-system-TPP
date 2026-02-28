@@ -21,6 +21,7 @@ use crate::protocol::{
     NodeJoinPayload, StatusResponsePayload,
 };
 
+use common::config_store::ConfigStore;
 use common::database::api::Database;
 
 /// Maximum UDP packet size.
@@ -32,6 +33,7 @@ pub async fn run_cluster_server(
     membership: Arc<RwLock<MembershipList>>,
     device_manager: Arc<RwLock<DeviceManager>>,
     database: Database,
+    config_store: Arc<dyn ConfigStore>,
 ) -> Result<(), ClusterError> {
     let local_node_id = {
         let m = membership.read().await;
@@ -89,6 +91,7 @@ pub async fn run_cluster_server(
             &delegation_handler,
             &socket,
             &database,
+            &config_store,
         )
         .await
         {
@@ -106,6 +109,7 @@ async fn handle_message(
     delegation_handler: &DelegationHandler,
     socket: &UdpSocket,
     database: &Database,
+    config_store: &Arc<dyn ConfigStore>,
 ) -> Result<(), ClusterError> {
     info!(
         "Received {:?} from node {} at {}",
@@ -164,6 +168,7 @@ async fn handle_message(
                 membership,
                 device_manager,
                 socket,
+                config_store,
             )
             .await
         }
@@ -391,6 +396,7 @@ async fn handle_node_join(
     membership: &RwLock<MembershipList>,
     device_manager: &RwLock<DeviceManager>,
     socket: &UdpSocket,
+    config_store: &Arc<dyn ConfigStore>,
 ) -> Result<(), ClusterError> {
     let join = match payload {
         ClusterPayload::NodeJoin(j) => j,
@@ -406,8 +412,8 @@ async fn handle_node_join(
         join.node_name, node_id
     );
 
-    // Add to membership
-    {
+    // Add to membership and collect updated seed list
+    let seeds = {
         let mut m = membership.write().await;
         let node = NodeInfo {
             node_id,
@@ -423,6 +429,19 @@ async fn handle_node_join(
             load_percent: 0.0,
         };
         m.add_or_update_node(node);
+
+        // All reachable peers (excluding ourselves) as seeds
+        let local_id = m.local_node_id();
+        m.reachable_nodes()
+            .iter()
+            .filter(|n| n.node_id != local_id)
+            .map(|n| n.cluster_addr.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+
+    if let Err(e) = config_store.set_cluster_seeds(Some(seeds)).await {
+        warn!("Failed to persist cluster seeds: {}", e);
     }
 
     // Send our status back to the joining node

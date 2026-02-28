@@ -10,6 +10,7 @@ use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
 use cluster::{ClusterConfig, ClusterManager};
+use common::config_store::ConfigStore;
 use common::database::{DatabaseConfig, DatabaseType, api::Database};
 use config::{CliOverrides, resolve_config};
 use device_manager::DeviceManager;
@@ -164,8 +165,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             config.cluster_seeds.clone(),
         )?;
 
+        let config_store: Arc<dyn ConfigStore> = Arc::new(config_manager.clone());
         let mut manager =
-            ClusterManager::new(cluster_config, db.clone(), device_manager.clone()).await?;
+            ClusterManager::new(cluster_config, db.clone(), device_manager.clone(), config_store)
+                .await?;
 
         manager.start().await?;
 

@@ -9,6 +9,7 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 use uuid::Uuid;
 
+use common::config_store::ConfigStore;
 use common::database::api::Database;
 
 use crate::delegation::DelegationHandler;
@@ -33,6 +34,8 @@ pub struct ClusterManager {
     socket: Arc<UdpSocket>,
     /// Database handle
     database: Database,
+    /// Config store for persisting runtime mutations
+    config_store: Arc<dyn ConfigStore>,
     /// Background task handles
     tasks: Vec<JoinHandle<()>>,
 }
@@ -43,6 +46,7 @@ impl ClusterManager {
         config: ClusterConfig,
         database: Database,
         device_manager: Arc<RwLock<DeviceManager>>,
+        config_store: Arc<dyn ConfigStore>,
     ) -> Result<Self, ClusterError> {
         // Create UDP socket for cluster communication
         let bind_addr = format!("{}:{}", config.cluster_ip, config.cluster_port);
@@ -60,6 +64,7 @@ impl ClusterManager {
             device_manager,
             socket,
             database,
+            config_store,
             tasks: Vec::new(),
         })
     }
@@ -207,10 +212,11 @@ impl ClusterManager {
             let membership = self.membership.clone();
             let device_manager = self.device_manager.clone();
             let database = self.database.clone();
+            let config_store = self.config_store.clone();
 
             tokio::spawn(async move {
                 if let Err(e) =
-                    run_cluster_server(socket, membership, device_manager, database)
+                    run_cluster_server(socket, membership, device_manager, database, config_store)
                         .await
                 {
                     error!("Cluster server error: {}", e);
