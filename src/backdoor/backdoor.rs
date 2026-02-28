@@ -1,7 +1,6 @@
+use bytes::BytesMut;
 use chrono::Utc;
 use common::database::api::Database;
-use futures::sink::SinkExt;
-use futures_util::stream::StreamExt;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -10,7 +9,8 @@ use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tokio_util::udp::UdpFramed;
+use tokio_util::codec::Decoder;
+use tokio_util::codec::Encoder;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -23,6 +23,7 @@ use common::registration_status::RegistrationStatus;
 use device_manager::DeviceManager;
 
 const ACK_TIMEOUT_DURATION_MS: u64 = 30000;
+const UDP_BUFFER_SIZE: usize = 1024;
 
 pub async fn init_backdoor(
     ip: String,
@@ -32,26 +33,31 @@ pub async fn init_backdoor(
     node_id: uuid::Uuid,
     device_manager: Arc<RwLock<DeviceManager>>,
 ) -> Result<JoinHandle<()>, BackdoorError> {
-    let socket = UdpSocket::bind(format!("{ip}:{port}")).await?;
+    let socket = Arc::new(UdpSocket::bind(format!("{ip}:{port}")).await?);
     info!("Listening for device registration on {ip}:{port} via UDP");
 
     let ack_timeout_duration = ack_timeout_duration.unwrap_or(ACK_TIMEOUT_DURATION_MS);
 
-    let codec = MessageCodec;
-    let mut framed: UdpFramed<MessageCodec> = UdpFramed::new(socket, codec);
-
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
-        // TODO have multiple threads receiving requests, maybe a threadpool
+        let mut buf = vec![0u8; UDP_BUFFER_SIZE];
         loop {
-            let Some(frame) = framed.next().await else {
-                warn!("Invalid codec conversion");
-                continue;
+            let (len, addr) = match socket.recv_from(&mut buf).await {
+                Ok(result) => result,
+                Err(e) => {
+                    warn!("Error receiving UDP packet: {e}");
+                    continue;
+                }
             };
 
-            let (msg, socket_addr) = match frame {
-                Ok((msg, socket_addr)) => (msg, socket_addr),
+            let mut bytes = BytesMut::from(&buf[..len]);
+            let msg = match MessageCodec.decode(&mut bytes) {
+                Ok(Some(msg)) => msg,
+                Ok(None) => {
+                    warn!("Incomplete message received from {addr}");
+                    continue;
+                }
                 Err(e) => {
-                    warn!("Invalid codec conversion: {e}");
+                    warn!("Invalid codec conversion from {addr}: {e}");
                     continue;
                 }
             };
@@ -64,23 +70,28 @@ pub async fn init_backdoor(
                         .with_label_values(&["register_request", "inbound"])
                         .inc();
                     if msg.device_id == 0 {
-                        if let Err(err) = handle_backdoor_register_msg(
-                            &mut framed,
-                            msg,
-                            socket_addr,
-                            ack_timeout_duration,
-                            database.clone(),
-                            node_id,
-                            device_manager.clone(),
-                        )
-                        .await
-                        {
-                            error!("Error handle register request: {err}");
-                            METRICS_CONNECTIONS
-                                .errors_total
-                                .with_label_values(&["backdoor", "register_request"])
-                                .inc();
-                        }
+                        let socket = socket.clone();
+                        let database = database.clone();
+                        let device_manager = device_manager.clone();
+                        tokio::spawn(async move {
+                            if let Err(err) = handle_backdoor_register_msg(
+                                socket,
+                                msg,
+                                addr,
+                                ack_timeout_duration,
+                                database,
+                                node_id,
+                                device_manager,
+                            )
+                            .await
+                            {
+                                error!("Error handle register request: {err}");
+                                METRICS_CONNECTIONS
+                                    .errors_total
+                                    .with_label_values(&["backdoor", "register_request"])
+                                    .inc();
+                            }
+                        });
                     } else {
                         // TODO handle ip change
                     }
@@ -91,20 +102,19 @@ pub async fn init_backdoor(
                         .messages_total
                         .with_label_values(&["ack", "inbound"])
                         .inc();
-                    if let Err(err) = handle_backdoor_ack_msg(
-                        &device_manager,
-                        msg,
-                        socket_addr,
-                        database.clone(),
-                    )
-                    .await
-                    {
-                        error!("Error handle ack msg: {err}");
-                        METRICS_CONNECTIONS
-                            .errors_total
-                            .with_label_values(&["backdoor", "ack_handler"])
-                            .inc();
-                    }
+                    let database = database.clone();
+                    let device_manager = device_manager.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) =
+                            handle_backdoor_ack_msg(device_manager, msg, addr, database).await
+                        {
+                            error!("Error handle ack msg: {err}");
+                            METRICS_CONNECTIONS
+                                .errors_total
+                                .with_label_values(&["backdoor", "ack_handler"])
+                                .inc();
+                        }
+                    });
                 }
 
                 _ => {
@@ -126,7 +136,7 @@ pub async fn init_backdoor(
 /// The HES will provide unique device_id and inform the device the next schedule connection.
 /// After sending the response msg (RegisterResponse) the HES expects a ACK message to start with the schedule sequence.
 async fn handle_backdoor_register_msg(
-    framed: &mut UdpFramed<MessageCodec>,
+    socket: Arc<UdpSocket>,
     msg: Message,
     socket_addr: SocketAddr,
     ack_timeout_duration: u64,
@@ -150,17 +160,29 @@ async fn handle_backdoor_register_msg(
 
     let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1)?;
 
-    if let Err(err) = (*framed).send((response, socket_addr)).await {
-        error!("Error sending response: {err}");
-        METRICS_CONNECTIONS
-            .errors_total
-            .with_label_values(&["backdoor", "send_response"])
-            .inc();
-    } else {
-        METRICS_CONNECTIONS
-            .messages_total
-            .with_label_values(&["register_response", "outbound"])
-            .inc();
+    let mut buf = BytesMut::new();
+    match MessageCodec.encode(response, &mut buf) {
+        Err(err) => {
+            error!("Error encoding response: {err}");
+            METRICS_CONNECTIONS
+                .errors_total
+                .with_label_values(&["backdoor", "send_response"])
+                .inc();
+        }
+        Ok(()) => {
+            if let Err(err) = socket.send_to(&buf, socket_addr).await {
+                error!("Error sending response: {err}");
+                METRICS_CONNECTIONS
+                    .errors_total
+                    .with_label_values(&["backdoor", "send_response"])
+                    .inc();
+            } else {
+                METRICS_CONNECTIONS
+                    .messages_total
+                    .with_label_values(&["register_response", "outbound"])
+                    .inc();
+            }
+        }
     }
 
     spawn_ack_timeout_task(database.clone(), ack_timeout_duration, device.id);
@@ -172,7 +194,7 @@ async fn handle_backdoor_register_msg(
 /// Checks if the device has requested the registration in the interval (300 ms)
 /// and starts the scheduler sequence.
 async fn handle_backdoor_ack_msg(
-    device_manager: &Arc<RwLock<DeviceManager>>,
+    device_manager: Arc<RwLock<DeviceManager>>,
     msg: Message,
     socket_addr: SocketAddr,
     database: Database,
