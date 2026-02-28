@@ -491,6 +491,314 @@ mod tests {
         assert_eq!(connecitons_number, 10);
     }
 
+    /// Tests that N devices can register truly concurrently without blocking each other.
+    /// All N tasks are spawned simultaneously, each independently doing the full cycle:
+    /// RegisterRequest → RegisterResponse → ACK. All N connections must be scheduled.
+    #[tokio::test]
+    async fn test_truly_concurrent_registrations() {
+        let backdoor_port = "8085";
+        let dm = set_up_hes(backdoor_port).await;
+        let n: usize = 20;
+
+        let handles: Vec<_> = (0..n)
+            .map(|_| {
+                let port = backdoor_port.to_string();
+                tokio::spawn(async move {
+                    let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+                    let mut codec = MessageCodec;
+
+                    // Send RegisterRequest
+                    let request = Message::new_register_request_message().unwrap();
+                    let mut buf = BytesMut::new();
+                    codec.encode(request, &mut buf).unwrap();
+                    device_socket
+                        .send_to(&buf, format!("127.0.0.1:{}", port))
+                        .await
+                        .unwrap();
+
+                    // Receive RegisterResponse
+                    let mut resp = BytesMut::new();
+                    device_socket.recv_buf(&mut resp).await.unwrap();
+                    let response = codec.decode(&mut resp).unwrap().unwrap();
+                    assert!(matches!(response.msg_type, MsgType::RegisterResponse));
+
+                    // Send ACK
+                    let ack =
+                        Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
+                    let mut ack_buf = BytesMut::new();
+                    codec.encode(ack, &mut ack_buf).unwrap();
+                    device_socket
+                        .send_to(&ack_buf, format!("127.0.0.1:{}", port))
+                        .await
+                        .unwrap();
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.await.unwrap();
+        }
+        sleep(Duration::from_millis(200)).await;
+
+        let connections = dm
+            .read()
+            .await
+            .get_scheduled_connections()
+            .await
+            .unwrap()
+            .len();
+        assert_eq!(connections, n);
+    }
+
+    /// Tests that a RegisterRequest with a non-zero device_id is silently ignored:
+    /// - No response is sent to the sender
+    /// - No connection is scheduled
+    /// - The backdoor continues to process subsequent valid requests
+    #[tokio::test]
+    async fn test_invalid_device_id_is_ignored() {
+        use common::messages::message::MessagePayload;
+        use std::time::{SystemTime, UNIX_EPOCH};
+        use tokio::time::timeout;
+
+        let backdoor_port = "8086";
+        let dm = set_up_hes(backdoor_port).await;
+
+        let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut codec = MessageCodec;
+
+        // Construct a RegisterRequest with device_id != 0 (simulates a device
+        // that already has an id trying to re-register via the backdoor)
+        let invalid_request = Message {
+            version: 1,
+            msg_type: MsgType::RegisterRequest,
+            device_id: 0xDEAD_BEEF,
+            seq: 0,
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+            payload: MessagePayload::Ack,
+            mac: 0,
+        };
+
+        let mut buf = BytesMut::new();
+        codec.encode(invalid_request, &mut buf).unwrap();
+        device_socket
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        // No response should arrive for an invalid device_id
+        let mut resp = BytesMut::new();
+        let recv_result = timeout(
+            Duration::from_millis(200),
+            device_socket.recv_buf(&mut resp),
+        )
+        .await;
+        assert!(
+            recv_result.is_err(),
+            "Should not receive a response for a RegisterRequest with non-zero device_id"
+        );
+        assert_eq!(
+            dm.read()
+                .await
+                .get_scheduled_connections()
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
+
+        // Backdoor must still be functional: a valid request should succeed
+        let valid_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let request = Message::new_register_request_message().unwrap();
+        let mut buf = BytesMut::new();
+        codec.encode(request, &mut buf).unwrap();
+        valid_socket
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        let mut resp = BytesMut::new();
+        valid_socket.recv_buf(&mut resp).await.unwrap();
+        let response = codec.decode(&mut resp).unwrap().unwrap();
+        assert!(matches!(response.msg_type, MsgType::RegisterResponse));
+    }
+
+    /// Tests that a malformed UDP packet (too short to be a valid message) does not
+    /// crash the backdoor, and that subsequent valid registrations still work.
+    #[tokio::test]
+    async fn test_malformed_packet_doesnt_crash_backdoor() {
+        let backdoor_port = "8087";
+        let dm = set_up_hes(backdoor_port).await;
+
+        let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+
+        // Send garbage bytes — much shorter than MIN_MSG_LEN (46 bytes)
+        device_socket
+            .send_to(b"garbage", format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(50)).await;
+
+        // Backdoor must survive: a valid registration should still complete
+        let mut codec = MessageCodec;
+        let request = Message::new_register_request_message().unwrap();
+        let mut buf = BytesMut::new();
+        codec.encode(request, &mut buf).unwrap();
+        device_socket
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        let mut resp = BytesMut::new();
+        device_socket.recv_buf(&mut resp).await.unwrap();
+        let response = codec.decode(&mut resp).unwrap().unwrap();
+        assert!(matches!(response.msg_type, MsgType::RegisterResponse));
+
+        // Complete the registration with an ACK
+        let ack = Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
+        let mut ack_buf = BytesMut::new();
+        codec.encode(ack, &mut ack_buf).unwrap();
+        device_socket
+            .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            dm.read()
+                .await
+                .get_scheduled_connections()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    /// Tests that a valid message with a type not handled by the backdoor
+    /// (e.g. Handshake) is silently discarded without crashing.
+    #[tokio::test]
+    async fn test_wrong_msg_type_in_backdoor() {
+        use tokio::time::timeout;
+
+        let backdoor_port = "8088";
+        let dm = set_up_hes(backdoor_port).await;
+
+        let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut codec = MessageCodec;
+
+        // Handshake is a valid message type but not expected on the backdoor port
+        let handshake = Message::new_handshake_message(0xDEAD_BEEF, 0).unwrap();
+        let mut buf = BytesMut::new();
+        codec.encode(handshake, &mut buf).unwrap();
+        device_socket
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        // No response should be sent for an unrecognized message type
+        let mut resp = BytesMut::new();
+        let recv_result = timeout(
+            Duration::from_millis(200),
+            device_socket.recv_buf(&mut resp),
+        )
+        .await;
+        assert!(
+            recv_result.is_err(),
+            "Backdoor should not respond to Handshake messages"
+        );
+        assert_eq!(
+            dm.read()
+                .await
+                .get_scheduled_connections()
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
+
+        // Backdoor must still be functional after receiving the wrong type
+        let request = Message::new_register_request_message().unwrap();
+        let mut buf = BytesMut::new();
+        codec.encode(request, &mut buf).unwrap();
+        device_socket
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        let mut resp = BytesMut::new();
+        device_socket.recv_buf(&mut resp).await.unwrap();
+        let response = codec.decode(&mut resp).unwrap().unwrap();
+        assert!(matches!(response.msg_type, MsgType::RegisterResponse));
+    }
+
+    /// Tests that an ACK for an unknown device_id is handled gracefully:
+    /// the spawned handler logs the error but the backdoor keeps running.
+    #[tokio::test]
+    async fn test_ack_unknown_device() {
+        let backdoor_port = "8089";
+        let dm = set_up_hes(backdoor_port).await;
+
+        let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut codec = MessageCodec;
+
+        // Send an ACK referencing a device_id that was never registered
+        let fake_id = 0xDEAD_BEEF_CAFE_1234_u128;
+        let ack = Message::new_ack_message(fake_id, 0).unwrap();
+        let mut buf = BytesMut::new();
+        codec.encode(ack, &mut buf).unwrap();
+        device_socket
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            dm.read()
+                .await
+                .get_scheduled_connections()
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
+
+        // Backdoor must still work after the failed ACK handler
+        let request = Message::new_register_request_message().unwrap();
+        let mut buf = BytesMut::new();
+        codec.encode(request, &mut buf).unwrap();
+        device_socket
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        let mut resp = BytesMut::new();
+        device_socket.recv_buf(&mut resp).await.unwrap();
+        let response = codec.decode(&mut resp).unwrap().unwrap();
+        assert!(matches!(response.msg_type, MsgType::RegisterResponse));
+
+        let ack = Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
+        let mut ack_buf = BytesMut::new();
+        codec.encode(ack, &mut ack_buf).unwrap();
+        device_socket
+            .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            dm.read()
+                .await
+                .get_scheduled_connections()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
     // test 2 parallels connections
     #[tokio::test]
     async fn test_parallel_connections() {
