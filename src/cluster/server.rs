@@ -101,6 +101,7 @@ pub async fn run_cluster_server(
 }
 
 /// Handles an incoming cluster message.
+#[allow(clippy::too_many_arguments)]
 async fn handle_message(
     msg: ClusterMessage,
     from_addr: SocketAddr,
