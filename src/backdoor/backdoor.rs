@@ -254,8 +254,7 @@ fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_
 #[cfg(test)]
 mod tests {
     use bytes::BytesMut;
-    use common::database::DatabaseType;
-    use common::database::api::Database;
+    use common::database::{DatabaseConfig, api::Database};
     use device_manager::DeviceManager;
     use scheduler::scheduler::Scheduler;
     use std::sync::Arc;
@@ -266,7 +265,7 @@ mod tests {
     use super::*;
 
     async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<DeviceManager>> {
-        let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
+        let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
         let node_id = uuid::Uuid::new_v4();
         let scheduler = Scheduler::new(1, db.clone(), node_id).await.unwrap();
         let device_manager = Arc::new(RwLock::new(

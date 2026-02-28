@@ -296,15 +296,14 @@ impl Engine for InMemoryDB {
 
 #[cfg(test)]
 mod test {
-    use crate::database::DatabaseType;
-    use crate::database::api::Database;
+    use crate::database::{DatabaseConfig, api::Database};
     use crate::device::Device;
 
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     #[tokio::test]
     async fn test_devices() {
-        let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
+        let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
 
         let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
 

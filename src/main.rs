@@ -10,7 +10,7 @@ use tracing::info;
 
 use backdoor::backdoor::init_backdoor;
 use cluster::{ClusterConfig, ClusterManager};
-use common::database::{DatabaseType, api::Database, postgres::PostgresConnectionArgs};
+use common::database::{DatabaseConfig, DatabaseType, api::Database};
 use config::{CliOverrides, resolve_config};
 use device_manager::DeviceManager;
 use metrics::api::start_prometheus_metrics_api;
@@ -128,18 +128,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     info!("Head-End System starting with node_id: {}", config.node_id);
 
-    let db_params = if config.database_type == DatabaseType::Postgres {
-        Some(PostgresConnectionArgs {
-            user: config.postgres_user.clone(),
-            password: config.postgres_password.clone(),
-            url: config.postgres_url.clone(),
-            port: config.postgres_port.clone(),
-        })
-    } else {
-        None
-    };
-
-    let db = Database::new(config.database_type, db_params).await?;
+    let db = Database::new(DatabaseConfig {
+        db_type: config.database_type,
+        user: config.postgres_user.clone(),
+        password: config.postgres_password.clone(),
+        url: config.postgres_url.clone(),
+        port: config.postgres_port.clone(),
+    })
+    .await?;
 
     let scheduler = Scheduler::new(config.buckets_number, db.clone(), config.node_id).await?;
 

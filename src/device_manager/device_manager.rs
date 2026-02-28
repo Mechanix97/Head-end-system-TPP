@@ -473,7 +473,7 @@ impl DeviceManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::database::{DatabaseType, api::Database};
+    use common::database::{DatabaseConfig, api::Database};
 
     async fn create_test_scheduler(db: Database, node_id: Uuid) -> Scheduler {
         Scheduler::new(1, db, node_id).await.unwrap()
@@ -481,7 +481,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_device_manager_creation() {
-        let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
+        let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
         let node_id = Uuid::new_v4();
         let scheduler = create_test_scheduler(db.clone(), node_id).await;
         let manager = DeviceManager::new(node_id, 48, db, scheduler);
@@ -491,7 +491,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_owned_device() {
-        let db = Database::new(DatabaseType::InMemory, None).await.unwrap();
+        let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
         let node_id = Uuid::new_v4();
         let scheduler = create_test_scheduler(db.clone(), node_id).await;
         let mut manager = DeviceManager::new(node_id, 48, db, scheduler);

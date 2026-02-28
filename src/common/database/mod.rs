@@ -10,6 +10,32 @@ pub enum DatabaseType {
     Postgres,
 }
 
+/// All parameters needed to initialize a database connection.
+///
+/// Use `DatabaseConfig::in_memory()` for tests, or construct the struct
+/// directly with postgres fields for production.
+#[derive(Debug)]
+pub struct DatabaseConfig {
+    pub db_type: DatabaseType,
+    pub user: String,
+    pub password: String,
+    pub url: String,
+    pub port: String,
+}
+
+impl DatabaseConfig {
+    /// Shortcut for tests: creates an in-memory config (postgres fields are ignored).
+    pub fn in_memory() -> Self {
+        Self {
+            db_type: DatabaseType::InMemory,
+            user: String::new(),
+            password: String::new(),
+            url: String::new(),
+            port: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
     #[error("io error: {0}")]
