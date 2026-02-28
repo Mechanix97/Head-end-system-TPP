@@ -4,6 +4,7 @@ use std::sync::{Arc, OnceLock};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -269,9 +270,11 @@ pub fn resolve_config(
     };
 
     // Load and apply file config if it exists
-    if config_path.exists() {
+    let is_new_file = !config_path.exists();
+    if !is_new_file {
         let file_config = load_file_config(&config_path)?;
         apply_file_config(&mut config, file_config)?;
+        info!("Loaded config from {}", config_path.display());
     }
 
     // Apply CLI overrides (CLI wins over file)
@@ -280,6 +283,9 @@ pub fn resolve_config(
     // Always persist the full resolved config (creates or updates the file)
     let file_config = config.to_file_config();
     save_config_to_file(&config_path, &file_config)?;
+    if is_new_file {
+        info!("Created config file at {}", config_path.display());
+    }
 
     Ok(ConfigManager::new(config, config_path))
 }

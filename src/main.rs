@@ -20,7 +20,10 @@ use scheduler::scheduler::Scheduler;
 #[command(version, about, long_about = None)]
 struct Args {
     /// Path to YAML config file
-    #[arg(long = "config", help = "Path to YAML config file (default: ~/.hes/config.yaml)")]
+    #[arg(
+        long = "config",
+        help = "Path to YAML config file (default: ~/.hes/config.yaml)"
+    )]
     config: Option<String>,
 
     /// Backdoor IP
@@ -40,7 +43,7 @@ struct Args {
     metrics_port: Option<String>,
 
     /// Disable metrics
-    #[arg(long = "no-metrics", help = "Disable Prometheus metrics API")]
+    #[arg(long = "disble-metrics", help = "Disable Prometheus metrics API")]
     no_metrics: bool,
 
     /// Number of time buckets
@@ -48,7 +51,10 @@ struct Args {
     buckets_number: Option<usize>,
 
     /// Database type
-    #[arg(long = "database", help = "Database type to use (in-memory or postgres)")]
+    #[arg(
+        long = "database",
+        help = "Database type to use (in-memory or postgres)"
+    )]
     database_type: Option<DatabaseType>,
 
     /// Postgres user
@@ -164,7 +170,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         manager.start().await?;
 
         let owned_devices = manager.get_owned_devices().await;
-        device_manager.write().await.enable_cluster_mode(owned_devices);
+        device_manager
+            .write()
+            .await
+            .enable_cluster_mode(owned_devices);
 
         info!("Cluster mode enabled");
         Some(manager)
