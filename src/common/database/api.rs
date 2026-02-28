@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::database::DatabaseError;
 use crate::database::postgres::PostgresConnectionArgs;
-use crate::database::{DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
+use crate::database::{DatabaseConfig, DatabaseType, in_memory::InMemoryDB, postgres::PostgresDB};
 use crate::device::Device;
 use crate::registration_status::DeviceRegistration;
 use crate::scheduled_connection::ScheduledConnection;
@@ -23,23 +23,22 @@ pub struct Database {
 }
 
 impl Database {
-    /// Creates a new database instance with the specified backend.
+    /// Creates a new database instance from a [`DatabaseConfig`].
     ///
-    /// For `DatabaseType::InMemory`, creates an in-memory database (useful for testing).
-    /// For `DatabaseType::Postgres`, connects to PostgreSQL using the provided connection args.
-    ///
-    /// Returns an error if Postgres is selected but no connection args are provided.
-    pub async fn new(
-        database_type: DatabaseType,
-        postgres_args: Option<PostgresConnectionArgs>,
-    ) -> Result<Self, DatabaseError> {
-        match database_type {
+    /// For `InMemory`, the postgres fields are ignored.
+    /// For `Postgres`, opens a connection pool using the provided credentials.
+    pub async fn new(config: DatabaseConfig) -> Result<Self, DatabaseError> {
+        match config.db_type {
             DatabaseType::InMemory => Ok(Self {
                 engine: Arc::new(InMemoryDB::default()),
             }),
             DatabaseType::Postgres => {
-                let args = postgres_args.ok_or(DatabaseError::InvalidInitilizationArguments)?;
-
+                let args = PostgresConnectionArgs {
+                    user: config.user,
+                    password: config.password,
+                    url: config.url,
+                    port: config.port,
+                };
                 Ok(Self {
                     engine: Arc::new(PostgresDB::new(args).await?),
                 })

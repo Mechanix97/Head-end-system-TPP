@@ -1,3 +1,5 @@
+mod config;
+
 use clap::Parser;
 use std::{error::Error, sync::Arc};
 use tokio::{
@@ -5,11 +7,12 @@ use tokio::{
     sync::RwLock,
 };
 use tracing::info;
-use uuid::Uuid;
 
 use backdoor::backdoor::init_backdoor;
 use cluster::{ClusterConfig, ClusterManager};
-use common::database::{DatabaseType, api::Database, postgres::PostgresConnectionArgs};
+use common::config_store::ConfigStore;
+use common::database::{DatabaseConfig, DatabaseType, api::Database};
+use config::{CliOverrides, resolve_config};
 use device_manager::DeviceManager;
 use metrics::api::start_prometheus_metrics_api;
 use scheduler::scheduler::Scheduler;
@@ -17,88 +20,62 @@ use scheduler::scheduler::Scheduler;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// Path to YAML config file
+    #[arg(
+        long = "config",
+        help = "Path to YAML config file (default: ~/.hes/config.yaml)"
+    )]
+    config: Option<String>,
+
     /// Backdoor IP
-    #[arg(long = "backdoor-ip", default_value = "0.0.0.0", help = "Backdoor IP")]
-    backdoor_ip: String,
+    #[arg(long = "backdoor-ip", help = "Backdoor IP")]
+    backdoor_ip: Option<String>,
 
     /// Backdoor port
-    #[arg(long = "backdoor-port", default_value = "6565", help = "Backdoor port")]
-    backdoor_port: String,
+    #[arg(long = "backdoor-port", help = "Backdoor port")]
+    backdoor_port: Option<String>,
 
     /// Prometheus metrics api IP
-    #[arg(
-        long = "metrics-ip",
-        default_value = "0.0.0.0",
-        help = "Prometheus metrics api IP"
-    )]
-    metrics_ip: String,
+    #[arg(long = "metrics-ip", help = "Prometheus metrics api IP")]
+    metrics_ip: Option<String>,
 
     /// Prometheus metrics api port
-    #[arg(
-        long = "metrics-port",
-        default_value = "6464",
-        help = "Prometheus metrics api port"
-    )]
-    metrics_port: String,
+    #[arg(long = "metrics-port", help = "Prometheus metrics api port")]
+    metrics_port: Option<String>,
 
-    /// no metrics bool
-    #[arg(
-        long = "no-metrics",
-        default_value = "false",
-        help = "No metrics indicator"
-    )]
+    /// Disable metrics
+    #[arg(long = "disble-metrics", help = "Disable Prometheus metrics API")]
     no_metrics: bool,
 
-    /// number of buckets
-    #[arg(
-        long = "buckets-number",
-        default_value = "48",
-        help = "No metrics indicator"
-    )]
-    buckets_number: usize,
+    /// Number of time buckets
+    #[arg(long = "buckets-number", help = "Number of scheduler time buckets")]
+    buckets_number: Option<usize>,
 
     /// Database type
     #[arg(
         long = "database",
-        default_value = "postgres",
         help = "Database type to use (in-memory or postgres)"
     )]
-    database_type: DatabaseType,
+    database_type: Option<DatabaseType>,
 
     /// Postgres user
-    #[arg(
-        long = "postgres-user",
-        default_value = "postgres",
-        help = "Postgres user"
-    )]
-    postgres_user: String,
+    #[arg(long = "postgres-user", help = "Postgres user")]
+    postgres_user: Option<String>,
 
     /// Postgres password
-    #[arg(
-        long = "postgres-password",
-        default_value = "HeadEndSystem",
-        help = "Postgres password"
-    )]
-    postgres_password: String,
+    #[arg(long = "postgres-password", help = "Postgres password")]
+    postgres_password: Option<String>,
 
     /// Postgres url
-    #[arg(
-        long = "postgres-url",
-        default_value = "127.0.0.1",
-        help = "Postgres url"
-    )]
-    postgres_url: String,
+    #[arg(long = "postgres-url", help = "Postgres url")]
+    postgres_url: Option<String>,
 
     /// Postgres port
-    #[arg(long = "postgres-port", default_value = "5432", help = "Postgres port")]
-    postgres_port: String,
+    #[arg(long = "postgres-port", help = "Postgres port")]
+    postgres_port: Option<String>,
 
     /// Disable cluster mode (runs in single-node mode)
-    #[arg(
-        long = "disable-cluster",
-        default_value = "false",
-        help = "Disable cluster mode"
-    )]
+    #[arg(long = "disable-cluster", help = "Disable cluster mode")]
     disable_cluster: bool,
 
     /// Cluster node name
@@ -106,20 +83,12 @@ struct Args {
     node_name: Option<String>,
 
     /// Cluster communication port
-    #[arg(
-        long = "cluster-port",
-        default_value = "6570",
-        help = "Cluster communication port"
-    )]
-    cluster_port: u16,
+    #[arg(long = "cluster-port", help = "Cluster communication port")]
+    cluster_port: Option<u16>,
 
     /// Cluster bind IP
-    #[arg(
-        long = "cluster-ip",
-        default_value = "0.0.0.0",
-        help = "Cluster bind IP"
-    )]
-    cluster_ip: String,
+    #[arg(long = "cluster-ip", help = "Cluster bind IP")]
+    cluster_ip: Option<String>,
 
     /// Cluster seed nodes
     #[arg(
@@ -133,67 +102,81 @@ struct Args {
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
+    tracing_subscriber::fmt().init();
+
+    // Resolve config: defaults → config file → CLI args
+    let config_manager = resolve_config(
+        args.config,
+        CliOverrides {
+            backdoor_ip: args.backdoor_ip,
+            backdoor_port: args.backdoor_port,
+            no_metrics: args.no_metrics,
+            metrics_ip: args.metrics_ip,
+            metrics_port: args.metrics_port,
+            buckets_number: args.buckets_number,
+            database_type: args.database_type,
+            postgres_user: args.postgres_user,
+            postgres_password: args.postgres_password,
+            postgres_url: args.postgres_url,
+            postgres_port: args.postgres_port,
+            disable_cluster: args.disable_cluster,
+            node_name: args.node_name,
+            cluster_ip: args.cluster_ip,
+            cluster_port: args.cluster_port,
+            cluster_seeds: args.cluster_seeds,
+        },
+    )?;
+    let config = config_manager.get().await;
+
     // Validate: cluster mode requires a shared database
-    if !args.disable_cluster && args.database_type == DatabaseType::InMemory {
+    if config.cluster_enabled && config.database_type == DatabaseType::InMemory {
         return Err("Cluster mode requires a shared database. Use --database postgres or run with --disable-cluster for single-node mode.".into());
     }
 
-    tracing_subscriber::fmt().init();
+    info!("Head-End System starting with node_id: {}", config.node_id);
 
-    // TODO: Persist configuration to file (e.g., ~/.hes/config.toml or /etc/hes/config.toml)
-    // - node_id should be persistent across restarts (currently regenerates on each startup)
-    // - Store CLI args as defaults (backdoor_port, cluster_port, metrics_port, etc.)
-    // - Load config from file first, then override with CLI args if provided
-    // - In cluster mode: changing node_id would orphan all owned devices in database
+    let db = Database::new(DatabaseConfig {
+        db_type: config.database_type,
+        user: config.postgres_user.clone(),
+        password: config.postgres_password.clone(),
+        url: config.postgres_url.clone(),
+        port: config.postgres_port.clone(),
+    })
+    .await?;
 
-    // Generate node ID (always, even for single-node)
-    let node_id = Uuid::new_v4();
-    info!("Head-End System starting with node_id: {}", node_id);
-
-    let db_params = if args.database_type == DatabaseType::Postgres {
-        Some(PostgresConnectionArgs {
-            user: args.postgres_user.clone(),
-            password: args.postgres_password.clone(),
-            url: args.postgres_url.clone(),
-            port: args.postgres_port.clone(),
-        })
-    } else {
-        None
-    };
-
-    let db = Database::new(args.database_type, db_params).await?;
-
-    let scheduler = Scheduler::new(args.buckets_number, db.clone(), node_id).await?;
+    let scheduler = Scheduler::new(config.buckets_number, db.clone(), config.node_id).await?;
 
     let device_manager = Arc::new(RwLock::new(DeviceManager::new(
-        node_id,
-        args.buckets_number as i32,
+        config.node_id,
+        config.buckets_number as i32,
         db.clone(),
         scheduler,
     )));
 
     // Initialize cluster unless disabled
-    let cluster_manager = if !args.disable_cluster {
-        // Create cluster configuration from CLI args
-        let config = ClusterConfig::from_cli_args(
-            node_id,
-            args.node_name.clone(),
-            args.cluster_ip.clone(),
-            args.cluster_port,
-            args.backdoor_port.parse().unwrap_or(6565),
-            args.buckets_number as i32,
-            args.cluster_seeds.clone(),
+    let cluster_manager = if config.cluster_enabled {
+        let cluster_config = ClusterConfig::from_cli_args(
+            config.node_id,
+            config.node_name.clone(),
+            config.cluster_ip.clone(),
+            config.cluster_port,
+            config.backdoor_port.parse().unwrap_or(6565),
+            config.buckets_number as i32,
+            config.cluster_seeds.clone(),
         )?;
 
-        // Initialize cluster manager
-        let mut manager = ClusterManager::new(config, db.clone(), device_manager.clone()).await?;
+        let config_store: Arc<dyn ConfigStore> = Arc::new(config_manager.clone());
+        let mut manager =
+            ClusterManager::new(cluster_config, db.clone(), device_manager.clone(), config_store)
+                .await?;
 
-        // Start cluster manager
         manager.start().await?;
 
-        // Sync scheduler with cluster-owned devices
         let owned_devices = manager.get_owned_devices().await;
-        device_manager.write().await.enable_cluster_mode(owned_devices);
+        device_manager
+            .write()
+            .await
+            .enable_cluster_mode(owned_devices);
 
         info!("Cluster mode enabled");
         Some(manager)
@@ -203,17 +186,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let backdoor_joinhandle = init_backdoor(
-        args.backdoor_ip,
-        args.backdoor_port,
+        config.backdoor_ip,
+        config.backdoor_port,
         None,
         db.clone(),
-        node_id,
+        config.node_id,
         device_manager.clone(),
     )
     .await?;
 
-    let metrics_join_handle = if !args.no_metrics {
-        let mjh = start_prometheus_metrics_api(args.metrics_ip, args.metrics_port).await?;
+    let metrics_join_handle = if config.metrics_enabled {
+        let mjh = start_prometheus_metrics_api(config.metrics_ip, config.metrics_port).await?;
         Some(mjh)
     } else {
         None

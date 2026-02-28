@@ -1,0 +1,21 @@
+backdoor:
+  ip: "0.0.0.0"
+  port: "6565"
+metrics:
+  enabled: true
+  ip: "0.0.0.0"
+  port: "6464"
+scheduler:
+  buckets_number: 48
+database:
+  type: postgres
+  postgres:
+    user: postgres
+    password: HeadEndSystem
+    url: "127.0.0.1"
+    port: "5432"
+cluster:
+  enabled: true
+  node_name: node-1
+  ip: "0.0.0.0"
+  port: 6570
