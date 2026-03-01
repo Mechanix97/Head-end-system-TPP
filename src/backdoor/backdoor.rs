@@ -85,6 +85,9 @@ pub async fn init_backdoor(
                         let database = database.clone();
                         let device_manager = device_manager.clone();
                         tokio::spawn(async move {
+                            // Binds the permit to this task's scope so it is dropped
+                            // (and the semaphore slot released) only when the task
+                            // finishes. Using bare `_` would drop it immediately.
                             let _permit = permit;
                             if let Err(err) = handle_backdoor_register_msg(
                                 socket,
@@ -124,6 +127,8 @@ pub async fn init_backdoor(
                     let database = database.clone();
                     let device_manager = device_manager.clone();
                     tokio::spawn(async move {
+                        // Same as above: keeps the permit alive for the duration
+                        // of this task, not just until the end of the statement.
                         let _permit = permit;
                         if let Err(err) =
                             handle_backdoor_ack_msg(device_manager, msg, addr, database).await
