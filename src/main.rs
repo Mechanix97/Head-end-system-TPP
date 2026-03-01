@@ -192,6 +192,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         db.clone(),
         config.node_id,
         device_manager.clone(),
+        None,
     )
     .await?;
 
