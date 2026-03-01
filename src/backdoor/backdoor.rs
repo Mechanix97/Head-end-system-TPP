@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::codec::Decoder;
@@ -24,6 +24,7 @@ use device_manager::DeviceManager;
 
 const ACK_TIMEOUT_DURATION_MS: u64 = 30000;
 const UDP_BUFFER_SIZE: usize = 1024;
+const DEFAULT_MAX_CONCURRENT_HANDLERS: usize = 500;
 
 pub async fn init_backdoor(
     ip: String,
@@ -32,11 +33,14 @@ pub async fn init_backdoor(
     database: Database,
     node_id: uuid::Uuid,
     device_manager: Arc<RwLock<DeviceManager>>,
+    max_concurrent_handlers: Option<usize>,
 ) -> Result<JoinHandle<()>, BackdoorError> {
     let socket = Arc::new(UdpSocket::bind(format!("{ip}:{port}")).await?);
     info!("Listening for device registration on {ip}:{port} via UDP");
 
     let ack_timeout_duration = ack_timeout_duration.unwrap_or(ACK_TIMEOUT_DURATION_MS);
+    let max_handlers = max_concurrent_handlers.unwrap_or(DEFAULT_MAX_CONCURRENT_HANDLERS);
+    let semaphore = Arc::new(Semaphore::new(max_handlers));
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         let mut buf = vec![0u8; UDP_BUFFER_SIZE];
@@ -70,10 +74,21 @@ pub async fn init_backdoor(
                         .with_label_values(&["register_request", "inbound"])
                         .inc();
                     if msg.device_id == 0 {
+                        let permit = match semaphore.clone().acquire_owned().await {
+                            Ok(permit) => permit,
+                            Err(_) => {
+                                error!("Semaphore closed, stopping backdoor");
+                                return;
+                            }
+                        };
                         let socket = socket.clone();
                         let database = database.clone();
                         let device_manager = device_manager.clone();
                         tokio::spawn(async move {
+                            // Binds the permit to this task's scope so it is dropped
+                            // (and the semaphore slot released) only when the task
+                            // finishes. Using bare `_` would drop it immediately.
+                            let _permit = permit;
                             if let Err(err) = handle_backdoor_register_msg(
                                 socket,
                                 msg,
@@ -102,9 +117,19 @@ pub async fn init_backdoor(
                         .messages_total
                         .with_label_values(&["ack", "inbound"])
                         .inc();
+                    let permit = match semaphore.clone().acquire_owned().await {
+                        Ok(permit) => permit,
+                        Err(_) => {
+                            error!("Semaphore closed, stopping backdoor");
+                            return;
+                        }
+                    };
                     let database = database.clone();
                     let device_manager = device_manager.clone();
                     tokio::spawn(async move {
+                        // Same as above: keeps the permit alive for the duration
+                        // of this task, not just until the end of the statement.
+                        let _permit = permit;
                         if let Err(err) =
                             handle_backdoor_ack_msg(device_manager, msg, addr, database).await
                         {
@@ -153,7 +178,11 @@ async fn handle_backdoor_register_msg(
     let device = Device::new(socket_addr, None, None, None);
 
     database.add_device(&device).await?;
-    device_manager.write().await.register_device(&device).await?;
+    device_manager
+        .write()
+        .await
+        .register_device(&device)
+        .await?;
     database
         .register_device(device.id, msg.get_timestamp()?)
         .await?;
@@ -290,9 +319,12 @@ mod tests {
         let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
         let node_id = uuid::Uuid::new_v4();
         let scheduler = Scheduler::new(1, db.clone(), node_id).await.unwrap();
-        let device_manager = Arc::new(RwLock::new(
-            DeviceManager::new(node_id, 1, db.clone(), scheduler),
-        ));
+        let device_manager = Arc::new(RwLock::new(DeviceManager::new(
+            node_id,
+            1,
+            db.clone(),
+            scheduler,
+        )));
         init_backdoor(
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
@@ -300,6 +332,7 @@ mod tests {
             db.clone(),
             node_id,
             device_manager.clone(),
+            Some(50),
         )
         .await
         .unwrap();
@@ -796,6 +829,77 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    /// Stress test: 100 devices register concurrently. Verifies that:
+    /// - All 100 complete the full registration cycle
+    /// - Each device receives back its own unique device_id (no cross-talk)
+    /// - The semaphore does not deadlock under load
+    #[tokio::test]
+    async fn test_stress_100_concurrent_registrations() {
+        let backdoor_port = "8090";
+        let dm = set_up_hes(backdoor_port).await;
+        let n: usize = 100;
+
+        let handles: Vec<_> = (0..n)
+            .map(|_| {
+                let port = backdoor_port.to_string();
+                tokio::spawn(async move {
+                    let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+                    let mut codec = MessageCodec;
+
+                    // Send RegisterRequest
+                    let request = Message::new_register_request_message().unwrap();
+                    let mut buf = BytesMut::new();
+                    codec.encode(request, &mut buf).unwrap();
+                    device_socket
+                        .send_to(&buf, format!("127.0.0.1:{}", port))
+                        .await
+                        .unwrap();
+
+                    // Receive RegisterResponse
+                    let mut resp = BytesMut::new();
+                    device_socket.recv_buf(&mut resp).await.unwrap();
+                    let response = codec.decode(&mut resp).unwrap().unwrap();
+                    assert!(matches!(response.msg_type, MsgType::RegisterResponse));
+                    // The device_id assigned by HES must be non-zero
+                    assert_ne!(response.device_id, 0, "HES should assign a non-zero UUID");
+
+                    // Send ACK with the device_id we received
+                    let ack =
+                        Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
+                    let mut ack_buf = BytesMut::new();
+                    codec.encode(ack, &mut ack_buf).unwrap();
+                    device_socket
+                        .send_to(&ack_buf, format!("127.0.0.1:{}", port))
+                        .await
+                        .unwrap();
+
+                    // Return the device_id to verify uniqueness across devices
+                    response.device_id
+                })
+            })
+            .collect();
+
+        let mut device_ids = Vec::with_capacity(n);
+        for h in handles {
+            device_ids.push(h.await.unwrap());
+        }
+        sleep(Duration::from_millis(300)).await;
+
+        // All device_ids must be unique (no cross-talk between responses)
+        device_ids.sort();
+        device_ids.dedup();
+        assert_eq!(device_ids.len(), n, "All device_ids should be unique");
+
+        let connections = dm
+            .read()
+            .await
+            .get_scheduled_connections()
+            .await
+            .unwrap()
+            .len();
+        assert_eq!(connections, n);
     }
 
     // test 2 parallels connections
