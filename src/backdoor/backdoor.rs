@@ -178,7 +178,11 @@ async fn handle_backdoor_register_msg(
     let device = Device::new(socket_addr, None, None, None);
 
     database.add_device(&device).await?;
-    device_manager.write().await.register_device(&device).await?;
+    device_manager
+        .write()
+        .await
+        .register_device(&device)
+        .await?;
     database
         .register_device(device.id, msg.get_timestamp()?)
         .await?;
@@ -315,9 +319,12 @@ mod tests {
         let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
         let node_id = uuid::Uuid::new_v4();
         let scheduler = Scheduler::new(1, db.clone(), node_id).await.unwrap();
-        let device_manager = Arc::new(RwLock::new(
-            DeviceManager::new(node_id, 1, db.clone(), scheduler),
-        ));
+        let device_manager = Arc::new(RwLock::new(DeviceManager::new(
+            node_id,
+            1,
+            db.clone(),
+            scheduler,
+        )));
         init_backdoor(
             "0.0.0.0".to_string(),
             backdoor_port.to_string(),
@@ -325,7 +332,7 @@ mod tests {
             db.clone(),
             node_id,
             device_manager.clone(),
-            None,
+            Some(50),
         )
         .await
         .unwrap();
