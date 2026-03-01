@@ -5,6 +5,10 @@ use bytes::BufMut;
 pub struct HandshakeMessage {}
 
 impl HandshakeMessage {
+    pub fn decode(_data: &[u8]) -> Result<Self, MsgCodecError> {
+        Ok(Self {})
+    }
+
     pub fn encode(&self, _buf: &mut dyn BufMut) -> Result<(), MsgCodecError> {
         Ok(())
     }
@@ -14,6 +18,10 @@ impl HandshakeMessage {
 pub struct HandshakeResponseMessage {}
 
 impl HandshakeResponseMessage {
+    pub fn decode(_data: &[u8]) -> Result<Self, MsgCodecError> {
+        Ok(Self {})
+    }
+
     pub fn encode(&self, _buf: &mut dyn BufMut) -> Result<(), MsgCodecError> {
         Ok(())
     }

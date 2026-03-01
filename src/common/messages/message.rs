@@ -58,7 +58,7 @@ impl Message {
             device_id: 0,
             seq: 0,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
-            payload: MessagePayload::RegistryResponse(RegistryResponseMessage {}),
+            payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
             mac: 0,
         };
 
@@ -265,29 +265,22 @@ impl MessagePayload {
     }
 
     /// Decodes payload data based on the message type code.
-    ///
-    /// CRITICAL BUG: This function is currently broken and always returns Ack regardless
-    /// of the message type. All the match arms are empty and msg_data is ignored.
-    /// This needs to be fixed to properly decode each message type's payload.
-    /// See todo-hes.md issue #1 for details.
-    pub(crate) fn decode(code: u8, _msg_data: &[u8]) -> Result<Self, MsgCodecError> {
-        // TODO: Fix broken payload decoding - always returns Ack (issue #1)
+    pub(crate) fn decode(code: u8, msg_data: &[u8]) -> Result<Self, MsgCodecError> {
         match code {
-            0x00 => {}
-            0x01 => {}
-            0x02 => {}
-            0x03 => {}
-            0x0A => {}
-            0x0B => {}
-            0x14 => {}
-            0x15 => {}
-            0x1E => {}
-            0x1F => {}
-            0x28 => {}
-            0x29 => {}
-            0xFF => {}
-            _ => {}
+            0x00 => Ok(MessagePayload::Handshake(HandshakeMessage::decode(msg_data)?)),
+            0x01 => Ok(MessagePayload::HandshakeResponse(HandshakeResponseMessage::decode(msg_data)?)),
+            0x02 => Ok(MessagePayload::RegistryRequest(RegistryRequestMessage::decode(msg_data)?)),
+            0x03 => Ok(MessagePayload::RegistryResponse(RegistryResponseMessage::decode(msg_data)?)),
+            0x0A => Ok(MessagePayload::ReadRequest(ReadRequestMessage::decode(msg_data)?)),
+            0x0B => Ok(MessagePayload::ReadResponse(ReadResponseMessage::decode(msg_data)?)),
+            0x14 => Ok(MessagePayload::WriteRequest(WriteRequestMessage::decode(msg_data)?)),
+            0x15 => Ok(MessagePayload::WriteResponse(WriteResponseMessage::decode(msg_data)?)),
+            0x1E => Ok(MessagePayload::ExecuteRequest(ExecuteRequestMessage::decode(msg_data)?)),
+            0x1F => Ok(MessagePayload::ExecuteResponse(ExecuteResponseMessage::decode(msg_data)?)),
+            0x28 => Ok(MessagePayload::ActionRequest(ActionRequestMessage::decode(msg_data)?)),
+            0x29 => Ok(MessagePayload::ActionResponse(ActionResponseMessage::decode(msg_data)?)),
+            0xFF => Ok(MessagePayload::Ack),
+            _ => Err(MsgCodecError::UnknownMsgType),
         }
-        Ok(MessagePayload::Ack)
     }
 }

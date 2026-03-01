@@ -206,4 +206,66 @@ mod tests {
         assert!(result.unwrap().is_some());
         assert_eq!(encode_buffer.len(), 0);
     }
+
+    fn roundtrip(msg: Message) -> Message {
+        let mut codec = MessageCodec;
+        let mut buf = BytesMut::new();
+        codec.encode(msg, &mut buf).expect("encode failed");
+        codec
+            .decode(&mut buf)
+            .expect("decode error")
+            .expect("decode returned None")
+    }
+
+    #[test]
+    fn test_roundtrip_register_request() {
+        use crate::messages::message::{MessagePayload, MsgType};
+        let msg = Message::new_register_request_message().unwrap();
+        let decoded = roundtrip(msg);
+        assert!(matches!(decoded.msg_type, MsgType::RegisterRequest));
+        assert!(matches!(decoded.payload, MessagePayload::RegistryRequest(_)));
+    }
+
+    #[test]
+    fn test_roundtrip_register_response() {
+        use crate::messages::message::{MessagePayload, MsgType};
+        let msg = Message::new_register_response_message(42, 1).unwrap();
+        let decoded = roundtrip(msg);
+        assert!(matches!(decoded.msg_type, MsgType::RegisterResponse));
+        assert!(matches!(decoded.payload, MessagePayload::RegistryResponse(_)));
+    }
+
+    #[test]
+    fn test_roundtrip_handshake() {
+        use crate::messages::message::{MessagePayload, MsgType};
+        let msg = Message::new_handshake_message(1, 0).unwrap();
+        let decoded = roundtrip(msg);
+        assert!(matches!(decoded.msg_type, MsgType::Handshake));
+        assert!(matches!(decoded.payload, MessagePayload::Handshake(_)));
+    }
+
+    #[test]
+    fn test_roundtrip_ack() {
+        use crate::messages::message::{MessagePayload, MsgType};
+        let msg = Message::new_ack_message(1, 0).unwrap();
+        let decoded = roundtrip(msg);
+        assert!(matches!(decoded.msg_type, MsgType::Ack));
+        assert!(matches!(decoded.payload, MessagePayload::Ack));
+    }
+
+    #[test]
+    fn test_unknown_msg_type_returns_error() {
+        let mut codec = MessageCodec;
+        let mut buf = BytesMut::new();
+
+        buf.put_u8(1);    // version
+        buf.put_u8(0xAB); // unknown msg_type
+        buf.put_u128(0);  // device_id
+        buf.put_u32(0);   // seq
+        buf.put_u64(0);   // timestamp
+        buf.put_u128(0);  // mac
+
+        let result = codec.decode(&mut buf);
+        assert!(result.is_err());
+    }
 }
