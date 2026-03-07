@@ -290,6 +290,28 @@ impl ClusterManager {
         let device_manager = self.device_manager.read().await;
         device_manager.owned_devices().iter().copied().collect()
     }
+
+    /// Returns a shared reference to the membership list.
+    pub fn membership(&self) -> Arc<RwLock<MembershipList>> {
+        self.membership.clone()
+    }
+
+    /// Returns a shared reference to the cluster UDP socket.
+    pub fn socket(&self) -> Arc<UdpSocket> {
+        self.socket.clone()
+    }
+
+    /// Returns the local node ID.
+    pub fn node_id(&self) -> Uuid {
+        self.config.node_id
+    }
+
+    /// Returns the cluster local address (IP:port).
+    pub fn local_addr(&self) -> std::net::SocketAddr {
+        format!("{}:{}", self.config.cluster_ip, self.config.cluster_port)
+            .parse()
+            .unwrap_or_else(|_| "0.0.0.0:0".parse().expect("fallback addr"))
+    }
 }
 
 impl Drop for ClusterManager {

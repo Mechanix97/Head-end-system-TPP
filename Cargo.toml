@@ -6,8 +6,10 @@ members = [
     "src/metrics",
     "src/cluster",
     "src/device_manager",
+    "src/rpc",
     "tools/mock_registry",
     "tools/malformed_registry",
+    "tools/hes-cli",
 ]
 resolver = "2"
 
@@ -23,6 +25,7 @@ common = { path = "src/common" }
 metrics = { path = "src/metrics" }
 cluster = { path = "src/cluster" }
 device_manager = { path = "src/device_manager" }
+rpc = { path = "src/rpc" }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
@@ -44,6 +47,7 @@ common = { path = "src/common" }
 metrics = { path = "src/metrics" }
 cluster = { path = "src/cluster" }
 device_manager = { path = "src/device_manager" }
+rpc = { path = "src/rpc" }
 
 futures-util = "0.3"
 futures = "0.3"
@@ -71,6 +75,7 @@ hex = "0.4"
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
+serde_json = "1"
 
 [lints.clippy]
 unwrap_used = "deny"

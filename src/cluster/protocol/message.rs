@@ -40,6 +40,10 @@ pub enum ClusterMessageType {
     ProbeRequest,
     /// Response to probe request (unicast)
     ProbeResponse,
+    /// Broadcast a config key/value update to all peers
+    ConfigUpdate,
+    /// Acknowledge a config update
+    ConfigUpdateAck,
 }
 
 impl ClusterMessageType {
@@ -59,6 +63,8 @@ impl ClusterMessageType {
             ClusterMessageType::NodeDead => 0x41,
             ClusterMessageType::ProbeRequest => 0x50,
             ClusterMessageType::ProbeResponse => 0x51,
+            ClusterMessageType::ConfigUpdate => 0x60,
+            ClusterMessageType::ConfigUpdateAck => 0x61,
         }
     }
 
@@ -78,6 +84,8 @@ impl ClusterMessageType {
             0x41 => Ok(ClusterMessageType::NodeDead),
             0x50 => Ok(ClusterMessageType::ProbeRequest),
             0x51 => Ok(ClusterMessageType::ProbeResponse),
+            0x60 => Ok(ClusterMessageType::ConfigUpdate),
+            0x61 => Ok(ClusterMessageType::ConfigUpdateAck),
             _ => Err(ClusterCodecError::UnknownMessageType(code)),
         }
     }
@@ -251,6 +259,26 @@ impl ClusterMessage {
             seq,
             ClusterMessageType::ProbeRequest,
             ClusterPayload::ProbeRequest(super::ProbeRequestPayload { target_node_id }),
+        )
+    }
+
+    /// Creates a config update message.
+    pub fn config_update(node_id: Uuid, seq: u32, payload: super::ConfigUpdatePayload) -> Self {
+        Self::new(
+            node_id,
+            seq,
+            ClusterMessageType::ConfigUpdate,
+            ClusterPayload::ConfigUpdate(payload),
+        )
+    }
+
+    /// Creates a config update acknowledgment message.
+    pub fn config_update_ack(node_id: Uuid, seq: u32, payload: super::ConfigUpdateAckPayload) -> Self {
+        Self::new(
+            node_id,
+            seq,
+            ClusterMessageType::ConfigUpdateAck,
+            ClusterPayload::ConfigUpdateAck(payload),
         )
     }
 
