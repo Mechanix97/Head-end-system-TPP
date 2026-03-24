@@ -52,7 +52,6 @@ impl Scheduler {
             local_node_id,
         };
         scheduler.start().await?;
-        scheduler.reload_active_connections().await?;
 
         Ok(scheduler)
     }
@@ -107,8 +106,9 @@ impl Scheduler {
     /// This checks for any previously scheduled connections and reschedules them
     /// if their next wake-up time hasn't expired yet (with a 5-minute safety margin).
     ///
-    /// In cluster mode, only loads connections for buckets owned by this node.
-    async fn reload_active_connections(&mut self) -> Result<(), SchedulerError> {
+    /// In cluster mode, only loads connections for devices owned by this node.
+    /// Must be called after `enable_cluster_mode()` so that the ownership set is populated.
+    pub async fn reload_active_connections(&mut self) -> Result<(), SchedulerError> {
         let scheduled_connections = self.database.get_scheduled_connections().await?;
 
         for mut connection in scheduled_connections {

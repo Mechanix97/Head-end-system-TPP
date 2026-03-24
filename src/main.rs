@@ -206,9 +206,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         watch::channel((config.backdoor_ip.clone(), config.backdoor_port.clone()));
     let backdoor_rebind_tx = Arc::new(backdoor_rebind_tx);
 
-    let metrics_enabled_flag = Arc::new(AtomicBool::new(config.metrics_enabled));
+    let metrics_enabled_flag = Arc::new(AtomicBool::new(config.metrics_enabled));    
+  
+    // Reload scheduled connections now that cluster ownership is known.
+    // In cluster mode this runs after enable_cluster_mode(), so only this
+    // node's own devices are picked up. In single-node mode it loads all.
+    device_manager
+        .write()
+        .await
+        .reload_active_connections()
+        .await?;
 
-    let backdoor_joinhandle = init_backdoor(backdoor::backdoor::BackdoorConfig {
+   let backdoor_joinhandle = init_backdoor(backdoor::backdoor::BackdoorConfig {
         ip: config.backdoor_ip,
         port: config.backdoor_port,
         ack_timeout_duration: None,
@@ -217,8 +226,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         device_manager: device_manager.clone(),
         max_concurrent_handlers: None,
         rebind_rx: backdoor_rebind_rx,
-    })
-    .await?;
+    }).await?;
 
     let metrics_join_handle = if config.metrics_enabled {
         let mjh = start_prometheus_metrics_api(
