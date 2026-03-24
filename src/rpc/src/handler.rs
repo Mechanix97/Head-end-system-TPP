@@ -26,6 +26,11 @@ pub async fn dispatch(req: JsonRpcRequest, state: &RpcState) -> JsonRpcResponse 
         // cluster.*
         "cluster.peers" => methods::cluster::peers(state, req.params, req.id).await,
         "cluster.status" => methods::cluster::status(state, req.params, req.id).await,
+        "cluster.join" => methods::cluster::join(state, req.params, req.id).await,
+
+        // scheduler.*
+        "scheduler.upcoming" => methods::scheduler::upcoming(state, req.params, req.id).await,
+        "scheduler.history" => methods::scheduler::history(state, req.params, req.id).await,
 
         other => JsonRpcResponse::method_not_found(req.id, other),
     }
