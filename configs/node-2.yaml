@@ -1,8 +1,11 @@
+node_id: c571dc5b-e3f2-4b62-8f09-bc3ba6d89b85
 backdoor:
-  ip: "0.0.0.0"
-  port: "6565"
+  ip: 0.0.0.0
+  port: '6565'
 metrics:
   enabled: false
+  ip: 0.0.0.0
+  port: '6464'
 scheduler:
   buckets_number: 48
 database:
@@ -10,10 +13,10 @@ database:
   postgres:
     user: postgres
     password: HeadEndSystem
-    url: "100.86.94.38"
-    port: "5432"
+    url: 100.86.94.38
+    port: '5432'
 cluster:
   enabled: true
-  ip: "0.0.0.0"
+  ip: 0.0.0.0
   port: 6570
-  seeds: "100.86.94.38:6570"
+  seeds: 100.86.94.38:6570
