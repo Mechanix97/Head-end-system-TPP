@@ -237,6 +237,32 @@ impl Database {
     pub async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError> {
         self.engine.get_all_device_ids().await
     }
+
+    // ========== Scheduler queries ==========
+
+    /// Returns upcoming connections (Awaiting), sorted by schedule_time ASC, paginated.
+    /// Pass `device_id = Some(uuid)` to filter to a single device.
+    pub async fn get_upcoming_connections(
+        &self,
+        limit: i64,
+        offset: i64,
+        device_id: Option<Uuid>,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        self.engine.get_upcoming_connections(limit, offset, device_id).await
+    }
+
+    /// Returns past connections (Done or Lost), sorted by schedule_time DESC, paginated.
+    /// Pass `device_id = Some(uuid)` to filter to a single device.
+    pub async fn get_connection_history(
+        &self,
+        limit: i64,
+        offset: i64,
+        device_id: Option<Uuid>,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        self.engine
+            .get_connection_history(limit, offset, device_id)
+            .await
+    }
 }
 
 /// Database engine trait that defines the interface for database operations.
@@ -349,4 +375,24 @@ pub trait Engine: Debug + Send + Sync {
 
     // ========== Device queries ==========
     async fn get_all_device_ids(&self) -> Result<Vec<Uuid>, DatabaseError>;
+
+    // ========== Scheduler queries ==========
+
+    /// Returns upcoming scheduled connections (status = Awaiting), sorted by schedule_time ASC.
+    /// Optionally filtered to a single device.
+    async fn get_upcoming_connections(
+        &self,
+        limit: i64,
+        offset: i64,
+        device_id: Option<Uuid>,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError>;
+
+    /// Returns past connections (status = Done or Lost), sorted by schedule_time DESC.
+    /// Optionally filtered to a single device.
+    async fn get_connection_history(
+        &self,
+        limit: i64,
+        offset: i64,
+        device_id: Option<Uuid>,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError>;
 }

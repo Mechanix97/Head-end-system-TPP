@@ -10,9 +10,12 @@
 //   config propagate <key> <value>
 //   cluster peers
 //   cluster status
+//   cluster join <ip:port>
 //   device list [--limit N] [--offset N]
 //   device info <uuid>
-//   device delegate <device_id> <target_node_id>
+//   device delegate <sel> [node_id]
+//   scheduler upcoming [--limit N] [--offset N]
+//   scheduler history [--limit N] [--offset N] [<device_id>]
 //   version
 //   help
 //   exit / quit
@@ -165,6 +168,7 @@ fn parse_command(input: &str, id: u64) -> Option<Value> {
 
         ["cluster", "peers"] => ("cluster.peers", json!({})),
         ["cluster", "status"] => ("cluster.status", json!({})),
+        ["cluster", "join", seed] => ("cluster.join", json!({ "seed": seed })),
 
         // device list [--limit N] [--offset N]
         parts if parts.first() == Some(&"device") && parts.get(1) == Some(&"list") => {
@@ -217,6 +221,56 @@ fn parse_command(input: &str, id: u64) -> Option<Value> {
             }
         }
 
+        // scheduler upcoming [--limit N] [--offset N] [<device_id>]
+        parts if parts.first() == Some(&"scheduler") && parts.get(1) == Some(&"upcoming") => {
+            let mut limit = 20i64;
+            let mut offset = 0i64;
+            let mut device_id: Option<&str> = None;
+            let mut i = 2;
+            while i < parts.len() {
+                if parts[i] == "--limit" && i + 1 < parts.len() {
+                    limit = parts[i + 1].parse().unwrap_or(20);
+                    i += 2;
+                } else if parts[i] == "--offset" && i + 1 < parts.len() {
+                    offset = parts[i + 1].parse().unwrap_or(0);
+                    i += 2;
+                } else {
+                    device_id = Some(parts[i]);
+                    i += 1;
+                }
+            }
+            let mut p = json!({ "limit": limit, "offset": offset });
+            if let Some(did) = device_id {
+                p["device_id"] = json!(did);
+            }
+            ("scheduler.upcoming", p)
+        }
+
+        // scheduler history [--limit N] [--offset N] [<device_id>]
+        parts if parts.first() == Some(&"scheduler") && parts.get(1) == Some(&"history") => {
+            let mut limit = 20i64;
+            let mut offset = 0i64;
+            let mut device_id: Option<&str> = None;
+            let mut i = 2;
+            while i < parts.len() {
+                if parts[i] == "--limit" && i + 1 < parts.len() {
+                    limit = parts[i + 1].parse().unwrap_or(20);
+                    i += 2;
+                } else if parts[i] == "--offset" && i + 1 < parts.len() {
+                    offset = parts[i + 1].parse().unwrap_or(0);
+                    i += 2;
+                } else {
+                    device_id = Some(parts[i]);
+                    i += 1;
+                }
+            }
+            let mut p = json!({ "limit": limit, "offset": offset });
+            if let Some(did) = device_id {
+                p["device_id"] = json!(did);
+            }
+            ("scheduler.history", p)
+        }
+
         _ => return None,
     };
 
@@ -262,12 +316,15 @@ fn print_help() {
   config propagate <key> <value>       Set locally + broadcast to cluster
   cluster peers                        List cluster peers
   cluster status                       Cluster summary (nodes, devices)
+  cluster join <ip:port>               Send NODE_JOIN to a seed and persist it
   device list [--limit N] [--offset N] List devices owned by this node
   device info <uuid>                   Show device details
   device delegate <sel> [node_id]      Delegate devices to another node (or least loaded)
                                          <sel> = UUID        → single device
                                          <sel> = N           → N random devices
                                          <sel> = u1,u2,...   → explicit list
+  scheduler upcoming [--limit N] [--offset N] [<uuid>]  List upcoming scheduled connections
+  scheduler history [--limit N] [--offset N] [<uuid>]   List past connections (done/lost)
   help                                 Show this help
   exit / quit                          Disconnect"#
     );
