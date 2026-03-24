@@ -45,7 +45,18 @@ pub async fn status(state: &RpcState, _params: Value, id: Value) -> JsonRpcRespo
     let active_count = all.iter().filter(|n| {
         matches!(n.status, cluster::node::NodeStatus::Active)
     }).count();
-    let total_devices: u32 = all.iter().map(|n| n.device_count).sum();
+    // Peer device counts come from heartbeats; local node never heartbeats itself,
+    // so read local count directly from DeviceManager.
+    let local_device_count = {
+        let dm = state.device_manager.read().await;
+        dm.device_count() as u32
+    };
+    let peer_devices: u32 = all
+        .iter()
+        .filter(|n| n.node_id != cluster.node_id)
+        .map(|n| n.device_count)
+        .sum();
+    let total_devices = local_device_count + peer_devices;
 
     JsonRpcResponse::success(
         id,

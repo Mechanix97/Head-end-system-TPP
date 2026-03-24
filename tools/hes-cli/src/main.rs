@@ -86,7 +86,6 @@ async fn main() {
                 let _ = rl.add_history_entry(trimmed);
 
                 if trimmed == "exit" || trimmed == "quit" {
-                    println!("Bye.");
                     break;
                 }
 
@@ -137,7 +136,6 @@ async fn main() {
                 next_id += 1;
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
-                println!("\nBye.");
                 break;
             }
             Err(e) => {
