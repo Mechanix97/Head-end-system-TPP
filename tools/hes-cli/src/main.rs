@@ -186,10 +186,36 @@ fn parse_command(input: &str, id: u64) -> Option<Value> {
         }
 
         ["device", "info", uuid] => ("device.info", json!({ "device_id": uuid })),
-        ["device", "delegate", device_id, target_node_id] => (
-            "device.delegate",
-            json!({ "device_id": device_id, "target_node_id": target_node_id }),
-        ),
+
+        // device delegate <id|count|id,id,...> [target_node_id]
+        parts if parts.first() == Some(&"device") && parts.get(1) == Some(&"delegate") => {
+            let selector = parts.get(2)?;
+            let target = parts.get(3).copied();
+
+            // Is it a plain integer?
+            if let Ok(n) = selector.parse::<u64>() {
+                let mut p = json!({ "count": n });
+                if let Some(t) = target {
+                    p["target_node_id"] = json!(t);
+                }
+                ("device.delegate", p)
+            // Is it a comma-separated list?
+            } else if selector.contains(',') {
+                let ids: Vec<&str> = selector.split(',').collect();
+                let mut p = json!({ "device_ids": ids });
+                if let Some(t) = target {
+                    p["target_node_id"] = json!(t);
+                }
+                ("device.delegate", p)
+            // Otherwise treat as single UUID
+            } else {
+                let mut p = json!({ "device_id": selector });
+                if let Some(t) = target {
+                    p["target_node_id"] = json!(t);
+                }
+                ("device.delegate", p)
+            }
+        }
 
         _ => return None,
     };
@@ -238,7 +264,10 @@ fn print_help() {
   cluster status                       Cluster summary (nodes, devices)
   device list [--limit N] [--offset N] List devices owned by this node
   device info <uuid>                   Show device details
-  device delegate <did> <nid>          Delegate device to another node
+  device delegate <sel> [node_id]      Delegate devices to another node (or least loaded)
+                                         <sel> = UUID        → single device
+                                         <sel> = N           → N random devices
+                                         <sel> = u1,u2,...   → explicit list
   help                                 Show this help
   exit / quit                          Disconnect"#
     );
