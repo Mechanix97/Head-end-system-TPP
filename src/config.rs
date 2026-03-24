@@ -313,41 +313,81 @@ impl common::config_store::ConfigStore for ConfigManager {
             _ => {}
         }
 
-        self.update(|c| {
-            match key {
-                "backdoor_ip" => c.backdoor_ip = value.to_string(),
-                "backdoor_port" => c.backdoor_port = value.to_string(),
-                "metrics_enabled" => c.metrics_enabled = value == "true",
-                "metrics_ip" => c.metrics_ip = value.to_string(),
-                "metrics_port" => c.metrics_port = value.to_string(),
-                "buckets_number" => {
-                    if let Ok(n) = value.parse::<usize>() {
-                        c.buckets_number = n;
-                    }
+        // Validate and parse the value before mutating — closures can't return errors.
+        enum Validated {
+            Str(String),
+            Bool(bool),
+            Port(String), // stored as String in HesConfig
+            U16(u16),
+            Usize(usize),
+            OptStr(Option<String>),
+        }
+
+        let validated: Validated = match key {
+            "backdoor_ip" | "metrics_ip" | "cluster_ip" => {
+                if value.is_empty() {
+                    return Err(format!("'{key}' cannot be empty").into());
                 }
-                "cluster_enabled" => c.cluster_enabled = value == "true",
-                "cluster_ip" => c.cluster_ip = value.to_string(),
-                "cluster_port" => {
-                    if let Ok(p) = value.parse::<u16>() {
-                        c.cluster_port = p;
-                    }
-                }
-                "cluster_seeds" => {
-                    c.cluster_seeds = if value.is_empty() {
-                        None
-                    } else {
-                        Some(value.to_string())
-                    };
-                }
-                "node_name" => {
-                    c.node_name = if value.is_empty() {
-                        None
-                    } else {
-                        Some(value.to_string())
-                    };
-                }
-                _ => {}
+                Validated::Str(value.to_string())
             }
+            "backdoor_port" | "metrics_port" => {
+                let p: u16 = value
+                    .parse()
+                    .map_err(|_| format!("'{value}' is not a valid port number (1-65535)"))?;
+                if p == 0 {
+                    return Err("port must be between 1 and 65535".into());
+                }
+                Validated::Port(p.to_string())
+            }
+            "metrics_enabled" | "cluster_enabled" => match value {
+                "true" => Validated::Bool(true),
+                "false" => Validated::Bool(false),
+                _ => return Err(format!("'{value}' is not valid — use 'true' or 'false'").into()),
+            },
+            "buckets_number" => {
+                let n: usize = value
+                    .parse()
+                    .map_err(|_| format!("'{value}' is not a valid positive integer"))?;
+                if n == 0 {
+                    return Err("buckets_number must be greater than 0".into());
+                }
+                Validated::Usize(n)
+            }
+            "cluster_port" => {
+                let p: u16 = value
+                    .parse()
+                    .map_err(|_| format!("'{value}' is not a valid port number (1-65535)"))?;
+                if p == 0 {
+                    return Err("port must be between 1 and 65535".into());
+                }
+                Validated::U16(p)
+            }
+            "cluster_seeds" => Validated::OptStr(if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            }),
+            "node_name" => Validated::OptStr(if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            }),
+            _ => return Err(format!("unknown config key '{key}'").into()),
+        };
+
+        self.update(|c| match (&validated, key) {
+            (Validated::Str(v), "backdoor_ip") => c.backdoor_ip = v.clone(),
+            (Validated::Str(v), "metrics_ip") => c.metrics_ip = v.clone(),
+            (Validated::Str(v), "cluster_ip") => c.cluster_ip = v.clone(),
+            (Validated::Port(v), "backdoor_port") => c.backdoor_port = v.clone(),
+            (Validated::Port(v), "metrics_port") => c.metrics_port = v.clone(),
+            (Validated::Bool(v), "metrics_enabled") => c.metrics_enabled = *v,
+            (Validated::Bool(v), "cluster_enabled") => c.cluster_enabled = *v,
+            (Validated::Usize(v), "buckets_number") => c.buckets_number = *v,
+            (Validated::U16(v), "cluster_port") => c.cluster_port = *v,
+            (Validated::OptStr(v), "cluster_seeds") => c.cluster_seeds = v.clone(),
+            (Validated::OptStr(v), "node_name") => c.node_name = v.clone(),
+            _ => {}
         })
         .await
         .map_err(Into::into)

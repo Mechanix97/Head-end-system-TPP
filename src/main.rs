@@ -1,10 +1,10 @@
 mod config;
 
 use clap::Parser;
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::{Arc, atomic::AtomicBool}};
 use tokio::{
     io::{self, AsyncReadExt},
-    sync::RwLock,
+    sync::{RwLock, watch},
 };
 use tracing::info;
 
@@ -201,19 +201,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None
     };
 
-    let backdoor_joinhandle = init_backdoor(
-        config.backdoor_ip,
-        config.backdoor_port,
-        None,
-        db.clone(),
-        config.node_id,
-        device_manager.clone(),
-        None,
-    )
+    // Hot-reload primitives shared between the RPC layer and the running services.
+    let (backdoor_rebind_tx, backdoor_rebind_rx) =
+        watch::channel((config.backdoor_ip.clone(), config.backdoor_port.clone()));
+    let backdoor_rebind_tx = Arc::new(backdoor_rebind_tx);
+
+    let metrics_enabled_flag = Arc::new(AtomicBool::new(config.metrics_enabled));
+
+    let backdoor_joinhandle = init_backdoor(backdoor::backdoor::BackdoorConfig {
+        ip: config.backdoor_ip,
+        port: config.backdoor_port,
+        ack_timeout_duration: None,
+        database: db.clone(),
+        node_id: config.node_id,
+        device_manager: device_manager.clone(),
+        max_concurrent_handlers: None,
+        rebind_rx: backdoor_rebind_rx,
+    })
     .await?;
 
     let metrics_join_handle = if config.metrics_enabled {
-        let mjh = start_prometheus_metrics_api(config.metrics_ip, config.metrics_port).await?;
+        let mjh = start_prometheus_metrics_api(
+            config.metrics_ip,
+            config.metrics_port,
+            Arc::clone(&metrics_enabled_flag),
+        )
+        .await?;
         Some(mjh)
     } else {
         None
@@ -234,6 +247,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             device_manager: device_manager.clone(),
             cluster_handle,
             database: db.clone(),
+            metrics_enabled: Arc::clone(&metrics_enabled_flag),
+            backdoor_rebind: Arc::clone(&backdoor_rebind_tx),
         };
 
         let rpc_addr = format!("{}:{}", config.rpc_ip, config.rpc_port);

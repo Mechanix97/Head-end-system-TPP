@@ -15,9 +15,7 @@ pub async fn dispatch(req: JsonRpcRequest, state: &RpcState) -> JsonRpcResponse 
         "config.get" => {
             methods::config::get(state.config_store.as_ref(), req.params, req.id).await
         }
-        "config.set" => {
-            methods::config::set(state.config_store.as_ref(), req.params, req.id).await
-        }
+        "config.set" => methods::config::set(state, req.params, req.id).await,
         "config.propagate" => config_propagate(state, req.params, req.id).await,
 
         // device.*
@@ -65,6 +63,7 @@ async fn config_propagate(
     if let Err(e) = state.config_store.set_config_value(&key, &value).await {
         return JsonRpcResponse::error(id, &RpcError::Config(e.to_string()));
     }
+    crate::methods::config::apply_hot_reload(&key, &value, state).await;
 
     // Propagate to cluster peers if cluster is enabled
     let propagated_to = if let Some(cluster) = &state.cluster_handle {
