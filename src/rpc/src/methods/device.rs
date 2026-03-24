@@ -1,6 +1,9 @@
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use cluster::delegation::DelegationHandler;
+use cluster::protocol::DelegationReason;
+use common::delegated_device::DelegatedDevice;
 use crate::error::RpcError;
 use crate::protocol::JsonRpcResponse;
 use crate::state::RpcState;
@@ -112,7 +115,7 @@ pub async fn delegate(state: &RpcState, params: Value, id: Value) -> JsonRpcResp
         }
     };
 
-    let _target_node_id = match Uuid::parse_str(&target_node_str) {
+    let target_node_id = match Uuid::parse_str(&target_node_str) {
         Ok(uuid) => uuid,
         Err(e) => {
             return JsonRpcResponse::error(
@@ -135,28 +138,53 @@ pub async fn delegate(state: &RpcState, params: Value, id: Value) -> JsonRpcResp
         }
     }
 
-    // Find target node address from membership
-    let target_addr = {
+    // Verify target node exists in membership
+    let target_exists = {
         let m = cluster.membership.read().await;
-        m.get_node(_target_node_id).map(|n| n.cluster_addr)
+        m.get_node(target_node_id).is_some()
     };
 
-    match target_addr {
-        None => JsonRpcResponse::error(
+    if !target_exists {
+        return JsonRpcResponse::error(
             id,
-            &RpcError::Internal(format!("node {_target_node_id} not found in membership")),
+            &RpcError::Internal(format!("node {target_node_id} not found in membership")),
+        );
+    }
+
+    // Fetch device info from DB to build DelegatedDevice
+    let device = match state.database.get_device(device_id).await {
+        Ok(d) => d,
+        Err(e) => return JsonRpcResponse::error(id, &RpcError::Database(e.to_string())),
+    };
+
+    // Get scheduled connection time; fall back to tomorrow if not found
+    let schedule_time = match state.database.get_scheduled_connection(device_id).await {
+        Ok(conn) => conn.schedule_time,
+        Err(_) => chrono::Utc::now().naive_utc() + chrono::Duration::days(1),
+    };
+
+    let delegated = DelegatedDevice::new(device.id, device.ipv4, device.ipv6, schedule_time);
+
+    let delegation_handler = DelegationHandler::new(
+        cluster.node_id,
+        state.device_manager.clone(),
+        cluster.membership.clone(),
+        cluster.socket.clone(),
+        state.database.clone(),
+    );
+
+    match delegation_handler
+        .request_delegation(vec![delegated], DelegationReason::Rebalance, Some(target_node_id))
+        .await
+    {
+        Ok(_) => JsonRpcResponse::success(
+            id,
+            json!({
+                "status": "delegation_initiated",
+                "device_id": device_id.to_string(),
+                "target_node_id": target_node_id.to_string(),
+            }),
         ),
-        Some(_addr) => {
-            // Delegation is handled by the cluster delegation handler in practice;
-            // here we just report that the request was initiated.
-            JsonRpcResponse::success(
-                id,
-                json!({
-                    "status": "delegation_initiated",
-                    "device_id": device_id.to_string(),
-                    "target_node_id": _target_node_id.to_string(),
-                }),
-            )
-        }
+        Err(e) => JsonRpcResponse::error(id, &RpcError::Internal(e.to_string())),
     }
 }
