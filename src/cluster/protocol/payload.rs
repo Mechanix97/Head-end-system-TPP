@@ -664,6 +664,94 @@ impl ProbeResponsePayload {
     }
 }
 
+/// Payload for CONFIG_UPDATE messages.
+#[derive(Debug, Clone)]
+pub struct ConfigUpdatePayload {
+    /// Unique ID for this update (used for deduplication/ack correlation)
+    pub update_id: Uuid,
+    /// Config key being updated
+    pub key: String,
+    /// New value as a UTF-8 string
+    pub value: String,
+}
+
+impl ConfigUpdatePayload {
+    // Minimum size: update_id + key_len + value_len
+    const MIN_SIZE: usize = UUID_SIZE + U16_SIZE + U16_SIZE;
+
+    pub fn encode(&self, buf: &mut impl BufMut) {
+        buf.put_u128(self.update_id.as_u128());
+        let key_bytes = self.key.as_bytes();
+        buf.put_u16(key_bytes.len() as u16);
+        buf.put_slice(key_bytes);
+        let val_bytes = self.value.as_bytes();
+        buf.put_u16(val_bytes.len() as u16);
+        buf.put_slice(val_bytes);
+    }
+
+    pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
+        if buf.remaining() < Self::MIN_SIZE {
+            return Err(ClusterCodecError::InvalidLength);
+        }
+        let update_id = Uuid::from_u128(buf.get_u128());
+
+        let key_len = buf.get_u16() as usize;
+        if buf.remaining() < key_len {
+            return Err(ClusterCodecError::InvalidLength);
+        }
+        let mut key_bytes = vec![0u8; key_len];
+        buf.copy_to_slice(&mut key_bytes);
+        let key = String::from_utf8(key_bytes)
+            .map_err(|e| ClusterCodecError::InvalidPayload(e.to_string()))?;
+
+        if buf.remaining() < U16_SIZE {
+            return Err(ClusterCodecError::InvalidLength);
+        }
+        let val_len = buf.get_u16() as usize;
+        if buf.remaining() < val_len {
+            return Err(ClusterCodecError::InvalidLength);
+        }
+        let mut val_bytes = vec![0u8; val_len];
+        buf.copy_to_slice(&mut val_bytes);
+        let value = String::from_utf8(val_bytes)
+            .map_err(|e| ClusterCodecError::InvalidPayload(e.to_string()))?;
+
+        Ok(Self { update_id, key, value })
+    }
+}
+
+/// Payload for CONFIG_UPDATE_ACK messages.
+#[derive(Debug, Clone)]
+pub struct ConfigUpdateAckPayload {
+    /// Correlates with the original ConfigUpdate
+    pub update_id: Uuid,
+    /// Whether the update was applied successfully
+    pub success: bool,
+    /// Optional error message if success is false
+    pub error_message: Option<String>,
+}
+
+impl ConfigUpdateAckPayload {
+    // Minimum size: update_id + success_flag + error_flag
+    const MIN_SIZE: usize = UUID_SIZE + U8_SIZE + U8_SIZE;
+
+    pub fn encode(&self, buf: &mut impl BufMut) {
+        buf.put_u128(self.update_id.as_u128());
+        buf.put_u8(if self.success { BOOL_TRUE } else { BOOL_FALSE });
+        encode_optional_string(buf, &self.error_message);
+    }
+
+    pub fn decode(buf: &mut impl Buf) -> Result<Self, ClusterCodecError> {
+        if buf.remaining() < Self::MIN_SIZE {
+            return Err(ClusterCodecError::InvalidLength);
+        }
+        let update_id = Uuid::from_u128(buf.get_u128());
+        let success = buf.get_u8() == BOOL_TRUE;
+        let error_message = decode_optional_string(buf)?;
+        Ok(Self { update_id, success, error_message })
+    }
+}
+
 /// Union of all possible payloads.
 #[derive(Debug, Clone)]
 pub enum ClusterPayload {
@@ -678,6 +766,8 @@ pub enum ClusterPayload {
     StatusResponse(StatusResponsePayload),
     ProbeRequest(ProbeRequestPayload),
     ProbeResponse(ProbeResponsePayload),
+    ConfigUpdate(ConfigUpdatePayload),
+    ConfigUpdateAck(ConfigUpdateAckPayload),
 }
 
 impl ClusterPayload {
@@ -694,6 +784,8 @@ impl ClusterPayload {
             ClusterPayload::StatusResponse(p) => p.encode(buf),
             ClusterPayload::ProbeRequest(p) => p.encode(buf),
             ClusterPayload::ProbeResponse(p) => p.encode(buf),
+            ClusterPayload::ConfigUpdate(p) => p.encode(buf),
+            ClusterPayload::ConfigUpdateAck(p) => p.encode(buf),
         }
     }
 }

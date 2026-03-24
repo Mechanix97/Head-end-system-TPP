@@ -17,6 +17,35 @@ use crate::registration_status::DeviceRegistration;
 use crate::registration_status::RegistrationStatus;
 use crate::scheduled_connection::ScheduledConnection;
 
+fn map_scheduled_row(row: &sqlx::postgres::PgRow) -> Result<ScheduledConnection, DatabaseError> {
+    let fk_device: Uuid = row
+        .try_get("fk_device")
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+    let schedule_time: NaiveDateTime = row
+        .try_get("schedule_time")
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+    let connection_time: Option<NaiveDateTime> = row
+        .try_get("connection_time")
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+    let status = row
+        .try_get("status")
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+    let job_id: Option<Uuid> = row
+        .try_get("job_id")
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+    let renewable: bool = row
+        .try_get("renewable")
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+    Ok(ScheduledConnection {
+        fk_device,
+        schedule_time,
+        connection_time,
+        status,
+        job_id,
+        renewable,
+    })
+}
+
 /// PostgreSQL database implementation of the `Engine` trait.
 ///
 /// Uses sqlx for async database operations with connection pooling.
@@ -355,40 +384,9 @@ impl Engine for PostgresDB {
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
-        let scheduled = rows
-            .into_iter()
-            .map(|row| {
-                let fk_device: Uuid = row
-                    .try_get("fk_device")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                let schedule_time: NaiveDateTime = row
-                    .try_get("schedule_time")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                let connection_time: Option<NaiveDateTime> = row
-                    .try_get("connection_time")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                let status = row
-                    .try_get("status")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                let job_id: Option<Uuid> = row
-                    .try_get("job_id")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-                let renewable: bool = row
-                    .try_get("renewable")
-                    .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
-                Ok(ScheduledConnection {
-                    fk_device,
-                    schedule_time,
-                    connection_time,
-                    status,
-                    job_id,
-                    renewable,
-                })
-            })
-            .collect::<Result<Vec<_>, DatabaseError>>()?;
-
-        Ok(scheduled)
+        rows.into_iter()
+            .map(|row| map_scheduled_row(&row))
+            .collect()
     }
 
     async fn get_scheduled_connection(
@@ -407,33 +405,7 @@ impl Engine for PostgresDB {
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
-        let fk_device: Uuid = row
-            .try_get("fk_device")
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-        let schedule_time: NaiveDateTime = row
-            .try_get("schedule_time")
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-        let connection_time: Option<NaiveDateTime> = row
-            .try_get("connection_time")
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-        let status = row
-            .try_get("status")
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-        let job_id: Option<Uuid> = row
-            .try_get("job_id")
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-        let renewable: bool = row
-            .try_get("renewable")
-            .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
-
-        Ok(ScheduledConnection {
-            fk_device,
-            schedule_time,
-            connection_time,
-            status,
-            job_id,
-            renewable,
-        })
+        map_scheduled_row(&row)
     }
 
     async fn update_scheduled_connection(
@@ -462,6 +434,90 @@ impl Engine for PostgresDB {
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
         Ok(())
+    }
+
+    async fn get_upcoming_connections(
+        &self,
+        limit: i64,
+        offset: i64,
+        device_id: Option<Uuid>,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        let rows = if let Some(did) = device_id {
+            let query = r#"
+                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+                FROM T_SCHEDULED_CONNECTIONS
+                WHERE status = 'awaiting' AND fk_device = $3
+                ORDER BY schedule_time ASC
+                LIMIT $1 OFFSET $2
+            "#;
+            sqlx::query(query)
+                .bind(limit)
+                .bind(offset)
+                .bind(did)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| DatabaseError::QueryError(e.to_string()))?
+        } else {
+            let query = r#"
+                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+                FROM T_SCHEDULED_CONNECTIONS
+                WHERE status = 'awaiting'
+                ORDER BY schedule_time ASC
+                LIMIT $1 OFFSET $2
+            "#;
+            sqlx::query(query)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| DatabaseError::QueryError(e.to_string()))?
+        };
+
+        rows.into_iter()
+            .map(|row| map_scheduled_row(&row))
+            .collect()
+    }
+
+    async fn get_connection_history(
+        &self,
+        limit: i64,
+        offset: i64,
+        device_id: Option<Uuid>,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        let rows = if let Some(did) = device_id {
+            let query = r#"
+                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+                FROM T_SCHEDULED_CONNECTIONS
+                WHERE status IN ('done', 'lost') AND fk_device = $3
+                ORDER BY schedule_time DESC
+                LIMIT $1 OFFSET $2
+            "#;
+            sqlx::query(query)
+                .bind(limit)
+                .bind(offset)
+                .bind(did)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| DatabaseError::QueryError(e.to_string()))?
+        } else {
+            let query = r#"
+                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+                FROM T_SCHEDULED_CONNECTIONS
+                WHERE status IN ('done', 'lost')
+                ORDER BY schedule_time DESC
+                LIMIT $1 OFFSET $2
+            "#;
+            sqlx::query(query)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| DatabaseError::QueryError(e.to_string()))?
+        };
+
+        rows.into_iter()
+            .map(|row| map_scheduled_row(&row))
+            .collect()
     }
 
     async fn get_device_registration(

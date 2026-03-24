@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::{RwLock, Semaphore, watch};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::codec::Decoder;
@@ -26,15 +26,29 @@ const ACK_TIMEOUT_DURATION_MS: u64 = 30000;
 const UDP_BUFFER_SIZE: usize = 1024;
 const DEFAULT_MAX_CONCURRENT_HANDLERS: usize = 500;
 
-pub async fn init_backdoor(
-    ip: String,
-    port: String,
-    ack_timeout_duration: Option<u64>,
-    database: Database,
-    node_id: uuid::Uuid,
-    device_manager: Arc<RwLock<DeviceManager>>,
-    max_concurrent_handlers: Option<usize>,
-) -> Result<JoinHandle<()>, BackdoorError> {
+pub struct BackdoorConfig {
+    pub ip: String,
+    pub port: String,
+    pub ack_timeout_duration: Option<u64>,
+    pub database: Database,
+    pub node_id: uuid::Uuid,
+    pub device_manager: Arc<RwLock<DeviceManager>>,
+    pub max_concurrent_handlers: Option<usize>,
+    pub rebind_rx: watch::Receiver<(String, String)>,
+}
+
+pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, BackdoorError> {
+    let BackdoorConfig {
+        ip,
+        port,
+        ack_timeout_duration,
+        database,
+        node_id,
+        device_manager,
+        max_concurrent_handlers,
+        mut rebind_rx,
+    } = cfg;
+
     let socket = Arc::new(UdpSocket::bind(format!("{ip}:{port}")).await?);
     info!("Listening for device registration on {ip}:{port} via UDP");
 
@@ -44,11 +58,26 @@ pub async fn init_backdoor(
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         let mut buf = vec![0u8; UDP_BUFFER_SIZE];
+        let mut current_socket = socket;
         loop {
-            let (len, addr) = match socket.recv_from(&mut buf).await {
-                Ok(result) => result,
-                Err(e) => {
-                    warn!("Error receiving UDP packet: {e}");
+            let (len, addr) = tokio::select! {
+                biased;
+                recv = current_socket.recv_from(&mut buf) => match recv {
+                    Ok(result) => result,
+                    Err(e) => {
+                        warn!("Error receiving UDP packet: {e}");
+                        continue;
+                    }
+                },
+                _ = rebind_rx.changed() => {
+                    let (new_ip, new_port) = rebind_rx.borrow().clone();
+                    match UdpSocket::bind(format!("{new_ip}:{new_port}")).await {
+                        Ok(s) => {
+                            current_socket = Arc::new(s);
+                            info!("Backdoor rebound to {new_ip}:{new_port}");
+                        }
+                        Err(e) => warn!("Failed to rebind backdoor to {new_ip}:{new_port}: {e}"),
+                    }
                     continue;
                 }
             };
@@ -81,7 +110,7 @@ pub async fn init_backdoor(
                                 return;
                             }
                         };
-                        let socket = socket.clone();
+                        let socket = current_socket.clone();
                         let database = database.clone();
                         let device_manager = device_manager.clone();
                         tokio::spawn(async move {

@@ -292,6 +292,50 @@ impl Engine for InMemoryDB {
         let device_ids: Vec<Uuid> = inner.devices.keys().copied().collect();
         Ok(device_ids)
     }
+
+    async fn get_upcoming_connections(
+        &self,
+        limit: i64,
+        offset: i64,
+        device_id: Option<Uuid>,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        let lock = self.inner.lock().await;
+        let mut items: Vec<ScheduledConnection> = lock
+            .scheduled_connections
+            .values()
+            .filter(|c| c.status == ScheduledStatus::Awaiting)
+            .filter(|c| device_id.is_none_or(|did| c.fk_device == did))
+            .cloned()
+            .collect();
+        items.sort_by_key(|c| c.schedule_time);
+        Ok(items
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit as usize)
+            .collect())
+    }
+
+    async fn get_connection_history(
+        &self,
+        limit: i64,
+        offset: i64,
+        device_id: Option<Uuid>,
+    ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
+        let lock = self.inner.lock().await;
+        let mut items: Vec<ScheduledConnection> = lock
+            .scheduled_connections
+            .values()
+            .filter(|c| matches!(c.status, ScheduledStatus::Done | ScheduledStatus::Lost))
+            .filter(|c| device_id.is_none_or(|did| c.fk_device == did))
+            .cloned()
+            .collect();
+        items.sort_by(|a, b| b.schedule_time.cmp(&a.schedule_time));
+        Ok(items
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit as usize)
+            .collect())
+    }
 }
 
 #[cfg(test)]

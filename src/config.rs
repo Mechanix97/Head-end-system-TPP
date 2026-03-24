@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -26,6 +27,18 @@ pub struct FileConfig {
     pub database: Option<DatabaseFileConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cluster: Option<ClusterFileConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpc: Option<RpcFileConfig>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+pub struct RpcFileConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -107,6 +120,9 @@ pub struct HesConfig {
     pub cluster_ip: String,
     pub cluster_port: u16,
     pub cluster_seeds: Option<String>,
+    pub rpc_enabled: bool,
+    pub rpc_ip: String,
+    pub rpc_port: u16,
 }
 
 impl Default for HesConfig {
@@ -129,6 +145,9 @@ impl Default for HesConfig {
             cluster_ip: "0.0.0.0".to_string(),
             cluster_port: 6570,
             cluster_seeds: None,
+            rpc_enabled: true,
+            rpc_ip: "127.0.0.1".to_string(),
+            rpc_port: 6600,
         }
     }
 }
@@ -165,6 +184,11 @@ impl HesConfig {
                 ip: Some(self.cluster_ip.clone()),
                 port: Some(self.cluster_port),
                 seeds: self.cluster_seeds.clone(),
+            }),
+            rpc: Some(RpcFileConfig {
+                enabled: Some(self.rpc_enabled),
+                ip: Some(self.rpc_ip.clone()),
+                port: Some(self.rpc_port),
             }),
         }
     }
@@ -224,6 +248,149 @@ impl common::config_store::ConfigStore for ConfigManager {
         seeds: Option<String>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.update(|c| c.cluster_seeds = seeds).await.map_err(Into::into)
+    }
+
+    async fn get_all_config(
+        &self,
+    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error + Send + Sync>> {
+        let c = self.get().await;
+        let mut map = HashMap::new();
+        map.insert("backdoor_ip".to_string(), c.backdoor_ip.clone());
+        map.insert("backdoor_port".to_string(), c.backdoor_port.clone());
+        map.insert("metrics_enabled".to_string(), c.metrics_enabled.to_string());
+        map.insert("metrics_ip".to_string(), c.metrics_ip.clone());
+        map.insert("metrics_port".to_string(), c.metrics_port.clone());
+        map.insert("buckets_number".to_string(), c.buckets_number.to_string());
+        map.insert("cluster_enabled".to_string(), c.cluster_enabled.to_string());
+        map.insert("cluster_ip".to_string(), c.cluster_ip.clone());
+        map.insert("cluster_port".to_string(), c.cluster_port.to_string());
+        if let Some(seeds) = &c.cluster_seeds {
+            map.insert("cluster_seeds".to_string(), seeds.clone());
+        }
+        if let Some(name) = &c.node_name {
+            map.insert("node_name".to_string(), name.clone());
+        }
+        // Read-only keys (informational)
+        map.insert("node_id".to_string(), c.node_id.to_string());
+        map.insert("database_type".to_string(), database_type_to_string(c.database_type));
+        Ok(map)
+    }
+
+    async fn get_config_value(
+        &self,
+        key: &str,
+    ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+        let c = self.get().await;
+        let val = match key {
+            "backdoor_ip" => Some(c.backdoor_ip.clone()),
+            "backdoor_port" => Some(c.backdoor_port.clone()),
+            "metrics_enabled" => Some(c.metrics_enabled.to_string()),
+            "metrics_ip" => Some(c.metrics_ip.clone()),
+            "metrics_port" => Some(c.metrics_port.clone()),
+            "buckets_number" => Some(c.buckets_number.to_string()),
+            "cluster_enabled" => Some(c.cluster_enabled.to_string()),
+            "cluster_ip" => Some(c.cluster_ip.clone()),
+            "cluster_port" => Some(c.cluster_port.to_string()),
+            "cluster_seeds" => c.cluster_seeds.clone(),
+            "node_name" => c.node_name.clone(),
+            "node_id" => Some(c.node_id.to_string()),
+            "database_type" => Some(database_type_to_string(c.database_type)),
+            _ => None,
+        };
+        Ok(val)
+    }
+
+    async fn set_config_value(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Read-only keys
+        match key {
+            "node_id" | "database_type" => {
+                return Err(format!("'{key}' is read-only").into());
+            }
+            _ => {}
+        }
+
+        // Validate and parse the value before mutating — closures can't return errors.
+        enum Validated {
+            Str(String),
+            Bool(bool),
+            Port(String), // stored as String in HesConfig
+            U16(u16),
+            Usize(usize),
+            OptStr(Option<String>),
+        }
+
+        let validated: Validated = match key {
+            "backdoor_ip" | "metrics_ip" | "cluster_ip" => {
+                if value.is_empty() {
+                    return Err(format!("'{key}' cannot be empty").into());
+                }
+                Validated::Str(value.to_string())
+            }
+            "backdoor_port" | "metrics_port" => {
+                let p: u16 = value
+                    .parse()
+                    .map_err(|_| format!("'{value}' is not a valid port number (1-65535)"))?;
+                if p == 0 {
+                    return Err("port must be between 1 and 65535".into());
+                }
+                Validated::Port(p.to_string())
+            }
+            "metrics_enabled" | "cluster_enabled" => match value {
+                "true" => Validated::Bool(true),
+                "false" => Validated::Bool(false),
+                _ => return Err(format!("'{value}' is not valid — use 'true' or 'false'").into()),
+            },
+            "buckets_number" => {
+                let n: usize = value
+                    .parse()
+                    .map_err(|_| format!("'{value}' is not a valid positive integer"))?;
+                if n == 0 {
+                    return Err("buckets_number must be greater than 0".into());
+                }
+                Validated::Usize(n)
+            }
+            "cluster_port" => {
+                let p: u16 = value
+                    .parse()
+                    .map_err(|_| format!("'{value}' is not a valid port number (1-65535)"))?;
+                if p == 0 {
+                    return Err("port must be between 1 and 65535".into());
+                }
+                Validated::U16(p)
+            }
+            "cluster_seeds" => Validated::OptStr(if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            }),
+            "node_name" => Validated::OptStr(if value.is_empty() {
+                None
+            } else {
+                Some(value.to_string())
+            }),
+            _ => return Err(format!("unknown config key '{key}'").into()),
+        };
+
+        self.update(|c| match (&validated, key) {
+            (Validated::Str(v), "backdoor_ip") => c.backdoor_ip = v.clone(),
+            (Validated::Str(v), "metrics_ip") => c.metrics_ip = v.clone(),
+            (Validated::Str(v), "cluster_ip") => c.cluster_ip = v.clone(),
+            (Validated::Port(v), "backdoor_port") => c.backdoor_port = v.clone(),
+            (Validated::Port(v), "metrics_port") => c.metrics_port = v.clone(),
+            (Validated::Bool(v), "metrics_enabled") => c.metrics_enabled = *v,
+            (Validated::Bool(v), "cluster_enabled") => c.cluster_enabled = *v,
+            (Validated::Usize(v), "buckets_number") => c.buckets_number = *v,
+            (Validated::U16(v), "cluster_port") => c.cluster_port = *v,
+            (Validated::OptStr(v), "cluster_seeds") => c.cluster_seeds = v.clone(),
+            (Validated::OptStr(v), "node_name") => c.node_name = v.clone(),
+            _ => {}
+        })
+        .await
+        .map_err(Into::into)
     }
 }
 
@@ -303,6 +470,9 @@ pub struct CliOverrides {
     pub cluster_ip: Option<String>,
     pub cluster_port: Option<u16>,
     pub cluster_seeds: Option<String>,
+    pub disable_rpc: bool,
+    pub rpc_ip: Option<String>,
+    pub rpc_port: Option<u16>,
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -377,6 +547,12 @@ fn apply_file_config(config: &mut HesConfig, fc: FileConfig) -> Result<(), Confi
         if let Some(v) = cl.seeds { config.cluster_seeds = Some(v); }
     }
 
+    if let Some(rpc) = fc.rpc {
+        if let Some(v) = rpc.enabled { config.rpc_enabled = v; }
+        if let Some(v) = rpc.ip { config.rpc_ip = v; }
+        if let Some(v) = rpc.port { config.rpc_port = v; }
+    }
+
     Ok(())
 }
 
@@ -397,6 +573,9 @@ fn apply_cli_overrides(config: &mut HesConfig, cli: CliOverrides) -> Result<(), 
     if let Some(v) = cli.cluster_ip { config.cluster_ip = v; }
     if let Some(v) = cli.cluster_port { config.cluster_port = v; }
     if cli.cluster_seeds.is_some() { config.cluster_seeds = cli.cluster_seeds; }
+    if cli.disable_rpc { config.rpc_enabled = false; }
+    if let Some(v) = cli.rpc_ip { config.rpc_ip = v; }
+    if let Some(v) = cli.rpc_port { config.rpc_port = v; }
     Ok(())
 }
 
@@ -452,6 +631,9 @@ mod tests {
             cluster_ip: None,
             cluster_port: None,
             cluster_seeds: None,
+            disable_rpc: false,
+            rpc_ip: None,
+            rpc_port: None,
         }
     }
 

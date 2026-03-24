@@ -100,6 +100,12 @@ fn decode_payload(
         ClusterMessageType::ProbeResponse => {
             Ok(ClusterPayload::ProbeResponse(ProbeResponsePayload::decode(buf)?))
         }
+        ClusterMessageType::ConfigUpdate => {
+            Ok(ClusterPayload::ConfigUpdate(ConfigUpdatePayload::decode(buf)?))
+        }
+        ClusterMessageType::ConfigUpdateAck => {
+            Ok(ClusterPayload::ConfigUpdateAck(ConfigUpdateAckPayload::decode(buf)?))
+        }
     }
 }
 

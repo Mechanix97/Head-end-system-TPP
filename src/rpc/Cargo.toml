@@ -1,0 +1,23 @@
+[package]
+name = "rpc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { workspace = true }
+cluster = { workspace = true }
+device_manager = { workspace = true }
+
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+bytes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+
+[lints.clippy]
+unwrap_used = "deny"
