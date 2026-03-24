@@ -201,6 +201,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None
     };
 
+    // Reload scheduled connections now that cluster ownership is known.
+    // In cluster mode this runs after enable_cluster_mode(), so only this
+    // node's own devices are picked up. In single-node mode it loads all.
+    device_manager
+        .write()
+        .await
+        .reload_active_connections()
+        .await?;
+
     // Hot-reload primitives shared between the RPC layer and the running services.
     let (backdoor_rebind_tx, backdoor_rebind_rx) =
         watch::channel((config.backdoor_ip.clone(), config.backdoor_port.clone()));

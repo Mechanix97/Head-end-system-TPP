@@ -119,6 +119,17 @@ impl DeviceManager {
         self.scheduler.enable_cluster_mode(owned_devices);
     }
 
+    /// Restores scheduled connections from the database.
+    ///
+    /// Must be called after `enable_cluster_mode()` in cluster mode so that the
+    /// scheduler knows which devices it owns before loading connections.
+    pub async fn reload_active_connections(&mut self) -> Result<(), DeviceManagerError> {
+        self.scheduler
+            .reload_active_connections()
+            .await
+            .map_err(DeviceManagerError::Scheduler)
+    }
+
     /// Gets scheduled connections (delegates to scheduler).
     pub async fn get_scheduled_connections(
         &self,
