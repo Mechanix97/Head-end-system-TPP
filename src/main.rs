@@ -185,6 +185,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None
     };
 
+    // Reload scheduled connections now that cluster ownership is known.
+    // In cluster mode this runs after enable_cluster_mode(), so only this
+    // node's own devices are picked up. In single-node mode it loads all.
+    device_manager
+        .write()
+        .await
+        .reload_active_connections()
+        .await?;
+
     let backdoor_joinhandle = init_backdoor(
         config.backdoor_ip,
         config.backdoor_port,
