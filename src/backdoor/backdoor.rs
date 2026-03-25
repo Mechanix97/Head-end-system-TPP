@@ -354,15 +354,17 @@ mod tests {
             db.clone(),
             scheduler,
         )));
-        init_backdoor(
-            "0.0.0.0".to_string(),
-            backdoor_port.to_string(),
-            Some(300),
-            db.clone(),
+        let (_, rebind_rx) = tokio::sync::watch::channel(("0.0.0.0".to_string(), backdoor_port.to_string()));
+        init_backdoor(BackdoorConfig {
+            ip: "0.0.0.0".to_string(),
+            port: backdoor_port.to_string(),
+            ack_timeout_duration: Some(300),
+            database: db.clone(),
             node_id,
-            device_manager.clone(),
-            Some(50),
-        )
+            device_manager: device_manager.clone(),
+            max_concurrent_handlers: Some(50),
+            rebind_rx,
+        })
         .await
         .unwrap();
         device_manager
