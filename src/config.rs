@@ -270,6 +270,9 @@ impl common::config_store::ConfigStore for ConfigManager {
         if let Some(name) = &c.node_name {
             map.insert("node_name".to_string(), name.clone());
         }
+        map.insert("rpc_enabled".to_string(), c.rpc_enabled.to_string());
+        map.insert("rpc_ip".to_string(), c.rpc_ip.clone());
+        map.insert("rpc_port".to_string(), c.rpc_port.to_string());
         // Read-only keys (informational)
         map.insert("node_id".to_string(), c.node_id.to_string());
         map.insert("database_type".to_string(), database_type_to_string(c.database_type));
@@ -293,6 +296,9 @@ impl common::config_store::ConfigStore for ConfigManager {
             "cluster_port" => Some(c.cluster_port.to_string()),
             "cluster_seeds" => c.cluster_seeds.clone(),
             "node_name" => c.node_name.clone(),
+            "rpc_enabled" => Some(c.rpc_enabled.to_string()),
+            "rpc_ip" => Some(c.rpc_ip.clone()),
+            "rpc_port" => Some(c.rpc_port.to_string()),
             "node_id" => Some(c.node_id.to_string()),
             "database_type" => Some(database_type_to_string(c.database_type)),
             _ => None,
@@ -362,6 +368,26 @@ impl common::config_store::ConfigStore for ConfigManager {
                 }
                 Validated::U16(p)
             }
+            "rpc_enabled" => match value {
+                "true" => Validated::Bool(true),
+                "false" => Validated::Bool(false),
+                _ => return Err(format!("'{value}' is not valid — use 'true' or 'false'").into()),
+            },
+            "rpc_ip" => {
+                if value.is_empty() {
+                    return Err(format!("'{key}' cannot be empty").into());
+                }
+                Validated::Str(value.to_string())
+            }
+            "rpc_port" => {
+                let p: u16 = value
+                    .parse()
+                    .map_err(|_| format!("'{value}' is not a valid port number (1-65535)"))?;
+                if p == 0 {
+                    return Err("port must be between 1 and 65535".into());
+                }
+                Validated::U16(p)
+            }
             "cluster_seeds" => Validated::OptStr(if value.is_empty() {
                 None
             } else {
@@ -385,6 +411,9 @@ impl common::config_store::ConfigStore for ConfigManager {
             (Validated::Bool(v), "cluster_enabled") => c.cluster_enabled = *v,
             (Validated::Usize(v), "buckets_number") => c.buckets_number = *v,
             (Validated::U16(v), "cluster_port") => c.cluster_port = *v,
+            (Validated::Bool(v), "rpc_enabled") => c.rpc_enabled = *v,
+            (Validated::Str(v), "rpc_ip") => c.rpc_ip = v.clone(),
+            (Validated::U16(v), "rpc_port") => c.rpc_port = *v,
             (Validated::OptStr(v), "cluster_seeds") => c.cluster_seeds = v.clone(),
             (Validated::OptStr(v), "node_name") => c.node_name = v.clone(),
             _ => {}
