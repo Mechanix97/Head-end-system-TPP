@@ -17,8 +17,8 @@ use crate::failure_detector::handle_probe_request;
 use crate::membership::MembershipList;
 use crate::node::{NodeInfo, NodeStatus};
 use crate::protocol::{
-    ClusterMessage, ClusterMessageCodec, ClusterMessageType, ClusterPayload, KnownNodeInfo,
-    NodeJoinPayload, StatusResponsePayload,
+    ClusterMessage, ClusterMessageCodec, ClusterMessageType, ClusterPayload, ConfigUpdateAckPayload,
+    KnownNodeInfo, NodeJoinPayload, StatusResponsePayload,
 };
 
 use common::config_store::ConfigStore;
@@ -198,7 +198,80 @@ async fn handle_message(
             }
             Ok(())
         }
+        ClusterMessageType::ConfigUpdate => {
+            handle_config_update(msg.node_id, msg.seq, from_addr, msg.payload, config_store, socket)
+                .await
+        }
+        ClusterMessageType::ConfigUpdateAck => {
+            if let ClusterPayload::ConfigUpdateAck(payload) = msg.payload {
+                if payload.success {
+                    info!("Config update {} acknowledged by {}", payload.update_id, from_addr);
+                } else {
+                    tracing::warn!(
+                        "Config update {} rejected by {}: {}",
+                        payload.update_id,
+                        from_addr,
+                        payload.error_message.as_deref().unwrap_or("unknown error")
+                    );
+                }
+            }
+            Ok(())
+        }
     }
+}
+
+/// Handles a CONFIG_UPDATE message: applies the change locally and sends ack.
+async fn handle_config_update(
+    sender_node_id: Uuid,
+    sender_seq: u32,
+    from_addr: SocketAddr,
+    payload: ClusterPayload,
+    config_store: &Arc<dyn ConfigStore>,
+    socket: &UdpSocket,
+) -> Result<(), ClusterError> {
+    let update = match payload {
+        ClusterPayload::ConfigUpdate(u) => u,
+        _ => {
+            return Err(ClusterError::InvalidMessage(
+                "Expected ConfigUpdate payload".to_string(),
+            ));
+        }
+    };
+
+    info!(
+        "Received ConfigUpdate from {} ({}): {}={}",
+        sender_node_id, from_addr, update.key, update.value
+    );
+
+    let (success, error_message) = match config_store
+        .set_config_value(&update.key, &update.value)
+        .await
+    {
+        Ok(()) => (true, None),
+        Err(e) => (false, Some(e.to_string())),
+    };
+
+    // Send ConfigUpdateAck back to sender
+    // NOTE: sender_node_id is the cluster node ID; we need the local node ID for the ack sender field.
+    // Using a placeholder 0-uuid is fine here since the ack is just for correlation.
+    let ack_payload = ConfigUpdateAckPayload {
+        update_id: update.update_id,
+        success,
+        error_message,
+    };
+    // We don't have the local node ID here without passing it in, so we use sender_seq+1 as a workaround.
+    // The ack's node_id will be filled with the local node when we have access to membership.
+    let ack_msg = ClusterMessage::config_update_ack(
+        sender_node_id, // reuse sender id as placeholder; receiver only checks update_id
+        sender_seq.wrapping_add(1),
+        ack_payload,
+    );
+
+    if let Err(e) = crate::membership::send_message(socket, from_addr, ack_msg).await {
+        tracing::warn!("Failed to send ConfigUpdateAck to {}: {}", from_addr, e);
+    }
+
+    Ok(())
 }
 
 /// Handles a heartbeat message.

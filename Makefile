@@ -1,4 +1,4 @@
-.PHONY: build run run-node-1 run-node-2 run-node-3 lint
+.PHONY: build run run-node-1 run-node-2 run-node-3 lint local-cli
 
 build: ## Build the server
 	cargo build
@@ -14,6 +14,9 @@ run-node-2: ## Run node 2 (joins via node-1, postgres on 100.86.94.38)
 
 run-node-3: ## Run node 3 (joins via node-1, separate ports, postgres on 100.86.94.38)
 	cargo run -- --config configs/node-3.yaml
+
+local-cli: ## Connect to local HES via interactive CLI (127.0.0.1:6600)
+	cargo run -p hes-cli
 
 clean: ## clean the targets
 	cargo clean
