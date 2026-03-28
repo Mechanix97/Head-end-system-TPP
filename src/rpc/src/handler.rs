@@ -72,14 +72,7 @@ async fn config_propagate(
 
     // Propagate to cluster peers if cluster is enabled
     let propagated_to = if let Some(cluster) = &state.cluster_handle {
-        match crate::cluster_broadcast::broadcast_config_update(
-            cluster,
-            state.node_id,
-            &key,
-            &value,
-        )
-        .await
-        {
+        match cluster.broadcast_config_update(&key, &value).await {
             Ok(count) => count,
             Err(e) => {
                 tracing::warn!("Config propagation to cluster failed: {}", e);

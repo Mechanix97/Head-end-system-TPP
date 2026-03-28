@@ -2,8 +2,6 @@ use std::net::SocketAddr;
 
 use serde_json::{Value, json};
 
-use cluster::membership::send_message;
-use cluster::protocol::ClusterMessage;
 use crate::error::RpcError;
 use crate::protocol::JsonRpcResponse;
 use crate::state::RpcState;
@@ -99,18 +97,7 @@ pub async fn join(state: &RpcState, params: Value, id: Value) -> JsonRpcResponse
         }
     };
 
-    // Build NODE_JOIN from current local node state
-    let (node_id, seq, payload) = {
-        let mut m = cluster.membership.write().await;
-        let node_id = m.local_node_id();
-        let seq = m.next_seq();
-        let payload = m.create_node_join_payload();
-        (node_id, seq, payload)
-    };
-
-    let msg = ClusterMessage::node_join(node_id, seq, payload);
-
-    if let Err(e) = send_message(&cluster.socket, seed_addr, msg).await {
+    if let Err(e) = cluster.join_peer(seed_addr).await {
         return JsonRpcResponse::error(
             id,
             &RpcError::Internal(format!("failed to send NODE_JOIN to {seed_addr}: {e}")),

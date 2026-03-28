@@ -1,4 +1,3 @@
-pub mod cluster_broadcast;
 pub mod error;
 pub mod handler;
 pub mod methods;
