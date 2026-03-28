@@ -7,6 +7,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, watch};
 use uuid::Uuid;
 
+use cluster::manager::ClusterManager;
 use cluster::membership::MembershipList;
 use common::config_store::ConfigStore;
 use common::database::api::Database;
@@ -21,6 +22,17 @@ pub struct ClusterManagerHandle {
     pub socket: Arc<UdpSocket>,
     pub node_id: Uuid,
     pub local_addr: SocketAddr,
+}
+
+impl From<&ClusterManager> for ClusterManagerHandle {
+    fn from(cm: &ClusterManager) -> Self {
+        Self {
+            membership: cm.membership(),
+            socket: cm.socket(),
+            node_id: cm.node_id(),
+            local_addr: cm.local_addr(),
+        }
+    }
 }
 
 impl ClusterManagerHandle {

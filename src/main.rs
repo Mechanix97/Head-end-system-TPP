@@ -242,18 +242,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Start JSON-RPC server if enabled
     let rpc_join_handle = if config.rpc_enabled {
-        let cluster_handle = cluster_manager.as_ref().map(|cm| ClusterManagerHandle {
-            membership: cm.membership(),
-            socket: cm.socket(),
-            node_id: cm.node_id(),
-            local_addr: cm.local_addr(),
-        });
-
         let rpc_state = RpcState {
             node_id: config.node_id,
             config_store: Arc::new(config_manager.clone()),
             device_manager: device_manager.clone(),
-            cluster_handle,
+            cluster_handle: cluster_manager.as_ref().map(ClusterManagerHandle::from),
             database: db.clone(),
             metrics_enabled: Arc::clone(&metrics_enabled_flag),
             backdoor_rebind: Arc::clone(&backdoor_rebind_tx),
