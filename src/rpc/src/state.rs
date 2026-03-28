@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::time::Instant;
 
 use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, watch};
@@ -67,4 +68,6 @@ pub struct RpcState {
     pub metrics_enabled: Arc<AtomicBool>,
     /// Notifies the backdoor task to rebind to a new (ip, port) (hot-reloadable).
     pub backdoor_rebind: Arc<watch::Sender<(String, String)>>,
+    /// Timestamp when the node started (for uptime calculation).
+    pub started_at: Instant,
 }

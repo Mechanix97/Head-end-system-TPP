@@ -3,6 +3,9 @@ name = "rpc"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+path = "src/mod.rs"
+
 [dependencies]
 common = { workspace = true }
 cluster = { workspace = true }

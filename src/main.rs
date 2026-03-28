@@ -257,6 +257,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             database: db.clone(),
             metrics_enabled: Arc::clone(&metrics_enabled_flag),
             backdoor_rebind: Arc::clone(&backdoor_rebind_tx),
+            started_at: std::time::Instant::now(),
         };
 
         let rpc_addr = format!("{}:{}", config.rpc_ip, config.rpc_port);
