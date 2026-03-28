@@ -22,6 +22,34 @@ pub struct ClusterManagerHandle {
     pub local_addr: SocketAddr,
 }
 
+impl ClusterManagerHandle {
+    /// Sends a NODE_JOIN message to the given seed address.
+    pub async fn join_peer(
+        &self,
+        seed: SocketAddr,
+    ) -> Result<(), cluster::error::ClusterError> {
+        cluster::membership::send_join_to_peer(&self.socket, &self.membership, seed).await
+    }
+
+    /// Broadcasts a CONFIG_UPDATE to all reachable cluster peers.
+    ///
+    /// Returns the number of peers successfully notified.
+    pub async fn broadcast_config_update(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<usize, cluster::error::ClusterError> {
+        cluster::membership::broadcast_config_update(
+            &self.socket,
+            &self.membership,
+            self.node_id,
+            key,
+            value,
+        )
+        .await
+    }
+}
+
 /// Shared state injected into every RPC handler.
 #[derive(Clone)]
 pub struct RpcState {

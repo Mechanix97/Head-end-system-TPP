@@ -290,3 +290,64 @@ pub async fn broadcast_message(
 
     Ok(())
 }
+
+/// Sends a NODE_JOIN message to a specific peer address.
+///
+/// Used for dynamic cluster joining via `cluster.join` RPC or equivalent.
+pub async fn send_join_to_peer(
+    socket: &UdpSocket,
+    membership: &RwLock<MembershipList>,
+    seed: SocketAddr,
+) -> Result<(), ClusterError> {
+    let (node_id, seq, payload) = {
+        let mut m = membership.write().await;
+        let node_id = m.local_node_id();
+        let seq = m.next_seq();
+        let payload = m.create_node_join_payload();
+        (node_id, seq, payload)
+    };
+    let msg = ClusterMessage::node_join(node_id, seq, payload);
+    send_message(socket, seed, msg).await
+}
+
+/// Broadcasts a CONFIG_UPDATE message to all reachable peers, excluding self.
+///
+/// Returns the number of peers successfully notified.
+pub async fn broadcast_config_update(
+    socket: &UdpSocket,
+    membership: &RwLock<MembershipList>,
+    node_id: Uuid,
+    key: &str,
+    value: &str,
+) -> Result<usize, ClusterError> {
+    use crate::protocol::payload::ConfigUpdatePayload;
+
+    let peers: Vec<SocketAddr> = {
+        let m = membership.read().await;
+        m.reachable_nodes()
+            .iter()
+            .filter(|n| n.node_id != node_id)
+            .map(|n| n.cluster_addr)
+            .collect()
+    };
+
+    if peers.is_empty() {
+        return Ok(0);
+    }
+
+    let update_id = Uuid::new_v4();
+    let payload = ConfigUpdatePayload {
+        update_id,
+        key: key.to_string(),
+        value: value.to_string(),
+    };
+    let msg = ClusterMessage::config_update(node_id, 0, payload);
+
+    let mut sent = 0usize;
+    for peer_addr in &peers {
+        if send_message(socket, *peer_addr, msg.clone()).await.is_ok() {
+            sent += 1;
+        }
+    }
+    Ok(sent)
+}
