@@ -20,4 +20,5 @@ WORKDIR /app
 COPY --from=builder /app/target/release/hes /app/hes
 EXPOSE 6464
 EXPOSE 6565
+EXPOSE 6600
 CMD ["./hes"]
