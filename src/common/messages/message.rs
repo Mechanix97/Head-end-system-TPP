@@ -292,3 +292,39 @@ impl MessagePayload {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::BytesMut;
+    use crate::messages::codec::MessageCodec;
+    use tokio_util::codec::{Decoder, Encoder};
+
+    fn roundtrip(msg: Message) -> Message {
+        let mut buf = BytesMut::new();
+        let mut codec = MessageCodec;
+        codec.encode(msg, &mut buf).expect("encode failed");
+        codec.decode(&mut buf).expect("decode failed").expect("no message decoded")
+    }
+
+    #[test]
+    fn registry_request_roundtrip() {
+        let msg = Message::new_register_request_message().unwrap();
+        let decoded = roundtrip(msg);
+        assert!(matches!(decoded.payload, MessagePayload::RegistryRequest(_)));
+    }
+
+    #[test]
+    fn handshake_roundtrip() {
+        let msg = Message::new_handshake_message(42, 1, vec![0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
+        let decoded = roundtrip(msg);
+        assert!(matches!(decoded.payload, MessagePayload::Handshake(_)));
+    }
+
+    #[test]
+    fn ack_roundtrip() {
+        let msg = Message::new_ack_message(99, 1).unwrap();
+        let decoded = roundtrip(msg);
+        assert!(matches!(decoded.payload, MessagePayload::Ack));
+    }
+}
