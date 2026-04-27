@@ -5,6 +5,10 @@ use bytes::BufMut;
 pub struct WriteRequestMessage {}
 
 impl WriteRequestMessage {
+    pub fn decode(_data: &[u8]) -> Result<Self, MsgCodecError> {
+        Ok(Self {})
+    }
+
     pub fn encode(&self, _buf: &mut dyn BufMut) -> Result<(), MsgCodecError> {
         Ok(())
     }
@@ -14,6 +18,10 @@ impl WriteRequestMessage {
 pub struct WriteResponseMessage {}
 
 impl WriteResponseMessage {
+    pub fn decode(_data: &[u8]) -> Result<Self, MsgCodecError> {
+        Ok(Self {})
+    }
+
     pub fn encode(&self, _buf: &mut dyn BufMut) -> Result<(), MsgCodecError> {
         Ok(())
     }
