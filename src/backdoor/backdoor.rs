@@ -219,7 +219,7 @@ async fn handle_backdoor_register_msg(
     let next_wake_time = next_wake_up.and_utc().timestamp() as u64;
     let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1, next_wake_time)?;
 
-    let mut buf = BytesMut::new();
+    let mut buf = BytesMut::with_capacity(1024);
     match MessageCodec.encode(response, &mut buf) {
         Err(err) => {
             error!("Error encoding response: {err}");
@@ -384,7 +384,7 @@ mod tests {
         // 1. sends registration request msg
         let register_request: Message = Message::new_register_request_message().unwrap();
         let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let mut buffer = BytesMut::new();
+        let mut buffer = BytesMut::with_capacity(1024);
 
         let mut codec = MessageCodec;
         codec.encode(register_request.clone(), &mut buffer).unwrap();
@@ -411,7 +411,7 @@ mod tests {
         // 3. sends ack response
         let ack_msg = Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
 
-        buffer = BytesMut::new();
+        buffer = BytesMut::with_capacity(1024);
         codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
         device_socket
@@ -452,7 +452,7 @@ mod tests {
 
         let register_request: Message = Message::new_register_request_message().unwrap();
         let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let mut buffer = BytesMut::new();
+        let mut buffer = BytesMut::with_capacity(1024);
 
         let mut codec = MessageCodec;
         codec.encode(register_request.clone(), &mut buffer).unwrap();
@@ -480,7 +480,7 @@ mod tests {
 
         // 4. sends ack response
         let ack_msg = Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
-        buffer = BytesMut::new();
+        buffer = BytesMut::with_capacity(1024);
         codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
         device_socket
@@ -510,7 +510,7 @@ mod tests {
             // 1. sends registration request msg
             let register_request: Message = Message::new_register_request_message().unwrap();
             let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-            let mut buffer = BytesMut::new();
+            let mut buffer = BytesMut::with_capacity(1024);
 
             let mut codec = MessageCodec;
             codec.encode(register_request.clone(), &mut buffer).unwrap();
@@ -536,7 +536,7 @@ mod tests {
 
             // 3. sends ack response
             let ack_msg = Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
-            buffer = BytesMut::new();
+            buffer = BytesMut::with_capacity(1024);
             codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
             device_socket
@@ -573,7 +573,7 @@ mod tests {
 
                     // Send RegisterRequest
                     let request = Message::new_register_request_message().unwrap();
-                    let mut buf = BytesMut::new();
+                    let mut buf = BytesMut::with_capacity(1024);
                     codec.encode(request, &mut buf).unwrap();
                     device_socket
                         .send_to(&buf, format!("127.0.0.1:{}", port))
@@ -581,7 +581,7 @@ mod tests {
                         .unwrap();
 
                     // Receive RegisterResponse
-                    let mut resp = BytesMut::new();
+                    let mut resp = BytesMut::with_capacity(1024);
                     device_socket.recv_buf(&mut resp).await.unwrap();
                     let response = codec.decode(&mut resp).unwrap().unwrap();
                     assert!(matches!(response.msg_type, MsgType::RegisterResponse));
@@ -589,7 +589,7 @@ mod tests {
                     // Send ACK
                     let ack =
                         Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
-                    let mut ack_buf = BytesMut::new();
+                    let mut ack_buf = BytesMut::with_capacity(1024);
                     codec.encode(ack, &mut ack_buf).unwrap();
                     device_socket
                         .send_to(&ack_buf, format!("127.0.0.1:{}", port))
@@ -645,7 +645,7 @@ mod tests {
             mac: 0,
         };
 
-        let mut buf = BytesMut::new();
+        let mut buf = BytesMut::with_capacity(1024);
         codec.encode(invalid_request, &mut buf).unwrap();
         device_socket
             .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
@@ -653,7 +653,7 @@ mod tests {
             .unwrap();
 
         // No response should arrive for an invalid device_id
-        let mut resp = BytesMut::new();
+        let mut resp = BytesMut::with_capacity(1024);
         let recv_result = timeout(
             Duration::from_millis(200),
             device_socket.recv_buf(&mut resp),
@@ -676,14 +676,14 @@ mod tests {
         // Backdoor must still be functional: a valid request should succeed
         let valid_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let request = Message::new_register_request_message().unwrap();
-        let mut buf = BytesMut::new();
+        let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         valid_socket
             .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
             .await
             .unwrap();
 
-        let mut resp = BytesMut::new();
+        let mut resp = BytesMut::with_capacity(1024);
         valid_socket.recv_buf(&mut resp).await.unwrap();
         let response = codec.decode(&mut resp).unwrap().unwrap();
         assert!(matches!(response.msg_type, MsgType::RegisterResponse));
@@ -708,21 +708,21 @@ mod tests {
         // Backdoor must survive: a valid registration should still complete
         let mut codec = MessageCodec;
         let request = Message::new_register_request_message().unwrap();
-        let mut buf = BytesMut::new();
+        let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         device_socket
             .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
             .await
             .unwrap();
 
-        let mut resp = BytesMut::new();
+        let mut resp = BytesMut::with_capacity(1024);
         device_socket.recv_buf(&mut resp).await.unwrap();
         let response = codec.decode(&mut resp).unwrap().unwrap();
         assert!(matches!(response.msg_type, MsgType::RegisterResponse));
 
         // Complete the registration with an ACK
         let ack = Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
-        let mut ack_buf = BytesMut::new();
+        let mut ack_buf = BytesMut::with_capacity(1024);
         codec.encode(ack, &mut ack_buf).unwrap();
         device_socket
             .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
@@ -754,8 +754,8 @@ mod tests {
         let mut codec = MessageCodec;
 
         // Handshake is a valid message type but not expected on the backdoor port
-        let handshake = Message::new_handshake_message(0xDEAD_BEEF, 0).unwrap();
-        let mut buf = BytesMut::new();
+        let handshake = Message::new_handshake_message(0xDEAD_BEEF, 0, vec![]).unwrap();
+        let mut buf = BytesMut::with_capacity(1024);
         codec.encode(handshake, &mut buf).unwrap();
         device_socket
             .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
@@ -763,7 +763,7 @@ mod tests {
             .unwrap();
 
         // No response should be sent for an unrecognized message type
-        let mut resp = BytesMut::new();
+        let mut resp = BytesMut::with_capacity(1024);
         let recv_result = timeout(
             Duration::from_millis(200),
             device_socket.recv_buf(&mut resp),
@@ -785,14 +785,14 @@ mod tests {
 
         // Backdoor must still be functional after receiving the wrong type
         let request = Message::new_register_request_message().unwrap();
-        let mut buf = BytesMut::new();
+        let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         device_socket
             .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
             .await
             .unwrap();
 
-        let mut resp = BytesMut::new();
+        let mut resp = BytesMut::with_capacity(1024);
         device_socket.recv_buf(&mut resp).await.unwrap();
         let response = codec.decode(&mut resp).unwrap().unwrap();
         assert!(matches!(response.msg_type, MsgType::RegisterResponse));
@@ -811,7 +811,7 @@ mod tests {
         // Send an ACK referencing a device_id that was never registered
         let fake_id = 0xDEAD_BEEF_CAFE_1234_u128;
         let ack = Message::new_ack_message(fake_id, 0).unwrap();
-        let mut buf = BytesMut::new();
+        let mut buf = BytesMut::with_capacity(1024);
         codec.encode(ack, &mut buf).unwrap();
         device_socket
             .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
@@ -831,20 +831,20 @@ mod tests {
 
         // Backdoor must still work after the failed ACK handler
         let request = Message::new_register_request_message().unwrap();
-        let mut buf = BytesMut::new();
+        let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         device_socket
             .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
             .await
             .unwrap();
 
-        let mut resp = BytesMut::new();
+        let mut resp = BytesMut::with_capacity(1024);
         device_socket.recv_buf(&mut resp).await.unwrap();
         let response = codec.decode(&mut resp).unwrap().unwrap();
         assert!(matches!(response.msg_type, MsgType::RegisterResponse));
 
         let ack = Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
-        let mut ack_buf = BytesMut::new();
+        let mut ack_buf = BytesMut::with_capacity(1024);
         codec.encode(ack, &mut ack_buf).unwrap();
         device_socket
             .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
@@ -882,7 +882,7 @@ mod tests {
 
                     // Send RegisterRequest
                     let request = Message::new_register_request_message().unwrap();
-                    let mut buf = BytesMut::new();
+                    let mut buf = BytesMut::with_capacity(1024);
                     codec.encode(request, &mut buf).unwrap();
                     device_socket
                         .send_to(&buf, format!("127.0.0.1:{}", port))
@@ -890,7 +890,7 @@ mod tests {
                         .unwrap();
 
                     // Receive RegisterResponse
-                    let mut resp = BytesMut::new();
+                    let mut resp = BytesMut::with_capacity(1024);
                     device_socket.recv_buf(&mut resp).await.unwrap();
                     let response = codec.decode(&mut resp).unwrap().unwrap();
                     assert!(matches!(response.msg_type, MsgType::RegisterResponse));
@@ -900,7 +900,7 @@ mod tests {
                     // Send ACK with the device_id we received
                     let ack =
                         Message::new_ack_message(response.device_id, response.seq + 1).unwrap();
-                    let mut ack_buf = BytesMut::new();
+                    let mut ack_buf = BytesMut::with_capacity(1024);
                     codec.encode(ack, &mut ack_buf).unwrap();
                     device_socket
                         .send_to(&ack_buf, format!("127.0.0.1:{}", port))
@@ -944,7 +944,7 @@ mod tests {
         // 1a. sends registration request msg
         let register_request: Message = Message::new_register_request_message().unwrap();
         let device_socket_a = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let mut buffer: BytesMut = BytesMut::new();
+        let mut buffer: BytesMut = BytesMut::with_capacity(1024);
 
         let mut codec = MessageCodec;
         codec.encode(register_request.clone(), &mut buffer).unwrap();
@@ -966,7 +966,7 @@ mod tests {
         // 1a. sends registration request msg
         let register_request: Message = Message::new_register_request_message().unwrap();
         let device_socket_b = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let mut buffer: BytesMut = BytesMut::new();
+        let mut buffer: BytesMut = BytesMut::with_capacity(1024);
 
         let mut codec = MessageCodec;
         codec.encode(register_request.clone(), &mut buffer).unwrap();
@@ -998,7 +998,7 @@ mod tests {
         // 3a. sends ack response
         let ack_msg_a = Message::new_ack_message(response_a.device_id, response_a.seq + 1).unwrap();
 
-        buffer = BytesMut::new();
+        buffer = BytesMut::with_capacity(1024);
         codec.encode(ack_msg_a.clone(), &mut buffer).unwrap();
 
         device_socket_a
@@ -1010,7 +1010,7 @@ mod tests {
         // 3b. sends ack response
         let ack_msg_b = Message::new_ack_message(response_b.device_id, response_b.seq + 1).unwrap();
 
-        buffer = BytesMut::new();
+        buffer = BytesMut::with_capacity(1024);
         codec.encode(ack_msg_b.clone(), &mut buffer).unwrap();
 
         device_socket_a

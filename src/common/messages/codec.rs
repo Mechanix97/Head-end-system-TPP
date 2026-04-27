@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn test_roundtrip_register_response() {
         use crate::messages::message::{MessagePayload, MsgType};
-        let msg = Message::new_register_response_message(42, 1).unwrap();
+        let msg = Message::new_register_response_message(42, 1, 0).unwrap();
         let decoded = roundtrip(msg);
         assert!(matches!(decoded.msg_type, MsgType::RegisterResponse));
         assert!(matches!(decoded.payload, MessagePayload::RegistryResponse(_)));
@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn test_roundtrip_handshake() {
         use crate::messages::message::{MessagePayload, MsgType};
-        let msg = Message::new_handshake_message(1, 0).unwrap();
+        let msg = Message::new_handshake_message(1, 0, vec![]).unwrap();
         let decoded = roundtrip(msg);
         assert!(matches!(decoded.msg_type, MsgType::Handshake));
         assert!(matches!(decoded.payload, MessagePayload::Handshake(_)));
