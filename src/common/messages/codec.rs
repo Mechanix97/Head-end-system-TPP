@@ -193,8 +193,11 @@ mod tests {
         let mut encode_buffer = BytesMut::new();
 
         // Create a valid message using the encoder
-        let msg = crate::messages::message::Message::new_register_request_message()
-            .expect("Failed to create message");
+        let msg = crate::messages::message::Message::new_register_request_message(
+            "123456789012345".to_string(),
+            "fe80::1".to_string(),
+        )
+        .expect("Failed to create message");
 
         codec
             .encode(msg, &mut encode_buffer)
@@ -220,7 +223,7 @@ mod tests {
     #[test]
     fn test_roundtrip_register_request() {
         use crate::messages::message::{MessagePayload, MsgType};
-        let msg = Message::new_register_request_message().unwrap();
+        let msg = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
         let decoded = roundtrip(msg);
         assert!(matches!(decoded.msg_type, MsgType::RegisterRequest));
         assert!(matches!(decoded.payload, MessagePayload::RegistryRequest(_)));
@@ -229,7 +232,7 @@ mod tests {
     #[test]
     fn test_roundtrip_register_response() {
         use crate::messages::message::{MessagePayload, MsgType};
-        let msg = Message::new_register_response_message(42, 1, 0).unwrap();
+        let msg = Message::new_register_response_message(42, 1, 0, 0).unwrap();
         let decoded = roundtrip(msg);
         assert!(matches!(decoded.msg_type, MsgType::RegisterResponse));
         assert!(matches!(decoded.payload, MessagePayload::RegistryResponse(_)));

@@ -95,17 +95,13 @@ impl PostgresDB {
 impl Engine for PostgresDB {
     // Device
     async fn add_device(&self, device: &Device) -> Result<(), DatabaseError> {
-        let query = "INSERT INTO T_DEVICES
-                    (id, IPv4, IPv6, MAC, factory_id, batch_id) 
-                    VALUES ($1, $2, $3, $4, $5, $6)";
+        let query = "INSERT INTO T_DEVICES (id, IPv4, IPv6, imei) VALUES ($1, $2, $3, $4)";
 
         sqlx::query(query)
             .bind(device.id)
             .bind(device.ipv4.clone())
             .bind(device.ipv6.clone())
-            .bind(device.mac.clone())
-            .bind(device.factory_id)
-            .bind(device.batch_id)
+            .bind(device.imei.clone())
             .execute(&self.pool)
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
@@ -138,7 +134,7 @@ impl Engine for PostgresDB {
         }
 
         let query = r#"
-            SELECT id, IPv4, IPv6, MAC, factory_id, batch_id
+            SELECT id, IPv4, IPv6, imei
             FROM T_DEVICES
             WHERE id = $1
         "#;
@@ -159,17 +155,13 @@ impl Engine for PostgresDB {
     }
 
     async fn modify_device(&self, device: &Device) -> Result<(), DatabaseError> {
-        let query = "UPDATE T_DEVICES
-        SET IPv4 = $2, IPv6 = $3, MAC = $4, factory_id = $5, batch_id = $6
-        WHERE id = $1";
+        let query = "UPDATE T_DEVICES SET IPv4 = $2, IPv6 = $3, imei = $4 WHERE id = $1";
 
         sqlx::query(query)
             .bind(device.id)
             .bind(device.ipv4.clone())
             .bind(device.ipv6.clone())
-            .bind(device.mac.clone())
-            .bind(device.factory_id)
-            .bind(device.batch_id)
+            .bind(device.imei.clone())
             .execute(&self.pool)
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;

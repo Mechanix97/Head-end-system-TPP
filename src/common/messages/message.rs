@@ -51,19 +51,14 @@ impl Message {
     ///
     /// Used when a device first connects to the HES backdoor to register itself.
     /// The device_id and seq are set to 0 since they haven't been assigned yet.
-    pub fn new_register_request_message() -> Result<Self, MessageError> {
+    pub fn new_register_request_message(imei: String, ipv6: String) -> Result<Self, MessageError> {
         let mut msg = Message {
             version: CURRENT_PROTOCOL_VERSION,
             msg_type: MsgType::RegisterRequest,
             device_id: 0,
             seq: 0,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
-            payload: MessagePayload::RegistryRequest(RegistryRequestMessage::new(
-                12345,
-                67890,
-                "fe80::1".to_string(),
-                "00:11:22:33:44:55".to_string(),
-            )),
+            payload: MessagePayload::RegistryRequest(RegistryRequestMessage::new(imei, ipv6)),
             mac: 0,
         };
 
@@ -75,17 +70,14 @@ impl Message {
     ///
     /// The HES sends this after validating the registration request, assigning a UUID
     /// and scheduling the device in a time bucket.
-    pub fn new_register_response_message(device_id: u128, seq: u32, next_wake_time: u64) -> Result<Self, MessageError> {
+    pub fn new_register_response_message(device_id: u128, seq: u32, flag: u8, next_wake_time: u64) -> Result<Self, MessageError> {
         let mut msg = Message {
             version: CURRENT_PROTOCOL_VERSION,
             msg_type: MsgType::RegisterResponse,
             device_id,
             seq,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
-            payload: MessagePayload::RegistryResponse(RegistryResponseMessage::new(
-                device_id,
-                next_wake_time,
-            )),
+            payload: MessagePayload::RegistryResponse(RegistryResponseMessage::new(flag, next_wake_time)),
             mac: 0,
         };
 
@@ -309,7 +301,7 @@ mod tests {
 
     #[test]
     fn registry_request_roundtrip() {
-        let msg = Message::new_register_request_message().unwrap();
+        let msg = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
         let decoded = roundtrip(msg);
         assert!(matches!(decoded.payload, MessagePayload::RegistryRequest(_)));
     }

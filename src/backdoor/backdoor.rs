@@ -203,8 +203,11 @@ async fn handle_backdoor_register_msg(
         return Err(BackdoorError::RegisterRequestInvalidId);
     }
 
-    // TODO: get info from payload
-    let device = Device::new(socket_addr, None, None, None);
+    let imei = match &msg.payload {
+        common::messages::message::MessagePayload::RegistryRequest(req) => Some(req.imei.clone()),
+        _ => None,
+    };
+    let device = Device::new(socket_addr, imei);
 
     database.add_device(&device).await?;
     let next_wake_up = device_manager
@@ -217,7 +220,7 @@ async fn handle_backdoor_register_msg(
         .await?;
 
     let next_wake_time = next_wake_up.and_utc().timestamp() as u64;
-    let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1, next_wake_time)?;
+    let response = Message::new_register_response_message(device.id.as_u128(), msg.seq + 1, 0, next_wake_time)?;
 
     let mut buf = BytesMut::with_capacity(1024);
     match MessageCodec.encode(response, &mut buf) {
@@ -382,7 +385,7 @@ mod tests {
         let dm = set_up_hes(backdoor_port).await;
 
         // 1. sends registration request msg
-        let register_request: Message = Message::new_register_request_message().unwrap();
+        let register_request: Message = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
         let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut buffer = BytesMut::with_capacity(1024);
 
@@ -450,7 +453,7 @@ mod tests {
             .len();
         assert_eq!(connecitons_number, 0);
 
-        let register_request: Message = Message::new_register_request_message().unwrap();
+        let register_request: Message = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
         let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut buffer = BytesMut::with_capacity(1024);
 
@@ -508,7 +511,7 @@ mod tests {
 
         for i in 0..10 {
             // 1. sends registration request msg
-            let register_request: Message = Message::new_register_request_message().unwrap();
+            let register_request: Message = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
             let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             let mut buffer = BytesMut::with_capacity(1024);
 
@@ -572,7 +575,7 @@ mod tests {
                     let mut codec = MessageCodec;
 
                     // Send RegisterRequest
-                    let request = Message::new_register_request_message().unwrap();
+                    let request = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
                     let mut buf = BytesMut::with_capacity(1024);
                     codec.encode(request, &mut buf).unwrap();
                     device_socket
@@ -675,7 +678,7 @@ mod tests {
 
         // Backdoor must still be functional: a valid request should succeed
         let valid_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let request = Message::new_register_request_message().unwrap();
+        let request = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         valid_socket
@@ -707,7 +710,7 @@ mod tests {
 
         // Backdoor must survive: a valid registration should still complete
         let mut codec = MessageCodec;
-        let request = Message::new_register_request_message().unwrap();
+        let request = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         device_socket
@@ -784,7 +787,7 @@ mod tests {
         );
 
         // Backdoor must still be functional after receiving the wrong type
-        let request = Message::new_register_request_message().unwrap();
+        let request = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         device_socket
@@ -830,7 +833,7 @@ mod tests {
         );
 
         // Backdoor must still work after the failed ACK handler
-        let request = Message::new_register_request_message().unwrap();
+        let request = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         device_socket
@@ -881,7 +884,7 @@ mod tests {
                     let mut codec = MessageCodec;
 
                     // Send RegisterRequest
-                    let request = Message::new_register_request_message().unwrap();
+                    let request = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
                     let mut buf = BytesMut::with_capacity(1024);
                     codec.encode(request, &mut buf).unwrap();
                     device_socket
@@ -942,7 +945,7 @@ mod tests {
         let dm = set_up_hes(backdoor_port).await;
 
         // 1a. sends registration request msg
-        let register_request: Message = Message::new_register_request_message().unwrap();
+        let register_request: Message = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
         let device_socket_a = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut buffer: BytesMut = BytesMut::with_capacity(1024);
 
@@ -964,7 +967,7 @@ mod tests {
         assert_eq!(connecitons_number, 0);
 
         // 1a. sends registration request msg
-        let register_request: Message = Message::new_register_request_message().unwrap();
+        let register_request: Message = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
         let device_socket_b = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let mut buffer: BytesMut = BytesMut::with_capacity(1024);
 

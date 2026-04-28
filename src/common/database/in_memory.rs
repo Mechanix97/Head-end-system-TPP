@@ -351,7 +351,7 @@ mod test {
 
         let socket = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
 
-        let mut device: Device = Device::new(socket, None, None, None);
+        let mut device: Device = Device::new(socket, None);
 
         db.add_device(&device).await.unwrap();
 
@@ -359,7 +359,7 @@ mod test {
 
         assert_eq!(device, device2);
 
-        device.batch_id = Some(123);
+        device.imei = Some("123456789012345".to_string());
 
         db.modify_device(&device).await.unwrap();
 
