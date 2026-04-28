@@ -82,10 +82,10 @@ impl DeviceManager {
     // --- Scheduler wrapper methods ---
 
     /// Registers a device in the scheduler (assigns to a time bucket) and adds to owned set.
-    pub async fn register_device(&mut self, device: &Device) -> Result<(), DeviceManagerError> {
-        self.scheduler.register_device(device).await?;
+    pub async fn register_device(&mut self, device: &Device) -> Result<NaiveDateTime, DeviceManagerError> {
+        let next_wake = self.scheduler.register_device(device).await?;
         self.owned_devices.insert(device.id);
-        Ok(())
+        Ok(next_wake)
     }
 
     /// Schedules the next wakeup job for a device.

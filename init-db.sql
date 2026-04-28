@@ -57,9 +57,7 @@ CREATE TABLE IF NOT EXISTS T_DEVICES (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     IPv4 TEXT,
     IPv6 TEXT,
-    MAC TEXT,
-    factory_id BIGINT,
-    batch_id BIGINT
+    imei VARCHAR(15)
 );
 
 CREATE TABLE IF NOT EXISTS T_DEVICE_REGISTRATION (

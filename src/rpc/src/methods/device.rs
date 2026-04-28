@@ -61,9 +61,7 @@ pub async fn info(state: &RpcState, params: Value, id: Value) -> JsonRpcResponse
                 "device_id": device.id.to_string(),
                 "ipv4": device.ipv4,
                 "ipv6": device.ipv6,
-                "mac_address": device.mac,
-                "factory_id": device.factory_id,
-                "batch_id": device.batch_id,
+                "imei": device.imei,
             }),
         ),
         Err(e) => {

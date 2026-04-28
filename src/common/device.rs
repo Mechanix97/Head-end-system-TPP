@@ -7,18 +7,11 @@ pub struct Device {
     pub id: Uuid,
     pub ipv4: Option<String>,
     pub ipv6: Option<String>,
-    pub mac: Option<String>,
-    pub factory_id: Option<i64>,
-    pub batch_id: Option<i64>,
+    pub imei: Option<String>,
 }
 
 impl Device {
-    pub fn new(
-        socket: SocketAddr,
-        mac: Option<String>,
-        factory_id: Option<i64>,
-        batch_id: Option<i64>,
-    ) -> Self {
+    pub fn new(socket: SocketAddr, imei: Option<String>) -> Self {
         let (ipv4, ipv6) = match socket {
             SocketAddr::V4(_) => (Some(socket.ip().to_string()), None),
             SocketAddr::V6(_) => (None, Some(socket.ip().to_string())),
@@ -28,9 +21,7 @@ impl Device {
             id: Uuid::new_v4(),
             ipv4,
             ipv6,
-            mac,
-            factory_id,
-            batch_id,
+            imei,
         }
     }
 }

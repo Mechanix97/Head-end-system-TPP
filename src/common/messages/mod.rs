@@ -15,6 +15,8 @@ pub enum MsgCodecError {
     UnknownMsgType,
     #[error("io error: {0}")]
     IoError(#[from] std::io::Error),
+    #[error("Payload decode error: {0}")]
+    PayloadDecodeError(String),
 }
 
 #[derive(Debug, thiserror::Error)]

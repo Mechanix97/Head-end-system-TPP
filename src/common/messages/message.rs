@@ -28,7 +28,7 @@ const CURRENT_PROTOCOL_VERSION: u8 = 1;
 ///
 /// Messages are secured with HMAC-SHA256 authentication and include sequence numbers
 /// for replay protection.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Message {
     /// Protocol version (currently 1)
     pub version: u8,
@@ -51,14 +51,14 @@ impl Message {
     ///
     /// Used when a device first connects to the HES backdoor to register itself.
     /// The device_id and seq are set to 0 since they haven't been assigned yet.
-    pub fn new_register_request_message() -> Result<Self, MessageError> {
+    pub fn new_register_request_message(imei: String, ipv6: String) -> Result<Self, MessageError> {
         let mut msg = Message {
             version: CURRENT_PROTOCOL_VERSION,
             msg_type: MsgType::RegisterRequest,
             device_id: 0,
             seq: 0,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
-            payload: MessagePayload::RegistryRequest(RegistryRequestMessage {}),
+            payload: MessagePayload::RegistryRequest(RegistryRequestMessage::new(imei, ipv6)),
             mac: 0,
         };
 
@@ -70,14 +70,14 @@ impl Message {
     ///
     /// The HES sends this after validating the registration request, assigning a UUID
     /// and scheduling the device in a time bucket.
-    pub fn new_register_response_message(device_id: u128, seq: u32) -> Result<Self, MessageError> {
+    pub fn new_register_response_message(device_id: u128, seq: u32, flag: u8, next_wake_time: u64) -> Result<Self, MessageError> {
         let mut msg = Message {
             version: CURRENT_PROTOCOL_VERSION,
             msg_type: MsgType::RegisterResponse,
             device_id,
             seq,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
-            payload: MessagePayload::RegistryResponse(RegistryResponseMessage {}),
+            payload: MessagePayload::RegistryResponse(RegistryResponseMessage::new(flag, next_wake_time)),
             mac: 0,
         };
 
@@ -89,14 +89,14 @@ impl Message {
     ///
     /// The HES sends this when connecting to a device at its scheduled wake time.
     /// The device should respond with a HANDSHAKE_RESPONSE.
-    pub fn new_handshake_message(device_id: u128, seq: u32) -> Result<Self, MessageError> {
+    pub fn new_handshake_message(device_id: u128, seq: u32, nonce: Vec<u8>) -> Result<Self, MessageError> {
         let mut msg = Message {
             version: CURRENT_PROTOCOL_VERSION,
             msg_type: MsgType::Handshake,
             device_id,
             seq,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
-            payload: MessagePayload::Handshake(HandshakeMessage {}),
+            payload: MessagePayload::Handshake(HandshakeMessage::new(nonce)),
             mac: 0,
         };
 
@@ -224,7 +224,7 @@ impl MsgType {
 ///
 /// Each message type has its own payload structure. Some messages like ACK
 /// have no payload data.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum MessagePayload {
     Handshake(HandshakeMessage),
     HandshakeResponse(HandshakeResponseMessage),
@@ -282,5 +282,41 @@ impl MessagePayload {
             0xFF => Ok(MessagePayload::Ack),
             _ => Err(MsgCodecError::UnknownMsgType),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::BytesMut;
+    use crate::messages::codec::MessageCodec;
+    use tokio_util::codec::{Decoder, Encoder};
+
+    fn roundtrip(msg: Message) -> Message {
+        let mut buf = BytesMut::new();
+        let mut codec = MessageCodec;
+        codec.encode(msg, &mut buf).expect("encode failed");
+        codec.decode(&mut buf).expect("decode failed").expect("no message decoded")
+    }
+
+    #[test]
+    fn registry_request_roundtrip() {
+        let msg = Message::new_register_request_message("123456789012345".to_string(), "fe80::1".to_string()).unwrap();
+        let decoded = roundtrip(msg);
+        assert!(matches!(decoded.payload, MessagePayload::RegistryRequest(_)));
+    }
+
+    #[test]
+    fn handshake_roundtrip() {
+        let msg = Message::new_handshake_message(42, 1, vec![0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
+        let decoded = roundtrip(msg);
+        assert!(matches!(decoded.payload, MessagePayload::Handshake(_)));
+    }
+
+    #[test]
+    fn ack_roundtrip() {
+        let msg = Message::new_ack_message(99, 1).unwrap();
+        let decoded = roundtrip(msg);
+        assert!(matches!(decoded.payload, MessagePayload::Ack));
     }
 }
