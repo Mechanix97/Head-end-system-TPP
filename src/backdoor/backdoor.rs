@@ -137,7 +137,35 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                             }
                         });
                     } else {
-                        // TODO handle ip change
+                        // Non-zero device_id: already-registered device reporting an IP change.
+                        let permit = match semaphore.clone().acquire_owned().await {
+                            Ok(permit) => permit,
+                            Err(_) => {
+                                error!("Semaphore closed, stopping backdoor");
+                                return;
+                            }
+                        };
+                        let socket = current_socket.clone();
+                        let database = database.clone();
+                        let device_manager = device_manager.clone();
+                        tokio::spawn(async move {
+                            let _permit = permit;
+                            if let Err(err) = handle_backdoor_ip_update_msg(
+                                socket,
+                                msg,
+                                addr,
+                                database,
+                                device_manager,
+                            )
+                            .await
+                            {
+                                error!("Error handling IP update: {err}");
+                                METRICS_CONNECTIONS
+                                    .errors_total
+                                    .with_label_values(&["backdoor", "ip_update"])
+                                    .inc();
+                            }
+                        });
                     }
                 }
                 MsgType::Ack => {
@@ -282,10 +310,23 @@ async fn handle_backdoor_ack_msg(
 
     match device_registration.registration_status {
         RegistrationStatus::AckTimeout => {
-            // TODO send NACK to device
+            warn!(
+                "Late ACK from device {:#x}: registration had already timed out, ignoring",
+                msg.device_id
+            );
         }
         RegistrationStatus::Registered => {
-            // TODO send NACK to device
+            // ACK for an IP-update RegisterResponse: the device confirmed the response.
+            // The IP was already persisted in the DB by handle_backdoor_ip_update_msg,
+            // so there is nothing else to do here.
+            info!(
+                "IP update ACK confirmed from device {:#x} at {}",
+                msg.device_id, socket_addr
+            );
+            METRICS_CONNECTIONS
+                .messages_total
+                .with_label_values(&["ack", "ip_update_confirmed"])
+                .inc();
         }
         RegistrationStatus::PendingAck => {
             let registration_duration =
@@ -321,6 +362,103 @@ async fn handle_backdoor_ack_msg(
     Ok(())
 }
 
+/// Handles a `RegisterRequest` from an already-registered device whose IP has changed.
+///
+/// CAT-M1 cellular networks assign dynamic IPs, so devices may reconnect from a
+/// different address after power-on or network re-attach. The device sends a
+/// `RegisterRequest` with its existing UUID so the HES can update the stored IP
+/// and respond with the next scheduled wake-up time.
+///
+/// No ACK timeout is started here because the device is already registered and
+/// scheduled; if the ACK never arrives, the next periodic connection will use
+/// the updated IP regardless.
+async fn handle_backdoor_ip_update_msg(
+    socket: Arc<UdpSocket>,
+    msg: Message,
+    socket_addr: SocketAddr,
+    database: Database,
+    device_manager: Arc<RwLock<DeviceManager>>,
+) -> Result<(), BackdoorError> {
+    let device_id = Uuid::from_u128(msg.device_id);
+
+    let mut device = database.get_device(device_id).await?;
+
+    let old_ip = device.ipv4.clone().or(device.ipv6.clone()).unwrap_or_default();
+    match socket_addr {
+        SocketAddr::V4(_) => {
+            device.ipv4 = Some(socket_addr.ip().to_string());
+            device.ipv6 = None;
+        }
+        SocketAddr::V6(_) => {
+            device.ipv4 = None;
+            device.ipv6 = Some(socket_addr.ip().to_string());
+        }
+    }
+    info!(
+        "Device {:#x} IP change: {} -> {}",
+        msg.device_id,
+        old_ip,
+        socket_addr.ip()
+    );
+    database.modify_device(&device).await?;
+
+    let next_wake_time = get_next_wake_time(device_id, &database, &device_manager).await?;
+
+    let response = Message::new_register_response_message(
+        msg.device_id,
+        msg.seq + 1,
+        0,
+        next_wake_time,
+    )?;
+
+    let mut buf = BytesMut::with_capacity(1024);
+    match MessageCodec.encode(response, &mut buf) {
+        Err(err) => {
+            error!("Error encoding IP update response: {err}");
+            METRICS_CONNECTIONS
+                .errors_total
+                .with_label_values(&["backdoor", "ip_update_response"])
+                .inc();
+        }
+        Ok(()) => {
+            if let Err(err) = socket.send_to(&buf, socket_addr).await {
+                error!("Error sending IP update response: {err}");
+                METRICS_CONNECTIONS
+                    .errors_total
+                    .with_label_values(&["backdoor", "ip_update_response"])
+                    .inc();
+            } else {
+                METRICS_CONNECTIONS
+                    .messages_total
+                    .with_label_values(&["register_response", "outbound"])
+                    .inc();
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Returns the next scheduled wake-up time (Unix seconds) for an existing device.
+///
+/// If a scheduled connection already exists, its timestamp is used directly.
+/// If none exists (e.g., initial ACK timed out and no job was ever created),
+/// a fresh connection is scheduled using the device's existing bucket assignment.
+async fn get_next_wake_time(
+    device_id: Uuid,
+    database: &Database,
+    device_manager: &Arc<RwLock<DeviceManager>>,
+) -> Result<u64, BackdoorError> {
+    match database.get_scheduled_connection(device_id).await {
+        Ok(conn) => Ok(conn.schedule_time.and_utc().timestamp() as u64),
+        Err(_) => {
+            device_manager.write().await.schedule_next_wakeup(device_id).await?;
+            let conn = database.get_scheduled_connection(device_id).await?;
+            Ok(conn.schedule_time.and_utc().timestamp() as u64)
+        }
+    }
+}
+
 fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_id: Uuid) {
     tokio::spawn(async move {
         sleep(Duration::from_millis(ack_timeout_duration)).await;
@@ -354,6 +492,11 @@ mod tests {
     use super::*;
 
     async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<DeviceManager>> {
+        let (dm, _db) = set_up_hes_with_db(backdoor_port).await;
+        dm
+    }
+
+    async fn set_up_hes_with_db(backdoor_port: &str) -> (Arc<RwLock<DeviceManager>>, Database) {
         let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
         let node_id = uuid::Uuid::new_v4();
         let scheduler = Scheduler::new(1, db.clone(), node_id).await.unwrap();
@@ -377,7 +520,7 @@ mod tests {
         })
         .await
         .unwrap();
-        device_manager
+        (device_manager, db)
     }
 
     /// This test checks the normal backdoor registration event
@@ -977,6 +1120,255 @@ mod tests {
             .unwrap()
             .len();
         assert_eq!(connections, n);
+    }
+
+    /// Tests the full IP update flow:
+    /// 1. Device registers and completes the full registration cycle (including ACK).
+    /// 2. A new socket simulates a reconnect from a different source address.
+    /// 3. Device sends RegisterRequest with its existing UUID.
+    /// 4. HES updates the IP and responds with RegisterResponse carrying the same UUID
+    ///    and a valid next_wake_time.
+    /// 5. The number of scheduled connections remains unchanged.
+    #[tokio::test]
+    async fn test_ip_update_success() {
+        let backdoor_port = "8091";
+        let (dm, _db) = set_up_hes_with_db(backdoor_port).await;
+
+        // Step 1: initial registration from socket_a
+        let socket_a = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut codec = MessageCodec;
+
+        let request = Message::new_register_request_message(
+            "123456789012345".to_string(),
+            "fe80::1".to_string(),
+        )
+        .unwrap();
+        let mut buf = BytesMut::with_capacity(1024);
+        codec.encode(request, &mut buf).unwrap();
+        socket_a
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        let mut resp = BytesMut::with_capacity(1024);
+        socket_a.recv_buf(&mut resp).await.unwrap();
+        let reg_response = codec.decode(&mut resp).unwrap().unwrap();
+        assert!(matches!(reg_response.msg_type, MsgType::RegisterResponse));
+        let device_id = reg_response.device_id;
+
+        let ack = Message::new_ack_message(device_id, reg_response.seq + 1).unwrap();
+        let mut ack_buf = BytesMut::with_capacity(1024);
+        codec.encode(ack, &mut ack_buf).unwrap();
+        socket_a
+            .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(150)).await;
+
+        assert_eq!(
+            dm.read()
+                .await
+                .get_scheduled_connections()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Step 2: simulate IP change — a different source address (new port on loopback)
+        let socket_b = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+
+        // Step 3: send RegisterRequest with existing device_id (non-zero)
+        let mut ip_update_request = Message::new_register_request_message(
+            "123456789012345".to_string(),
+            "fe80::2".to_string(),
+        )
+        .unwrap();
+        ip_update_request.device_id = device_id;
+
+        let mut buf = BytesMut::with_capacity(1024);
+        codec.encode(ip_update_request, &mut buf).unwrap();
+        socket_b
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        // Step 4: HES responds to the new address with same device_id and a valid wake time
+        let mut resp = BytesMut::with_capacity(1024);
+        socket_b.recv_buf(&mut resp).await.unwrap();
+        let ip_response = codec.decode(&mut resp).unwrap().unwrap();
+
+        assert!(matches!(ip_response.msg_type, MsgType::RegisterResponse));
+        assert_eq!(
+            ip_response.device_id, device_id,
+            "Response device_id must match the registred device"
+        );
+        if let common::messages::message::MessagePayload::RegistryResponse(r) = &ip_response.payload
+        {
+            assert!(r.next_wake_time > 0, "next_wake_time must be non-zero");
+        } else {
+            panic!("Expected RegistryResponse payload");
+        }
+
+        // Step 5: no new connections were created by the IP update
+        assert_eq!(
+            dm.read()
+                .await
+                .get_scheduled_connections()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    /// Tests that a RegisterRequest with an unknown non-zero device_id is rejected
+    /// silently: no response is sent, and the backdoor keeps processing valid requests.
+    #[tokio::test]
+    async fn test_ip_update_unknown_device_id() {
+        use tokio::time::timeout;
+
+        let backdoor_port = "8092";
+        let dm = set_up_hes(backdoor_port).await;
+
+        let device_socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut codec = MessageCodec;
+
+        // Send RegisterRequest with a non-zero device_id that was never registered
+        let mut request = Message::new_register_request_message(
+            "123456789012345".to_string(),
+            "fe80::1".to_string(),
+        )
+        .unwrap();
+        request.device_id = 0xDEAD_BEEF_1234_5678_u128;
+
+        let mut buf = BytesMut::with_capacity(1024);
+        codec.encode(request, &mut buf).unwrap();
+        device_socket
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        // No response must arrive for an unknown device_id
+        let mut resp = BytesMut::with_capacity(1024);
+        let result = timeout(
+            Duration::from_millis(200),
+            device_socket.recv_buf(&mut resp),
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "Should not receive a response for an unknown device_id"
+        );
+
+        assert_eq!(
+            dm.read()
+                .await
+                .get_scheduled_connections()
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
+
+        // Backdoor must still be functional after the failed IP update
+        let valid_request = Message::new_register_request_message(
+            "123456789012345".to_string(),
+            "fe80::1".to_string(),
+        )
+        .unwrap();
+        let mut buf = BytesMut::with_capacity(1024);
+        codec.encode(valid_request, &mut buf).unwrap();
+        device_socket
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        let mut resp = BytesMut::with_capacity(1024);
+        device_socket.recv_buf(&mut resp).await.unwrap();
+        let response = codec.decode(&mut resp).unwrap().unwrap();
+        assert!(matches!(response.msg_type, MsgType::RegisterResponse));
+    }
+
+    /// Tests the complete IP update cycle including the ACK from the device.
+    /// After the ACK is processed the backdoor must remain healthy.
+    #[tokio::test]
+    async fn test_ip_update_with_ack() {
+        let backdoor_port = "8093";
+        let (dm, _db) = set_up_hes_with_db(backdoor_port).await;
+
+        // Initial registration
+        let socket_a = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut codec = MessageCodec;
+
+        let request = Message::new_register_request_message(
+            "123456789012345".to_string(),
+            "fe80::1".to_string(),
+        )
+        .unwrap();
+        let mut buf = BytesMut::with_capacity(1024);
+        codec.encode(request, &mut buf).unwrap();
+        socket_a
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        let mut resp = BytesMut::with_capacity(1024);
+        socket_a.recv_buf(&mut resp).await.unwrap();
+        let reg_response = codec.decode(&mut resp).unwrap().unwrap();
+        let device_id = reg_response.device_id;
+
+        let ack = Message::new_ack_message(device_id, reg_response.seq + 1).unwrap();
+        let mut ack_buf = BytesMut::with_capacity(1024);
+        codec.encode(ack, &mut ack_buf).unwrap();
+        socket_a
+            .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(150)).await;
+
+        // IP update from a new socket
+        let socket_b = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+
+        let mut ip_update_request = Message::new_register_request_message(
+            "123456789012345".to_string(),
+            "fe80::2".to_string(),
+        )
+        .unwrap();
+        ip_update_request.device_id = device_id;
+
+        let mut buf = BytesMut::with_capacity(1024);
+        codec.encode(ip_update_request, &mut buf).unwrap();
+        socket_b
+            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+
+        let mut resp = BytesMut::with_capacity(1024);
+        socket_b.recv_buf(&mut resp).await.unwrap();
+        let ip_response = codec.decode(&mut resp).unwrap().unwrap();
+        assert!(matches!(ip_response.msg_type, MsgType::RegisterResponse));
+
+        // Device ACKs the IP update response
+        let ack = Message::new_ack_message(device_id, ip_response.seq + 1).unwrap();
+        let mut ack_buf = BytesMut::with_capacity(1024);
+        codec.encode(ack, &mut ack_buf).unwrap();
+        socket_b
+            .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(100)).await;
+
+        // Connections count unchanged: IP update does not create a new scheduled connection
+        assert_eq!(
+            dm.read()
+                .await
+                .get_scheduled_connections()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     // test 2 parallels connections
