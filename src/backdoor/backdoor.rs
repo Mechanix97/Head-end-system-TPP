@@ -492,11 +492,6 @@ mod tests {
     use super::*;
 
     async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<DeviceManager>> {
-        let (dm, _db) = set_up_hes_with_db(backdoor_port).await;
-        dm
-    }
-
-    async fn set_up_hes_with_db(backdoor_port: &str) -> (Arc<RwLock<DeviceManager>>, Database) {
         let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
         let node_id = uuid::Uuid::new_v4();
         let scheduler = Scheduler::new(1, db.clone(), node_id).await.unwrap();
@@ -520,7 +515,7 @@ mod tests {
         })
         .await
         .unwrap();
-        (device_manager, db)
+        device_manager
     }
 
     /// This test checks the normal backdoor registration event
@@ -1132,7 +1127,7 @@ mod tests {
     #[tokio::test]
     async fn test_ip_update_success() {
         let backdoor_port = "8091";
-        let (dm, _db) = set_up_hes_with_db(backdoor_port).await;
+        let dm = set_up_hes(backdoor_port).await;
 
         // Step 1: initial registration from socket_a
         let socket_a = UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -1295,7 +1290,7 @@ mod tests {
     #[tokio::test]
     async fn test_ip_update_with_ack() {
         let backdoor_port = "8093";
-        let (dm, _db) = set_up_hes_with_db(backdoor_port).await;
+        let dm = set_up_hes(backdoor_port).await;
 
         // Initial registration
         let socket_a = UdpSocket::bind("127.0.0.1:0").await.unwrap();
