@@ -6,6 +6,7 @@ use crate::messages::MsgCodecError;
 use crate::messages::action::{ActionRequestMessage, ActionResponseMessage};
 use crate::messages::execute::{ExecuteRequestMessage, ExecuteResponseMessage};
 use crate::messages::handshake::{HandshakeMessage, HandshakeResponseMessage};
+use crate::messages::nack::NackMessage;
 use crate::messages::read::{ReadRequestMessage, ReadResponseMessage};
 use crate::messages::registry::{RegistryRequestMessage, RegistryResponseMessage};
 use crate::messages::write::{WriteRequestMessage, WriteResponseMessage};
@@ -104,6 +105,24 @@ impl Message {
         Ok(msg)
     }
 
+    /// Creates a NACK message to signal failure to the device.
+    ///
+    /// Sent when the HES cannot process a request (e.g., unknown device_id,
+    /// database error). The device should retry or fall back to full registration.
+    pub fn new_nack_message(device_id: u128, seq: u32, error_code: u8) -> Result<Self, MessageError> {
+        let mut msg = Message {
+            version: CURRENT_PROTOCOL_VERSION,
+            msg_type: MsgType::Nack,
+            device_id,
+            seq,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            payload: MessagePayload::Nack(NackMessage::new(error_code)),
+            mac: 0,
+        };
+        msg.calculate_mac();
+        Ok(msg)
+    }
+
     /// Creates an ACK message to confirm successful message reception.
     ///
     /// Used to close sessions and confirm operations. The device uses this to
@@ -175,6 +194,8 @@ pub enum MsgType {
     ActionResponse,
     /// Generic success acknowledgment, session close (0xFF)
     Ack,
+    /// Generic failure / rejection (0xFE)
+    Nack,
 }
 
 impl MsgType {
@@ -194,6 +215,7 @@ impl MsgType {
             MsgType::ActionRequest => 0x28,
             MsgType::ActionResponse => 0x29,
             MsgType::Ack => 0xFF,
+            MsgType::Nack => 0xFE,
         }
     }
 
@@ -214,6 +236,7 @@ impl MsgType {
             0x1F => Ok(MsgType::ExecuteResponse),
             0x28 => Ok(MsgType::ActionRequest),
             0x29 => Ok(MsgType::ActionResponse),
+            0xFE => Ok(MsgType::Nack),
             0xFF => Ok(MsgType::Ack),
             _ => Err(MsgCodecError::UnknownMsgType),
         }
@@ -239,6 +262,7 @@ pub enum MessagePayload {
     ActionRequest(ActionRequestMessage),
     ActionResponse(ActionResponseMessage),
     Ack,
+    Nack(NackMessage),
 }
 
 impl MessagePayload {
@@ -261,6 +285,7 @@ impl MessagePayload {
             MessagePayload::ActionRequest(msg) => msg.encode(buf),
             MessagePayload::ActionResponse(msg) => msg.encode(buf),
             MessagePayload::Ack => Ok(()),
+            MessagePayload::Nack(msg) => msg.encode(buf),
         }
     }
 
@@ -279,6 +304,7 @@ impl MessagePayload {
             0x1F => Ok(MessagePayload::ExecuteResponse(ExecuteResponseMessage::decode(msg_data)?)),
             0x28 => Ok(MessagePayload::ActionRequest(ActionRequestMessage::decode(msg_data)?)),
             0x29 => Ok(MessagePayload::ActionResponse(ActionResponseMessage::decode(msg_data)?)),
+            0xFE => Ok(MessagePayload::Nack(NackMessage::decode(msg_data)?)),
             0xFF => Ok(MessagePayload::Ack),
             _ => Err(MsgCodecError::UnknownMsgType),
         }
