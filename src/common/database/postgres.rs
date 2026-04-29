@@ -36,6 +36,9 @@ fn map_scheduled_row(row: &sqlx::postgres::PgRow) -> Result<ScheduledConnection,
     let renewable: bool = row
         .try_get("renewable")
         .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
+    let last_battery_read: Option<NaiveDateTime> = row
+        .try_get("last_battery_read")
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
     Ok(ScheduledConnection {
         fk_device,
         schedule_time,
@@ -43,6 +46,7 @@ fn map_scheduled_row(row: &sqlx::postgres::PgRow) -> Result<ScheduledConnection,
         status,
         job_id,
         renewable,
+        last_battery_read,
     })
 }
 
@@ -365,7 +369,7 @@ impl Engine for PostgresDB {
 
     async fn get_scheduled_connections(&self) -> Result<Vec<ScheduledConnection>, DatabaseError> {
         let query = r#"
-            SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+            SELECT fk_device, schedule_time, connection_time, status, job_id, renewable, last_battery_read
             FROM T_SCHEDULED_CONNECTIONS
             WHERE status = 'awaiting'
             ORDER BY schedule_time ASC
@@ -386,7 +390,7 @@ impl Engine for PostgresDB {
         device_id: Uuid,
     ) -> Result<ScheduledConnection, DatabaseError> {
         let query = r#"
-            SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+            SELECT fk_device, schedule_time, connection_time, status, job_id, renewable, last_battery_read
             FROM T_SCHEDULED_CONNECTIONS
             WHERE fk_device = $1
         "#;
@@ -410,8 +414,9 @@ impl Engine for PostgresDB {
                 connection_time = $2,
                 status = $3,
                 job_id = $4,
-                renewable = $5
-            WHERE fk_device = $6
+                renewable = $5,
+                last_battery_read = $6
+            WHERE fk_device = $7
         "#;
 
         sqlx::query(query)
@@ -420,11 +425,28 @@ impl Engine for PostgresDB {
             .bind(&connection.status)
             .bind(connection.job_id)
             .bind(connection.renewable)
+            .bind(connection.last_battery_read)
             .bind(connection.fk_device)
             .execute(&self.pool)
             .await
             .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
 
+        Ok(())
+    }
+
+    async fn update_last_battery_read(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(
+            "UPDATE T_SCHEDULED_CONNECTIONS SET last_battery_read = $2 WHERE fk_device = $1",
+        )
+        .bind(device_id)
+        .bind(timestamp)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DatabaseError::QueryError(e.to_string()))?;
         Ok(())
     }
 
@@ -436,7 +458,7 @@ impl Engine for PostgresDB {
     ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
         let rows = if let Some(did) = device_id {
             let query = r#"
-                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable, last_battery_read
                 FROM T_SCHEDULED_CONNECTIONS
                 WHERE status = 'awaiting' AND fk_device = $3
                 ORDER BY schedule_time ASC
@@ -451,7 +473,7 @@ impl Engine for PostgresDB {
                 .map_err(|e| DatabaseError::QueryError(e.to_string()))?
         } else {
             let query = r#"
-                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable, last_battery_read
                 FROM T_SCHEDULED_CONNECTIONS
                 WHERE status = 'awaiting'
                 ORDER BY schedule_time ASC
@@ -478,7 +500,7 @@ impl Engine for PostgresDB {
     ) -> Result<Vec<ScheduledConnection>, DatabaseError> {
         let rows = if let Some(did) = device_id {
             let query = r#"
-                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable, last_battery_read
                 FROM T_SCHEDULED_CONNECTIONS
                 WHERE status IN ('done', 'lost') AND fk_device = $3
                 ORDER BY schedule_time DESC
@@ -493,7 +515,7 @@ impl Engine for PostgresDB {
                 .map_err(|e| DatabaseError::QueryError(e.to_string()))?
         } else {
             let query = r#"
-                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable
+                SELECT fk_device, schedule_time, connection_time, status, job_id, renewable, last_battery_read
                 FROM T_SCHEDULED_CONNECTIONS
                 WHERE status IN ('done', 'lost')
                 ORDER BY schedule_time DESC

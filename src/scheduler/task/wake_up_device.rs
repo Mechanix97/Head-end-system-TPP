@@ -25,6 +25,8 @@ const OBIS_BATTERY: &str = "C.6.1";
 const OBIS_CLOCK: &str = "0.9.4";
 const OBIS_NEXT_WAKE: &str = "0.0.1";
 
+const BATTERY_READ_INTERVAL_DAYS: i64 = 7;
+
 /// Connects to a device at its scheduled wake-up time to collect consumption data.
 ///
 /// Runs the full periodic session: HANDSHAKE → READ → WRITE → ACK. On success,
@@ -116,7 +118,7 @@ async fn run_wake_up(
             METRICS_CONNECTIONS.hes_device_retry_count_total.inc();
         }
 
-        match run_session(job_id, device_id, &remote_addr).await {
+        match run_session(job_id, device_id, &remote_addr, database).await {
             Ok(()) => {
                 info!("[Job {:#x}] Session completed successfully", job_id);
                 METRICS_CONNECTIONS
@@ -164,17 +166,31 @@ async fn run_wake_up(
 /// Protocol flow:
 ///   HES → HANDSHAKE
 ///   Device → HANDSHAKE_RESPONSE
-///   HES → READ_REQUEST  (water volume, battery, clock)
+///   HES → READ_REQUEST  (water volume [+ battery every 7 days] + clock)
 ///   Device → READ_RESPONSE
 ///   HES → WRITE_REQUEST (clock sync, next wake time)
 ///   Device → WRITE_RESPONSE
 ///   HES → ACK           (session close)
-async fn run_session(job_id: Uuid, device_id: Uuid, remote_addr: &str) -> Result<(), TaskError> {
+async fn run_session(
+    job_id: Uuid,
+    device_id: Uuid,
+    remote_addr: &str,
+    database: &Database,
+) -> Result<(), TaskError> {
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     socket.connect(remote_addr).await?;
 
     let device_id_u128 = device_id.as_u128();
     let mut seq: u32 = 0;
+
+    // Decide whether to read battery based on last_battery_read
+    let needs_battery = match database.get_scheduled_connection(device_id).await {
+        Ok(conn) => match conn.last_battery_read {
+            None => true,
+            Some(last) => (Utc::now().naive_utc() - last).num_days() >= BATTERY_READ_INTERVAL_DAYS,
+        },
+        Err(_) => true, // no record → read it
+    };
 
     // HANDSHAKE
     // TODO: replace with cryptographically secure random nonce
@@ -191,11 +207,11 @@ async fn run_session(job_id: Uuid, device_id: Uuid, remote_addr: &str) -> Result
     info!("[Job {:#x}] HANDSHAKE_RESPONSE received", job_id);
 
     // READ_REQUEST
-    let obis_codes = vec![
-        OBIS_WATER_VOLUME.to_string(),
-        OBIS_BATTERY.to_string(),
-        OBIS_CLOCK.to_string(),
-    ];
+    let mut obis_codes = vec![OBIS_WATER_VOLUME.to_string(), OBIS_CLOCK.to_string()];
+    if needs_battery {
+        obis_codes.push(OBIS_BATTERY.to_string());
+        info!("[Job {:#x}] Including battery OBIS in READ_REQUEST", job_id);
+    }
     send_msg(
         &socket,
         Message::new_read_request_message(device_id_u128, seq, obis_codes)?,
@@ -214,7 +230,7 @@ async fn run_session(job_id: Uuid, device_id: Uuid, remote_addr: &str) -> Result
         job_id,
         data.values.len()
     );
-    // TODO: persist data.values to database (water volume, battery, clock)
+    // TODO: persist data.values to database (water volume, clock)
 
     // WRITE_REQUEST: sync clock and tell device when to wake next
     let now_ts = Utc::now().timestamp() as u64;
@@ -247,6 +263,16 @@ async fn run_session(job_id: Uuid, device_id: Uuid, remote_addr: &str) -> Result
     // ACK — session close
     send_msg(&socket, Message::new_ack_message(device_id_u128, seq)?).await?;
     info!("[Job {:#x}] Session closed with ACK", job_id);
+
+    // Persist battery read timestamp if we read it this session
+    if needs_battery {
+        if let Err(e) = database
+            .update_last_battery_read(device_id, Utc::now().naive_utc())
+            .await
+        {
+            warn!("[Job {:#x}] Failed to update last_battery_read: {}", job_id, e);
+        }
+    }
 
     Ok(())
 }
