@@ -257,7 +257,7 @@ async fn handle_backdoor_register_msg(
         next_wake_time,
     )?;
 
-    send_msg(&socket, response, socket_addr, "register_response").await;
+    send_msg(&socket, response, socket_addr).await;
 
     spawn_ack_timeout_task(database.clone(), ack_timeout_duration, device.id);
 
@@ -294,7 +294,7 @@ async fn handle_backdoor_ack_msg(
                 msg.device_id
             );
             if let Ok(nack) = Message::new_nack_message(msg.device_id, msg.seq + 1, NACK_INTERNAL_ERROR) {
-                send_msg(&socket, nack, socket_addr, "nack").await;
+                send_msg(&socket, nack, socket_addr).await;
             }
         }
         RegistrationStatus::Registered => {
@@ -308,7 +308,7 @@ async fn handle_backdoor_ack_msg(
                 .with_label_values(&["ack", "ip_update_confirmed"])
                 .inc();
             if let Ok(ack) = Message::new_ack_message(msg.device_id, msg.seq + 1) {
-                send_msg(&socket, ack, socket_addr, "ack").await;
+                send_msg(&socket, ack, socket_addr).await;
             }
         }
         RegistrationStatus::PendingAck => {
@@ -343,7 +343,7 @@ async fn handle_backdoor_ack_msg(
 
             // Confirm to the device that registration is complete (double handshake).
             if let Ok(ack) = Message::new_ack_message(msg.device_id, msg.seq + 1) {
-                send_msg(&socket, ack, socket_addr, "ack").await;
+                send_msg(&socket, ack, socket_addr).await;
             }
         }
     }
@@ -374,7 +374,7 @@ async fn handle_backdoor_ip_update_msg(
         Err(e) => {
             warn!("IP update for unknown device {:#x}", msg.device_id);
             if let Ok(nack) = Message::new_nack_message(msg.device_id, msg.seq + 1, NACK_DEVICE_NOT_FOUND) {
-                send_msg(&socket, nack, socket_addr, "nack").await;
+                send_msg(&socket, nack, socket_addr).await;
             }
             return Err(BackdoorError::DatabaseError(e));
         }
@@ -401,7 +401,7 @@ async fn handle_backdoor_ip_update_msg(
     if let Err(e) = database.modify_device(&device).await {
         error!("Failed to update IP for device {:#x}: {e}", msg.device_id);
         if let Ok(nack) = Message::new_nack_message(msg.device_id, msg.seq + 1, NACK_INTERNAL_ERROR) {
-            send_msg(&socket, nack, socket_addr, "nack").await;
+            send_msg(&socket, nack, socket_addr).await;
         }
         return Err(BackdoorError::DatabaseError(e));
     }
@@ -411,21 +411,22 @@ async fn handle_backdoor_ip_update_msg(
         Err(e) => {
             error!("Failed to get next wake time for device {:#x}: {e}", msg.device_id);
             if let Ok(nack) = Message::new_nack_message(msg.device_id, msg.seq + 1, NACK_INTERNAL_ERROR) {
-                send_msg(&socket, nack, socket_addr, "nack").await;
+                send_msg(&socket, nack, socket_addr).await;
             }
             return Err(e);
         }
     };
 
     if let Ok(response) = Message::new_register_response_message(msg.device_id, msg.seq + 1, 0, next_wake_time) {
-        send_msg(&socket, response, socket_addr, "register_response").await;
+        send_msg(&socket, response, socket_addr).await;
     }
 
     Ok(())
 }
 
 /// Encodes and sends a message to the given address, logging any errors.
-async fn send_msg(socket: &UdpSocket, msg: Message, addr: SocketAddr, label: &str) {
+async fn send_msg(socket: &UdpSocket, msg: Message, addr: SocketAddr) {
+    let label = msg.msg_type.as_str();
     let mut buf = BytesMut::with_capacity(1024);
     match MessageCodec.encode(msg, &mut buf) {
         Err(err) => {

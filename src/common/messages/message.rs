@@ -199,6 +199,26 @@ pub enum MsgType {
 }
 
 impl MsgType {
+    /// Returns a short lowercase name suitable for logging and metrics labels.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MsgType::Handshake => "handshake",
+            MsgType::HandshakeResponse => "handshake_response",
+            MsgType::RegisterRequest => "register_request",
+            MsgType::RegisterResponse => "register_response",
+            MsgType::ReadRequest => "read_request",
+            MsgType::ReadResponse => "read_response",
+            MsgType::WriteRequest => "write_request",
+            MsgType::WriteResponse => "write_response",
+            MsgType::ExecuteRequest => "execute_request",
+            MsgType::ExecuteResponse => "execute_response",
+            MsgType::ActionRequest => "action_request",
+            MsgType::ActionResponse => "action_response",
+            MsgType::Ack => "ack",
+            MsgType::Nack => "nack",
+        }
+    }
+
     /// Returns the hex code for this message type.
     pub fn code(&self) -> u8 {
         match self {
