@@ -31,4 +31,6 @@ pub enum TaskError {
     MessageError(#[from] MessageError),
     #[error("Message codec error: {0}")]
     MsgCodecError(#[from] MsgCodecError),
+    #[error("Unexpected message type: expected {expected}, got {got}")]
+    UnexpectedMsgType { expected: &'static str, got: &'static str },
 }

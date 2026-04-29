@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use tokio::sync::mpsc;
+
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
 use tokio_cron_scheduler::{Job, JobScheduler};
@@ -36,6 +38,8 @@ pub struct Scheduler {
     pub owned_devices: Option<HashSet<Uuid>>,
     /// UUID of this node (used to tag bucket assignments in the database)
     pub local_node_id: Uuid,
+    /// Channel to signal main.rs to reschedule a device after a successful session
+    reschedule_tx: Option<mpsc::Sender<Uuid>>,
 }
 
 impl Scheduler {
@@ -50,6 +54,7 @@ impl Scheduler {
             database,
             owned_devices: None, // None means single-node mode, owns all devices
             local_node_id,
+            reschedule_tx: None,
         };
         scheduler.start().await?;
 
@@ -290,6 +295,14 @@ impl Scheduler {
         self.owned_devices = Some(owned_devices);
     }
 
+    /// Sets the sender side of the reschedule channel.
+    ///
+    /// After a successful periodic session, `wake_up_device` sends the device UUID
+    /// through this channel so the listener in main.rs can schedule the next job.
+    pub fn set_reschedule_sender(&mut self, tx: mpsc::Sender<Uuid>) {
+        self.reschedule_tx = Some(tx);
+    }
+
     /// Adds a device to the owned set (cluster mode only).
     pub fn add_owned_device(&mut self, device_id: Uuid) {
         if let Some(owned) = &mut self.owned_devices {
@@ -346,12 +359,14 @@ impl Scheduler {
         next_wake_up: NaiveDateTime,
     ) -> Result<Uuid, SchedulerError> {
         let database = self.database.clone();
+        let reschedule_tx = self.reschedule_tx.clone();
 
         let job = Job::new_async_tz(
             next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
             chrono_tz::UTC,
             move |job_id, _l| {
                 let db = database.clone();
+                let tx = reschedule_tx.clone();
                 Box::pin(async move {
                     // Measure how late the job fired vs its scheduled time
                     let actual_now = Utc::now().naive_utc();
@@ -361,7 +376,7 @@ impl Scheduler {
                         .observe(drift_ms);
 
                     let job_start = std::time::Instant::now();
-                    let result = wake_up_device(job_id, device_id, &db).await;
+                    let result = wake_up_device(job_id, device_id, &db, tx).await;
                     let elapsed_ms = job_start.elapsed().as_millis() as f64;
                     METRICS_CONNECTIONS
                         .hes_scheduler_job_execution_duration_ms

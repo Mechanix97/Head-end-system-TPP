@@ -1,13 +1,16 @@
 use bytes::BytesMut;
+use chrono::Utc;
 use tokio::net::UdpSocket;
+use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep, timeout};
-use tokio_util::codec::Encoder;
+use tokio_util::codec::{Decoder, Encoder};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use common::database::api::Database;
 use common::messages::codec::MessageCodec;
-use common::messages::message::Message;
+use common::messages::message::{Message, MessagePayload};
+use common::messages::write::WriteParameter;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 
 use crate::error::TaskError;
@@ -17,16 +20,25 @@ const MAX_RETRIES: u32 = 5;
 const RETRY_DELAY_SECS: u64 = 60;
 const RESPONSE_TIMEOUT_SECS: u64 = 30;
 
+const OBIS_WATER_VOLUME: &str = "1.0.1";
+const OBIS_BATTERY: &str = "C.6.1";
+const OBIS_CLOCK: &str = "0.9.4";
+const OBIS_NEXT_WAKE: &str = "0.0.1";
+
 /// Connects to a device at its scheduled wake-up time to collect consumption data.
+///
+/// Runs the full periodic session: HANDSHAKE → READ → WRITE → ACK. On success,
+/// sends `device_id` through `reschedule_tx` so the next job gets scheduled.
 pub async fn wake_up_device(
     job_id: Uuid,
     device_id: Uuid,
     database: &Database,
+    reschedule_tx: Option<mpsc::Sender<Uuid>>,
 ) -> Result<(), TaskError> {
     info!("[Job {:#x}] Wake up device {:#x}", job_id, device_id);
     METRICS_CONNECTIONS.hes_device_session_active.inc();
 
-    let result = run_wake_up(job_id, device_id, database).await;
+    let result = run_wake_up(job_id, device_id, database, reschedule_tx).await;
 
     METRICS_CONNECTIONS.hes_device_session_active.dec();
 
@@ -64,6 +76,7 @@ async fn run_wake_up(
     job_id: Uuid,
     device_id: Uuid,
     database: &Database,
+    reschedule_tx: Option<mpsc::Sender<Uuid>>,
 ) -> Result<(), TaskError> {
     let db_start = std::time::Instant::now();
     let device_result = database.get_device(device_id).await;
@@ -103,27 +116,18 @@ async fn run_wake_up(
             METRICS_CONNECTIONS.hes_device_retry_count_total.inc();
         }
 
-        match try_connect(&remote_addr, device_id).await {
-            Ok(_socket) => {
-                info!("[Job {:#x}] Device responded to HANDSHAKE", job_id);
+        match run_session(job_id, device_id, &remote_addr).await {
+            Ok(()) => {
+                info!("[Job {:#x}] Session completed successfully", job_id);
                 METRICS_CONNECTIONS
                     .connections_tracker
                     .with_label_values(&["periodic_success"])
                     .inc();
-
-                // TODO: Send HANDSHAKE message
-                // TODO: Receive HANDSHAKE_RESPONSE
-                // TODO: Send READ_REQUEST for OBIS data
-                // TODO: Receive READ_RESPONSE
-                // TODO: Send WRITE_REQUEST to update next wake time
-                // TODO: Send ACK and close
-
-                // TODO: Assign bucket to delegated devices after first successful connection
-                // Check if device has bucket assigned (delegated devices don't have one initially)
-                // If not: assign to least-loaded local bucket using get_bucket_with_less_devices()
-                // This allows delegated devices to connect at original schedule_time once,
-                // then subsequent connections use the new bucket-based schedule
-
+                if let Some(tx) = reschedule_tx {
+                    if let Err(e) = tx.send(device_id).await {
+                        error!("[Job {:#x}] Failed to signal reschedule: {}", job_id, e);
+                    }
+                }
                 return Ok(());
             }
             Err(e) => {
@@ -155,40 +159,119 @@ async fn run_wake_up(
     Err(TaskError::MaxRetriesExceeded)
 }
 
-async fn try_connect(remote_addr: &str, device_id: Uuid) -> Result<UdpSocket, TaskError> {
+/// Executes the full periodic session with a device.
+///
+/// Protocol flow:
+///   HES → HANDSHAKE
+///   Device → HANDSHAKE_RESPONSE
+///   HES → READ_REQUEST  (water volume, battery, clock)
+///   Device → READ_RESPONSE
+///   HES → WRITE_REQUEST (clock sync, next wake time)
+///   Device → WRITE_RESPONSE
+///   HES → ACK           (session close)
+async fn run_session(job_id: Uuid, device_id: Uuid, remote_addr: &str) -> Result<(), TaskError> {
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
     socket.connect(remote_addr).await?;
 
-    // Send HANDSHAKE message as per protocol specification
-    // TODO: Generate cryptographically secure random nonce
+    let device_id_u128 = device_id.as_u128();
+    let mut seq: u32 = 0;
+
+    // HANDSHAKE
+    // TODO: replace with cryptographically secure random nonce
     let nonce = vec![0u8; 32];
-    let handshake = Message::new_handshake_message(device_id.as_u128(), 0, nonce)?;
+    send_msg(&socket, Message::new_handshake_message(device_id_u128, seq, nonce)?).await?;
+    seq += 1;
 
+    // HANDSHAKE_RESPONSE
+    let resp = recv_msg(&socket).await?;
+    let got = resp.msg_type.as_str();
+    let MessagePayload::HandshakeResponse(_) = resp.payload else {
+        return Err(TaskError::UnexpectedMsgType { expected: "handshake_response", got });
+    };
+    info!("[Job {:#x}] HANDSHAKE_RESPONSE received", job_id);
+
+    // READ_REQUEST
+    let obis_codes = vec![
+        OBIS_WATER_VOLUME.to_string(),
+        OBIS_BATTERY.to_string(),
+        OBIS_CLOCK.to_string(),
+    ];
+    send_msg(
+        &socket,
+        Message::new_read_request_message(device_id_u128, seq, obis_codes)?,
+    )
+    .await?;
+    seq += 1;
+
+    // READ_RESPONSE
+    let resp = recv_msg(&socket).await?;
+    let got = resp.msg_type.as_str();
+    let MessagePayload::ReadResponse(data) = resp.payload else {
+        return Err(TaskError::UnexpectedMsgType { expected: "read_response", got });
+    };
+    info!(
+        "[Job {:#x}] READ_RESPONSE received ({} values)",
+        job_id,
+        data.values.len()
+    );
+    // TODO: persist data.values to database (water volume, battery, clock)
+
+    // WRITE_REQUEST: sync clock and tell device when to wake next
+    let now_ts = Utc::now().timestamp() as u64;
+    let next_wake_ts = (Utc::now() + chrono::Duration::days(1)).timestamp() as u64;
+    let parameters = vec![
+        WriteParameter {
+            code: OBIS_CLOCK.to_string(),
+            value: now_ts.to_be_bytes().to_vec(),
+        },
+        WriteParameter {
+            code: OBIS_NEXT_WAKE.to_string(),
+            value: next_wake_ts.to_be_bytes().to_vec(),
+        },
+    ];
+    send_msg(
+        &socket,
+        Message::new_write_request_message(device_id_u128, seq, parameters)?,
+    )
+    .await?;
+    seq += 1;
+
+    // WRITE_RESPONSE
+    let resp = recv_msg(&socket).await?;
+    let got = resp.msg_type.as_str();
+    let MessagePayload::WriteResponse(_) = resp.payload else {
+        return Err(TaskError::UnexpectedMsgType { expected: "write_response", got });
+    };
+    info!("[Job {:#x}] WRITE_RESPONSE received", job_id);
+
+    // ACK — session close
+    send_msg(&socket, Message::new_ack_message(device_id_u128, seq)?).await?;
+    info!("[Job {:#x}] Session closed with ACK", job_id);
+
+    Ok(())
+}
+
+async fn send_msg(socket: &UdpSocket, msg: Message) -> Result<(), TaskError> {
     let mut buf = BytesMut::new();
-    let mut codec = MessageCodec;
-    codec.encode(handshake, &mut buf)?;
-
+    MessageCodec.encode(msg, &mut buf)?;
     socket.send(&buf).await?;
-    METRICS_CONNECTIONS
-        .messages_total
-        .with_label_values(&["handshake", "outbound"])
-        .inc();
+    Ok(())
+}
 
-    // Wait for HANDSHAKE_RESPONSE from device
-    let mut response_buf = [0u8; 1024];
+async fn recv_msg(socket: &UdpSocket) -> Result<Message, TaskError> {
+    let mut raw = [0u8; 4096];
     let n = timeout(
         Duration::from_secs(RESPONSE_TIMEOUT_SECS),
-        socket.recv(&mut response_buf),
+        socket.recv(&mut raw),
     )
     .await
-    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Device did not respond"))??;
+    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "device did not respond"))??;
 
-    // TODO: Decode and validate HANDSHAKE_RESPONSE
-    if n == 0 {
-        return Err(
-            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Empty response").into(),
-        );
-    }
-
-    Ok(socket)
+    let mut buf = BytesMut::from(&raw[..n]);
+    MessageCodec.decode(&mut buf)?.ok_or_else(|| {
+        TaskError::IoError(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "incomplete message",
+        ))
+    })
 }

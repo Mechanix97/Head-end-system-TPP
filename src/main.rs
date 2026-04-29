@@ -4,7 +4,7 @@ use clap::Parser;
 use std::{error::Error, sync::{Arc, atomic::AtomicBool}};
 use tokio::{
     io::{self, AsyncReadExt},
-    sync::{RwLock, watch},
+    sync::{RwLock, mpsc, watch},
 };
 use tracing::info;
 
@@ -201,6 +201,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         info!("Running in single-node mode");
         None
     };
+
+    // Reschedule channel: wake_up_device signals here after a successful session,
+    // and the listener task below calls schedule_next_wakeup for the device.
+    let (reschedule_tx, mut reschedule_rx) = mpsc::channel::<uuid::Uuid>(64);
+    device_manager.write().await.set_reschedule_sender(reschedule_tx);
+
+    let dm_reschedule = device_manager.clone();
+    tokio::spawn(async move {
+        while let Some(device_id) = reschedule_rx.recv().await {
+            if let Err(e) = dm_reschedule.write().await.schedule_next_wakeup(device_id).await {
+                tracing::error!("Failed to reschedule device {}: {}", device_id, e);
+            }
+        }
+    });
 
     // Hot-reload primitives shared between the RPC layer and the running services.
     let (backdoor_rebind_tx, backdoor_rebind_rx) =

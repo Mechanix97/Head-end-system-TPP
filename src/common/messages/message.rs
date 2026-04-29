@@ -9,7 +9,7 @@ use crate::messages::handshake::{HandshakeMessage, HandshakeResponseMessage};
 use crate::messages::nack::NackMessage;
 use crate::messages::read::{ReadRequestMessage, ReadResponseMessage};
 use crate::messages::registry::{RegistryRequestMessage, RegistryResponseMessage};
-use crate::messages::write::{WriteRequestMessage, WriteResponseMessage};
+use crate::messages::write::{WriteParameter, WriteRequestMessage, WriteResponseMessage};
 
 use bytes::BufMut;
 use chrono::DateTime;
@@ -138,6 +138,36 @@ impl Message {
             mac: 0,
         };
 
+        msg.calculate_mac();
+        Ok(msg)
+    }
+
+    /// Creates a READ_REQUEST message to query OBIS data from a device.
+    pub fn new_read_request_message(device_id: u128, seq: u32, obis_codes: Vec<String>) -> Result<Self, MessageError> {
+        let mut msg = Message {
+            version: CURRENT_PROTOCOL_VERSION,
+            msg_type: MsgType::ReadRequest,
+            device_id,
+            seq,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            payload: MessagePayload::ReadRequest(ReadRequestMessage::new(obis_codes)),
+            mac: 0,
+        };
+        msg.calculate_mac();
+        Ok(msg)
+    }
+
+    /// Creates a WRITE_REQUEST message to push configuration parameters to a device.
+    pub fn new_write_request_message(device_id: u128, seq: u32, parameters: Vec<WriteParameter>) -> Result<Self, MessageError> {
+        let mut msg = Message {
+            version: CURRENT_PROTOCOL_VERSION,
+            msg_type: MsgType::WriteRequest,
+            device_id,
+            seq,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            payload: MessagePayload::WriteRequest(WriteRequestMessage::new(parameters)),
+            mac: 0,
+        };
         msg.calculate_mac();
         Ok(msg)
     }
