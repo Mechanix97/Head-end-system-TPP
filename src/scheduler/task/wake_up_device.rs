@@ -232,19 +232,13 @@ async fn run_session(
     );
     // TODO: persist data.values to database (water volume, clock)
 
-    // WRITE_REQUEST: sync clock and tell device when to wake next
-    let now_ts = Utc::now().timestamp() as u64;
+    // WRITE_REQUEST: tell device when to wake next.
+    // Clock sync is not needed here — the device reads the envelope timestamp directly.
     let next_wake_ts = (Utc::now() + chrono::Duration::days(1)).timestamp() as u64;
-    let parameters = vec![
-        WriteParameter {
-            code: OBIS_CLOCK.to_string(),
-            value: now_ts.to_be_bytes().to_vec(),
-        },
-        WriteParameter {
-            code: OBIS_NEXT_WAKE.to_string(),
-            value: next_wake_ts.to_be_bytes().to_vec(),
-        },
-    ];
+    let parameters = vec![WriteParameter {
+        code: OBIS_NEXT_WAKE.to_string(),
+        value: next_wake_ts.to_be_bytes().to_vec(),
+    }];
     send_msg(
         &socket,
         Message::new_write_request_message(device_id_u128, seq, parameters)?,
