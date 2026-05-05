@@ -58,7 +58,7 @@ impl Message {
             msg_type: MsgType::RegisterRequest,
             device_id: 0,
             seq: 0,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             payload: MessagePayload::RegistryRequest(RegistryRequestMessage::new(imei, ipv6)),
             mac: 0,
         };
@@ -77,7 +77,7 @@ impl Message {
             msg_type: MsgType::RegisterResponse,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             payload: MessagePayload::RegistryResponse(RegistryResponseMessage::new(flag, next_wake_time)),
             mac: 0,
         };
@@ -96,7 +96,7 @@ impl Message {
             msg_type: MsgType::Handshake,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             payload: MessagePayload::Handshake(HandshakeMessage::new(nonce)),
             mac: 0,
         };
@@ -115,7 +115,7 @@ impl Message {
             msg_type: MsgType::Nack,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             payload: MessagePayload::Nack(NackMessage::new(error_code)),
             mac: 0,
         };
@@ -133,7 +133,7 @@ impl Message {
             msg_type: MsgType::Ack,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             payload: MessagePayload::Ack,
             mac: 0,
         };
@@ -149,7 +149,7 @@ impl Message {
             msg_type: MsgType::HandshakeResponse,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             payload: MessagePayload::HandshakeResponse(HandshakeResponseMessage::new(status)),
             mac: 0,
         };
@@ -164,7 +164,7 @@ impl Message {
             msg_type: MsgType::ReadResponse,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             payload: MessagePayload::ReadResponse(crate::messages::read::ReadResponseMessage::new(values)),
             mac: 0,
         };
@@ -179,7 +179,7 @@ impl Message {
             msg_type: MsgType::WriteResponse,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             payload: MessagePayload::WriteResponse(crate::messages::write::WriteResponseMessage::new(success, written_codes)),
             mac: 0,
         };
@@ -194,7 +194,7 @@ impl Message {
             msg_type: MsgType::ReadRequest,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             payload: MessagePayload::ReadRequest(ReadRequestMessage::new(obis_codes)),
             mac: 0,
         };
@@ -209,7 +209,7 @@ impl Message {
             msg_type: MsgType::WriteRequest,
             device_id,
             seq,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
             payload: MessagePayload::WriteRequest(WriteRequestMessage::new(parameters)),
             mac: 0,
         };

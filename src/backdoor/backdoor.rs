@@ -862,7 +862,7 @@ mod tests {
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_millis() as u64,
+                .as_secs(),
             payload: MessagePayload::Ack,
             mac: 0,
         };
