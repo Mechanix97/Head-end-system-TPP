@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::error::SchedulerError;
 
-const TEST_MODE_WAKEUP_SECS: i64 = 300;
+const TEST_MODE_WAKEUP_SECS: i64 = 60;
 use crate::schedule::Schedule;
 use crate::task::wake_up_device::wake_up_device;
 use common::database::api::Database;
@@ -51,7 +51,12 @@ impl Scheduler {
     ///
     /// Initializes the job scheduler and attempts to restore any previously
     /// scheduled connections from the database (for HES restarts).
-    pub async fn new(bucket_number: usize, database: Database, local_node_id: Uuid, test_mode: bool) -> Result<Self, SchedulerError> {
+    pub async fn new(
+        bucket_number: usize,
+        database: Database,
+        local_node_id: Uuid,
+        test_mode: bool,
+    ) -> Result<Self, SchedulerError> {
         if test_mode {
             info!("Scheduler running in TEST MODE — all connections scheduled within 5 minutes");
         }
@@ -88,7 +93,10 @@ impl Scheduler {
     ///
     /// Note: This only stores the assignment in the database. The actual job is
     /// scheduled later when the device sends an ACK.
-    pub async fn register_device(&mut self, device: &Device) -> Result<NaiveDateTime, SchedulerError> {
+    pub async fn register_device(
+        &mut self,
+        device: &Device,
+    ) -> Result<NaiveDateTime, SchedulerError> {
         METRICS_CONNECTIONS
             .connections_tracker
             .with_label_values(&["new_connection"])

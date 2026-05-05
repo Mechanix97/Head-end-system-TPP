@@ -33,7 +33,7 @@ const SESSION_RECV_TIMEOUT_SECS: u64 = 60;
 #[command(about = "Mock IoT device for HES test-mode sessions")]
 struct Args {
     /// HES backdoor IP
-    #[arg(long = "backdoor-ip", default_value = "mechardo3d.mooo.com")]
+    #[arg(long = "backdoor-ip", default_value = "127.0.0.1")]
     backdoor_ip: String,
 
     /// HES backdoor port
@@ -145,6 +145,18 @@ async fn register(
     MessageCodec.encode(ack, &mut buf)?;
     socket.send_to(&buf, backdoor_addr).await?;
     info!("ACK sent to backdoor");
+
+    // Consume the backdoor's confirmation ACK (double handshake) so it
+    // doesn't pollute the socket buffer when handle_session starts listening.
+    let mut raw = [0u8; 4096];
+    let (n, _) = timeout(Duration::from_secs(5), socket.recv_from(&mut raw))
+        .await
+        .map_err(|_| "Timed out waiting for registration confirmation ACK")??;
+    let mut buf = BytesMut::from(&raw[..n]);
+    let confirm = MessageCodec
+        .decode(&mut buf)?
+        .ok_or("Empty registration confirmation")?;
+    info!("Registration confirmed by backdoor (seq={})", confirm.seq);
 
     Ok(device_id)
 }
