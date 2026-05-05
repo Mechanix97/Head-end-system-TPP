@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::error::SchedulerError;
 
-const TEST_MODE_WAKEUP_SECS: i64 = 60;
+const TEST_MODE_WAKEUP_SECS: i64 = 300;
 use crate::schedule::Schedule;
 use crate::task::wake_up_device::wake_up_device;
 use common::database::api::Database;
