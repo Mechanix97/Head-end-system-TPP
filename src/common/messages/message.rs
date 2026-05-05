@@ -408,6 +408,7 @@ impl MessagePayload {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
     use bytes::BytesMut;
     use crate::messages::codec::MessageCodec;

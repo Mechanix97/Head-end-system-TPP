@@ -1403,6 +1403,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mock_device"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "clap",
+ "common",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "neli"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

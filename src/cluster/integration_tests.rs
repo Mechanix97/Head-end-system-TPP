@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::super::protocol::*;
     use super::super::node::*;
     use bytes::BytesMut;
@@ -260,8 +261,7 @@ mod tests {
 
             assert_eq!(
                 decoded.msg_type, expected_type,
-                "Message type mismatch for {:?}",
-                expected_type
+                "Message type mismatch for {expected_type:?}"
             );
         }
     }

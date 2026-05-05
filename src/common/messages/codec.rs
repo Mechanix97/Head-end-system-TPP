@@ -122,6 +122,7 @@ impl Encoder<Message> for MessageCodec {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
     use bytes::BufMut;
 

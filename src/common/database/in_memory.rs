@@ -355,6 +355,7 @@ impl Engine for InMemoryDB {
 
 #[cfg(test)]
 mod test {
+    #![allow(clippy::unwrap_used)]
     use crate::database::{DatabaseConfig, api::Database};
     use crate::device::Device;
 

@@ -10,6 +10,8 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::error::SchedulerError;
+
+const TEST_MODE_WAKEUP_SECS: i64 = 300;
 use crate::schedule::Schedule;
 use crate::task::wake_up_device::wake_up_device;
 use common::database::api::Database;
@@ -216,7 +218,7 @@ impl Scheduler {
     /// In normal mode, converts the bucket number to the next scheduled time of day.
     fn next_wakeup(&self, bucket_number: usize) -> Result<NaiveDateTime, SchedulerError> {
         if self.test_mode {
-            Ok((Utc::now() + chrono::Duration::seconds(300)).naive_utc())
+            Ok((Utc::now() + chrono::Duration::seconds(TEST_MODE_WAKEUP_SECS)).naive_utc())
         } else {
             let schedule = self.get_next_schedule(bucket_number);
             NaiveDateTime::try_from(&schedule).map_err(|e| {

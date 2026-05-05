@@ -9,8 +9,8 @@
 ///   cargo run -p mock_device -- --backdoor-ip 127.0.0.1 --device-port 6060 --imei 000000000000001
 use std::error::Error;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::BytesMut;
@@ -33,7 +33,7 @@ const SESSION_RECV_TIMEOUT_SECS: u64 = 60;
 #[command(about = "Mock IoT device for HES test-mode sessions")]
 struct Args {
     /// HES backdoor IP
-    #[arg(long = "backdoor-ip", default_value = "127.0.0.1")]
+    #[arg(long = "backdoor-ip", default_value = "mechardo3d.mooo.com")]
     backdoor_ip: String,
 
     /// HES backdoor port
@@ -84,7 +84,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         info!("Waiting for next session from HES...");
-        match handle_session(&socket, device_id, &volume, args.battery, args.liters_per_session).await {
+        match handle_session(
+            &socket,
+            device_id,
+            &volume,
+            args.battery,
+            args.liters_per_session,
+        )
+        .await
+        {
             Ok(()) => {
                 session_count += 1;
                 info!(
@@ -104,10 +112,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 /// Registers the device with the HES backdoor.
 /// Sends REGISTER_REQUEST and waits for REGISTER_RESPONSE, then ACKs.
-async fn register(socket: &UdpSocket, backdoor_addr: &str, imei: &str) -> Result<u128, Box<dyn Error>> {
+async fn register(
+    socket: &UdpSocket,
+    backdoor_addr: &str,
+    imei: &str,
+) -> Result<u128, Box<dyn Error>> {
     let mut buf = BytesMut::new();
 
-    let register_req = Message::new_register_request_message(imei.to_string(), "fe80::1".to_string())?;
+    let register_req =
+        Message::new_register_request_message(imei.to_string(), "fe80::1".to_string())?;
     MessageCodec.encode(register_req, &mut buf)?;
     socket.send_to(&buf, backdoor_addr).await?;
     info!("REGISTER_REQUEST sent to {}", backdoor_addr);
@@ -252,11 +265,17 @@ async fn send_to(socket: &UdpSocket, msg: Message, addr: SocketAddr) -> Result<(
     Ok(())
 }
 
-async fn recv_from(socket: &UdpSocket, timeout_secs: u64) -> Result<(Message, SocketAddr), Box<dyn Error>> {
+async fn recv_from(
+    socket: &UdpSocket,
+    timeout_secs: u64,
+) -> Result<(Message, SocketAddr), Box<dyn Error>> {
     let mut raw = [0u8; 4096];
-    let (n, from) = timeout(Duration::from_secs(timeout_secs), socket.recv_from(&mut raw))
-        .await
-        .map_err(|_| format!("Timed out after {}s waiting for message", timeout_secs))??;
+    let (n, from) = timeout(
+        Duration::from_secs(timeout_secs),
+        socket.recv_from(&mut raw),
+    )
+    .await
+    .map_err(|_| format!("Timed out after {timeout_secs}s waiting for message"))??;
 
     let mut buf = BytesMut::from(&raw[..n]);
     let msg = MessageCodec

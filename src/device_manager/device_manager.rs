@@ -490,6 +490,7 @@ impl DeviceManager {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
     use common::database::{DatabaseConfig, api::Database};
 

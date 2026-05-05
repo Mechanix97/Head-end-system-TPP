@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::super::membership::*;
     use super::super::node::*;
     use std::time::Duration;
@@ -21,7 +22,7 @@ mod tests {
         NodeInfo::new_local(
             Uuid::new_v4(),
             name.to_string(),
-            format!("127.0.0.1:{}", port).parse().unwrap(),
+            format!("127.0.0.1:{port}").parse().unwrap(),
             6565,
         )
     }
