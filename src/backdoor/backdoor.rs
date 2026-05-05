@@ -551,7 +551,7 @@ mod tests {
     async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<DeviceManager>> {
         let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
         let node_id = uuid::Uuid::new_v4();
-        let scheduler = Scheduler::new(1, db.clone(), node_id).await.unwrap();
+        let scheduler = Scheduler::new(1, db.clone(), node_id, false).await.unwrap();
         let device_manager = Arc::new(RwLock::new(DeviceManager::new(
             node_id,
             1,

@@ -494,7 +494,7 @@ mod tests {
     use common::database::{DatabaseConfig, api::Database};
 
     async fn create_test_scheduler(db: Database, node_id: Uuid) -> Scheduler {
-        Scheduler::new(1, db, node_id).await.unwrap()
+        Scheduler::new(1, db, node_id, false).await.unwrap()
     }
 
     #[tokio::test]

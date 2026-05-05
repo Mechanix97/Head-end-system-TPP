@@ -102,6 +102,10 @@ struct Args {
     #[arg(long = "disable-rpc", help = "Disable the JSON-RPC admin console")]
     disable_rpc: bool,
 
+    /// Test mode: schedule all connections within 5 minutes instead of normal daily buckets
+    #[arg(long = "test-mode", help = "Schedule all connections within 5 minutes (for testing)")]
+    test_mode: bool,
+
     /// JSON-RPC server bind IP
     #[arg(long = "rpc-ip", help = "JSON-RPC server bind IP (default: 127.0.0.1)")]
     rpc_ip: Option<String>,
@@ -140,6 +144,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             disable_rpc: args.disable_rpc,
             rpc_ip: args.rpc_ip,
             rpc_port: args.rpc_port,
+            test_mode: args.test_mode,
         },
     )?;
     let config = config_manager.get().await;
@@ -161,7 +166,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     })
     .await?;
 
-    let scheduler = Scheduler::new(config.buckets_number, db.clone(), config.node_id).await?;
+    let scheduler = Scheduler::new(config.buckets_number, db.clone(), config.node_id, config.test_mode).await?;
 
     let device_manager = Arc::new(RwLock::new(DeviceManager::new(
         config.node_id,
