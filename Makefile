@@ -15,6 +15,9 @@ run-node-2: ## Run node 2 (joins via node-1, postgres on 100.86.94.38)
 run-node-3: ## Run node 3 (joins via node-1, separate ports, postgres on 100.86.94.38)
 	cargo run -- --config configs/node-3.yaml
 
+mock-device: ## Run a mock device that registers and handles periodic sessions (use with make run)
+	cargo run -p mock_device -- --backdoor-ip 127.0.0.1
+
 local-cli: ## Connect to local HES via interactive CLI (127.0.0.1:6600)
 	cargo run -p hes-cli
 

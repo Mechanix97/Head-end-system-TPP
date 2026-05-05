@@ -142,6 +142,51 @@ impl Message {
         Ok(msg)
     }
 
+    /// Creates a HANDSHAKE_RESPONSE message to acknowledge a session initiation.
+    pub fn new_handshake_response_message(device_id: u128, seq: u32, status: u8) -> Result<Self, MessageError> {
+        let mut msg = Message {
+            version: CURRENT_PROTOCOL_VERSION,
+            msg_type: MsgType::HandshakeResponse,
+            device_id,
+            seq,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            payload: MessagePayload::HandshakeResponse(HandshakeResponseMessage::new(status)),
+            mac: 0,
+        };
+        msg.calculate_mac();
+        Ok(msg)
+    }
+
+    /// Creates a READ_RESPONSE message with OBIS values.
+    pub fn new_read_response_message(device_id: u128, seq: u32, values: Vec<crate::messages::read::ObisValue>) -> Result<Self, MessageError> {
+        let mut msg = Message {
+            version: CURRENT_PROTOCOL_VERSION,
+            msg_type: MsgType::ReadResponse,
+            device_id,
+            seq,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            payload: MessagePayload::ReadResponse(crate::messages::read::ReadResponseMessage::new(values)),
+            mac: 0,
+        };
+        msg.calculate_mac();
+        Ok(msg)
+    }
+
+    /// Creates a WRITE_RESPONSE message confirming written parameters.
+    pub fn new_write_response_message(device_id: u128, seq: u32, success: bool, written_codes: Vec<String>) -> Result<Self, MessageError> {
+        let mut msg = Message {
+            version: CURRENT_PROTOCOL_VERSION,
+            msg_type: MsgType::WriteResponse,
+            device_id,
+            seq,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as u64,
+            payload: MessagePayload::WriteResponse(crate::messages::write::WriteResponseMessage::new(success, written_codes)),
+            mac: 0,
+        };
+        msg.calculate_mac();
+        Ok(msg)
+    }
+
     /// Creates a READ_REQUEST message to query OBIS data from a device.
     pub fn new_read_request_message(device_id: u128, seq: u32, obis_codes: Vec<String>) -> Result<Self, MessageError> {
         let mut msg = Message {
