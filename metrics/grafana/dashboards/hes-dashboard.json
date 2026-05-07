@@ -966,7 +966,8 @@
           "sort": "none"
         },
         "xTickLabelRotation": -45,
-        "xTickLabelSpacing": 0
+        "xTickLabelSpacing": 0,
+        "xField": "bucket"
       },
       "pluginVersion": "11.0.0",
       "targets": [
@@ -976,7 +977,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sort_desc(devices_per_bucket)",
+          "expr": "devices_per_bucket",
           "instant": true,
           "legendFormat": "Bucket {{bucket}}",
           "range": false,
