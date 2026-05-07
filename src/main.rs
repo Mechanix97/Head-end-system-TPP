@@ -150,6 +150,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     info!("Head-End System starting with node_id: {}", config.node_id);
+    metrics::init(&config.node_id.to_string());
 
     let db = Database::new(DatabaseConfig {
         db_type: config.database_type,

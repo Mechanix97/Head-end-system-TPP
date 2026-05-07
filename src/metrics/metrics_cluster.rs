@@ -1,7 +1,9 @@
 //! Prometheus metrics for cluster operations.
 
-use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry};
+use std::collections::HashMap;
 use std::sync::LazyLock;
+
+use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry};
 
 use crate::MetricsError;
 
@@ -70,7 +72,10 @@ pub struct MetricsCluster {
 impl MetricsCluster {
     /// Creates a new cluster metrics collector.
     pub fn try_new() -> Result<Self, MetricsError> {
-        let registry = Registry::new();
+        let mut const_labels = HashMap::new();
+        const_labels.insert("node_id".to_string(), crate::node_id().to_string());
+        let registry = Registry::new_custom(None, Some(const_labels))
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         // Node metrics
         let cluster_nodes_total = IntGauge::new(

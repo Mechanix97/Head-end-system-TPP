@@ -1,5 +1,7 @@
-use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
+use std::collections::HashMap;
 use std::sync::LazyLock;
+
+use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
 
 use crate::MetricsError;
 
@@ -59,7 +61,10 @@ impl MetricsConns {
     /// The registry is created once and reused for all gather operations,
     /// avoiding the overhead of re-registering metrics on every scrape.
     pub fn try_new() -> Result<Self, MetricsError> {
-        let registry = Registry::new();
+        let mut const_labels = HashMap::new();
+        const_labels.insert("node_id".to_string(), crate::node_id().to_string());
+        let registry = Registry::new_custom(None, Some(const_labels))
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         let connections_tracker = IntCounterVec::new(
             Opts::new("connections_tracker", "Keeps track of all connections"),

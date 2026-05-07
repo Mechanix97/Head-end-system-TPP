@@ -5,6 +5,7 @@ use axum::{Router, extract::State, http::StatusCode, routing::get};
 use tracing::{error, info};
 
 use crate::MetricsError;
+use crate::metrics_cluster::METRICS_CLUSTER;
 use crate::metrics_connections::METRICS_CONNECTIONS;
 
 /// Starts the Prometheus metrics HTTP server.
@@ -46,11 +47,17 @@ pub(crate) async fn get_metrics(
     if !enabled.load(Ordering::Relaxed) {
         return (StatusCode::SERVICE_UNAVAILABLE, String::new());
     }
+    let mut output = String::new();
+
     match METRICS_CONNECTIONS.gather_metrics() {
-        Ok(s) => (StatusCode::OK, s),
-        Err(_) => {
-            error!("Failed to gather METRICS_CONNECTIONS");
-            (StatusCode::OK, String::new())
-        }
+        Ok(s) => output.push_str(&s),
+        Err(_) => error!("Failed to gather METRICS_CONNECTIONS"),
     }
+
+    match METRICS_CLUSTER.gather_metrics() {
+        Ok(s) => output.push_str(&s),
+        Err(_) => error!("Failed to gather METRICS_CLUSTER"),
+    }
+
+    (StatusCode::OK, output)
 }

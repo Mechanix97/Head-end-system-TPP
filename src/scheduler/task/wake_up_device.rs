@@ -8,6 +8,7 @@ use uuid::Uuid;
 use common::database::api::Database;
 use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
+use metrics::metrics_connections::METRICS_CONNECTIONS;
 
 use crate::error::TaskError;
 
@@ -39,10 +40,18 @@ pub async fn wake_up_device(
             "[Job {:#x}] Connection attempt {}/{} to {}",
             job_id, attempt, MAX_RETRIES, remote_addr
         );
+        METRICS_CONNECTIONS
+            .connections_tracker
+            .with_label_values(&["periodic_attempt"])
+            .inc();
 
         match try_connect(&remote_addr, device_id).await {
             Ok(_socket) => {
                 info!("[Job {:#x}] Device responded to HANDSHAKE", job_id);
+                METRICS_CONNECTIONS
+                    .connections_tracker
+                    .with_label_values(&["periodic_success"])
+                    .inc();
 
                 // TODO: Send HANDSHAKE message
                 // TODO: Receive HANDSHAKE_RESPONSE
@@ -64,6 +73,10 @@ pub async fn wake_up_device(
                     "[Job {:#x}] Attempt {}/{} failed: {}",
                     job_id, attempt, MAX_RETRIES, e
                 );
+                METRICS_CONNECTIONS
+                    .errors_total
+                    .with_label_values(&["scheduler", "connection_failed"])
+                    .inc();
 
                 if attempt < MAX_RETRIES {
                     sleep(Duration::from_secs(RETRY_DELAY_SECS)).await;
@@ -76,6 +89,10 @@ pub async fn wake_up_device(
         "[Job {:#x}] Failed to connect after {} attempts, marking as lost",
         job_id, MAX_RETRIES
     );
+    METRICS_CONNECTIONS
+        .errors_total
+        .with_label_values(&["scheduler", "max_retries_exceeded"])
+        .inc();
 
     Err(TaskError::MaxRetriesExceeded)
 }
@@ -94,6 +111,10 @@ async fn try_connect(remote_addr: &str, device_id: Uuid) -> Result<UdpSocket, Ta
     codec.encode(handshake, &mut buf)?;
 
     socket.send(&buf).await?;
+    METRICS_CONNECTIONS
+        .messages_total
+        .with_label_values(&["handshake", "outbound"])
+        .inc();
 
     // Wait for HANDSHAKE_RESPONSE from device
     let mut response_buf = [0u8; 1024];
