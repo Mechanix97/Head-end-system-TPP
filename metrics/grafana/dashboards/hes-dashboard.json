@@ -907,32 +907,14 @@
           "color": {
             "mode": "palette-classic"
           },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineWidth": 1
-          },
           "mappings": [],
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           },
@@ -948,26 +930,20 @@
       },
       "id": 30,
       "options": {
-        "barRadius": 0,
-        "barWidth": 0.97,
-        "fullHighlight": false,
-        "groupWidth": 0.7,
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "orientation": "auto",
-        "showValue": "always",
-        "stacking": "none",
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        },
-        "xTickLabelRotation": -45,
-        "xTickLabelSpacing": 0,
-        "xField": "bucket"
+        "showUnfilled": true,
+        "valueMode": "color"
       },
       "pluginVersion": "11.0.0",
       "targets": [
@@ -977,7 +953,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "devices_per_bucket",
+          "expr": "sort_desc(devices_per_bucket)",
           "instant": true,
           "legendFormat": "Bucket {{bucket}}",
           "range": false,
@@ -985,7 +961,7 @@
         }
       ],
       "title": "Devices per Bucket",
-      "type": "barchart"
+      "type": "bargauge"
     },
     {
       "datasource": {
