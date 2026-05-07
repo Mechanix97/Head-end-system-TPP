@@ -1847,6 +1847,7 @@ dependencies = [
  "cluster",
  "common",
  "device_manager",
+ "metrics",
  "serde",
  "serde_json",
  "thiserror 2.0.17",

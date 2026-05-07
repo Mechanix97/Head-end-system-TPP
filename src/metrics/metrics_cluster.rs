@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry};
+use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry};
 
 use crate::MetricsError;
 
@@ -67,6 +67,14 @@ pub struct MetricsCluster {
     pub cluster_node_devices: IntGaugeVec,
     /// Load percentage per node (label: node_id)
     pub cluster_node_load_percent: IntGaugeVec,
+
+    // ── Phase 2 — new cluster metrics ────────────────────────────────────────
+    /// Node state transitions. Labels: (from ∈ {active,suspect}, to ∈ {suspect,dead}).
+    pub hes_cluster_state_changes_total: IntCounterVec,
+    /// Current number of nodes in suspect state.
+    pub hes_cluster_suspect_nodes: IntGauge,
+    /// Duration to apply a received config update locally, in milliseconds.
+    pub hes_cluster_config_propagation_duration_ms: Histogram,
 }
 
 impl MetricsCluster {
@@ -178,6 +186,32 @@ impl MetricsCluster {
         )
         .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
+        // ── Phase 2 ───────────────────────────────────────────────────────────
+        let hes_cluster_state_changes_total = IntCounterVec::new(
+            Opts::new(
+                "hes_cluster_state_changes_total",
+                "Node state transitions observed by this node",
+            ),
+            &["from", "to"],
+        )
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+
+        let hes_cluster_suspect_nodes = IntGauge::new(
+            "hes_cluster_suspect_nodes",
+            "Current number of nodes in suspect state",
+        )
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+
+        let config_prop_buckets = vec![0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0];
+        let hes_cluster_config_propagation_duration_ms = Histogram::with_opts(
+            HistogramOpts::new(
+                "hes_cluster_config_propagation_duration_ms",
+                "Time to apply a received config update locally, in milliseconds",
+            )
+            .buckets(config_prop_buckets),
+        )
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+
         // Register all metrics
         registry
             .register(Box::new(cluster_nodes_total.clone()))
@@ -221,6 +255,15 @@ impl MetricsCluster {
         registry
             .register(Box::new(cluster_node_load_percent.clone()))
             .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+        registry
+            .register(Box::new(hes_cluster_state_changes_total.clone()))
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+        registry
+            .register(Box::new(hes_cluster_suspect_nodes.clone()))
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+        registry
+            .register(Box::new(hes_cluster_config_propagation_duration_ms.clone()))
+            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         Ok(MetricsCluster {
             registry,
@@ -238,6 +281,9 @@ impl MetricsCluster {
             cluster_node_buckets,
             cluster_node_devices,
             cluster_node_load_percent,
+            hes_cluster_state_changes_total,
+            hes_cluster_suspect_nodes,
+            hes_cluster_config_propagation_duration_ms,
         })
     }
 

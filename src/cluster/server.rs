@@ -21,6 +21,8 @@ use crate::protocol::{
     KnownNodeInfo, NodeJoinPayload, StatusResponsePayload,
 };
 
+use metrics::metrics_cluster::METRICS_CLUSTER;
+
 use common::config_store::ConfigStore;
 use common::database::api::Database;
 
@@ -116,6 +118,12 @@ async fn handle_message(
         "Received {:?} from node {} at {}",
         msg.msg_type, msg.node_id, from_addr
     );
+
+    let msg_type_str = format!("{:?}", msg.msg_type);
+    METRICS_CLUSTER
+        .cluster_messages_total
+        .with_label_values(&[msg_type_str.as_str(), "inbound"])
+        .inc();
 
     match msg.msg_type {
         ClusterMessageType::Heartbeat => {
@@ -243,6 +251,7 @@ async fn handle_config_update(
         sender_node_id, from_addr, update.key, update.value
     );
 
+    let apply_start = std::time::Instant::now();
     let (success, error_message) = match config_store
         .set_config_value(&update.key, &update.value)
         .await
@@ -250,6 +259,9 @@ async fn handle_config_update(
         Ok(()) => (true, None),
         Err(e) => (false, Some(e.to_string())),
     };
+    METRICS_CLUSTER
+        .hes_cluster_config_propagation_duration_ms
+        .observe(apply_start.elapsed().as_millis() as f64);
 
     // Send ConfigUpdateAck back to sender
     // NOTE: sender_node_id is the cluster node ID; we need the local node ID for the ack sender field.
@@ -290,6 +302,7 @@ async fn handle_heartbeat(
         }
     };
     info!("Received Heartbeat from {}", from_addr);
+    METRICS_CLUSTER.cluster_heartbeat_received_total.inc();
     let mut m = membership.write().await;
 
     // Update or add the node
@@ -300,6 +313,14 @@ async fn handle_heartbeat(
         node.load_percent = heartbeat.load_percent.into();
         node.max_device_suggested = heartbeat.max_device_suggested;
         node.update_heartbeat();
+        METRICS_CLUSTER
+            .cluster_node_devices
+            .with_label_values(&[&node_id.to_string()])
+            .set(i64::from(heartbeat.device_count));
+        METRICS_CLUSTER
+            .cluster_node_load_percent
+            .with_label_values(&[&node_id.to_string()])
+            .set(i64::from(heartbeat.load_percent));
     } else {
         // New node - add to membership
         let node = NodeInfo {
@@ -485,6 +506,7 @@ async fn handle_node_join(
         "Node {} ({}) is joining the cluster",
         join.node_name, node_id
     );
+    METRICS_CLUSTER.cluster_nodes_total.inc();
 
     // Add to membership and collect updated seed list
     let seeds = {
@@ -544,6 +566,7 @@ async fn handle_node_leave(
 
     if let Some(node) = m.remove_node(node_id) {
         info!("Node {} left the cluster gracefully", node.node_name);
+        METRICS_CLUSTER.cluster_nodes_total.dec();
     }
 
     Ok(())
@@ -565,6 +588,11 @@ async fn handle_node_suspect(
 
     let mut m = membership.write().await;
     m.mark_suspect(suspect.suspect_node_id);
+    METRICS_CLUSTER
+        .hes_cluster_state_changes_total
+        .with_label_values(&["active", "suspect"])
+        .inc();
+    METRICS_CLUSTER.hes_cluster_suspect_nodes.inc();
 
     Ok(())
 }
@@ -599,6 +627,12 @@ async fn handle_node_dead(
         "Node {} ({}) confirmed dead by cluster",
         node_name, dead.dead_node_id
     );
+    METRICS_CLUSTER.cluster_failovers_total.inc();
+    METRICS_CLUSTER
+        .hes_cluster_state_changes_total
+        .with_label_values(&["suspect", "dead"])
+        .inc();
+    METRICS_CLUSTER.hes_cluster_suspect_nodes.dec();
 
     // Update node status in database to "dead"
     database

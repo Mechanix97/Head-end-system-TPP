@@ -1,9 +1,31 @@
+use metrics::metrics_connections::METRICS_CONNECTIONS;
+
 use crate::methods;
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 use crate::state::RpcState;
 
 /// Dispatches a JSON-RPC request to the appropriate handler.
 pub async fn dispatch(req: JsonRpcRequest, state: &RpcState) -> JsonRpcResponse {
+    let start = std::time::Instant::now();
+    let method = req.method.clone();
+
+    let response = dispatch_inner(req, state).await;
+
+    let elapsed_ms = start.elapsed().as_millis() as f64;
+    let result_label = if response.error.is_some() { "error" } else { "success" };
+    METRICS_CONNECTIONS
+        .hes_rpc_request_total
+        .with_label_values(&[method.as_str(), result_label])
+        .inc();
+    METRICS_CONNECTIONS
+        .hes_rpc_request_duration_ms
+        .with_label_values(&[method.as_str()])
+        .observe(elapsed_ms);
+
+    response
+}
+
+async fn dispatch_inner(req: JsonRpcRequest, state: &RpcState) -> JsonRpcResponse {
     match req.method.as_str() {
         // system.*
         "system.version" => methods::system::version(state, req.params, req.id).await,

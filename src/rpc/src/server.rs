@@ -7,6 +7,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
+use metrics::metrics_connections::METRICS_CONNECTIONS;
+
 use crate::handler::dispatch;
 use crate::protocol::JsonRpcRequest;
 use crate::state::RpcState;
@@ -70,6 +72,7 @@ async fn handle_connection(
     _permit: OwnedSemaphorePermit,
 ) {
     debug!("RPC client connected: {peer_addr}");
+    METRICS_CONNECTIONS.hes_rpc_active_connections.inc();
     let (read_half, mut write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
     let mut line = String::new();
@@ -79,10 +82,12 @@ async fn handle_connection(
         match reader.read_line(&mut line).await {
             Ok(0) => {
                 debug!("RPC client disconnected: {peer_addr}");
+                METRICS_CONNECTIONS.hes_rpc_active_connections.dec();
                 break;
             }
             Ok(n) if n > MAX_LINE_LENGTH => {
                 warn!("RPC client {peer_addr} sent oversized message ({n} bytes), disconnecting");
+                METRICS_CONNECTIONS.hes_rpc_active_connections.dec();
                 break;
             }
             Ok(_) => {
@@ -114,11 +119,13 @@ async fn handle_connection(
 
                 if let Err(e) = write_half.write_all(&json_bytes).await {
                     debug!("RPC write error to {peer_addr}: {e}");
+                    METRICS_CONNECTIONS.hes_rpc_active_connections.dec();
                     break;
                 }
             }
             Err(e) => {
                 debug!("RPC read error from {peer_addr}: {e}");
+                METRICS_CONNECTIONS.hes_rpc_active_connections.dec();
                 break;
             }
         }
