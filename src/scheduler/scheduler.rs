@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use tokio::sync::mpsc;
+
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
 use tokio_cron_scheduler::{Job, JobScheduler};
@@ -8,6 +10,8 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::error::SchedulerError;
+
+const TEST_MODE_WAKEUP_SECS: i64 = 300;
 use crate::schedule::Schedule;
 use crate::task::wake_up_device::wake_up_device;
 use common::database::api::Database;
@@ -36,6 +40,10 @@ pub struct Scheduler {
     pub owned_devices: Option<HashSet<Uuid>>,
     /// UUID of this node (used to tag bucket assignments in the database)
     pub local_node_id: Uuid,
+    /// Channel to signal main.rs to reschedule a device after a successful session
+    reschedule_tx: Option<mpsc::Sender<Uuid>>,
+    /// When true, all connections are scheduled within 5 minutes instead of normal daily buckets
+    test_mode: bool,
 }
 
 impl Scheduler {
@@ -43,13 +51,23 @@ impl Scheduler {
     ///
     /// Initializes the job scheduler and attempts to restore any previously
     /// scheduled connections from the database (for HES restarts).
-    pub async fn new(bucket_number: usize, database: Database, local_node_id: Uuid) -> Result<Self, SchedulerError> {
+    pub async fn new(
+        bucket_number: usize,
+        database: Database,
+        local_node_id: Uuid,
+        test_mode: bool,
+    ) -> Result<Self, SchedulerError> {
+        if test_mode {
+            info!("Scheduler running in TEST MODE — all connections scheduled within 5 minutes");
+        }
         let mut scheduler = Self {
             bucket_number: bucket_number as i32,
             job_scheduler: JobScheduler::new().await?,
             database,
             owned_devices: None, // None means single-node mode, owns all devices
             local_node_id,
+            reschedule_tx: None,
+            test_mode,
         };
         scheduler.start().await?;
 
@@ -75,13 +93,16 @@ impl Scheduler {
     ///
     /// Note: This only stores the assignment in the database. The actual job is
     /// scheduled later when the device sends an ACK.
-    pub async fn register_device(&mut self, device: &Device) -> Result<NaiveDateTime, SchedulerError> {
+    pub async fn register_device(
+        &mut self,
+        device: &Device,
+    ) -> Result<NaiveDateTime, SchedulerError> {
         METRICS_CONNECTIONS
             .connections_tracker
             .with_label_values(&["new_connection"])
             .inc();
         let bucket_number = self.get_bucket_number().await;
-        let next_wake_up = self.get_next_schedule(bucket_number);
+        let next_wake_up = self.next_wakeup(bucket_number)?;
 
         self.database
             .add_device_to_bucket(device.id, bucket_number as i32, self.local_node_id)
@@ -98,10 +119,7 @@ impl Scheduler {
             "Device id: {:#x} in bucket {} next wake scheduled at {}",
             device.id, bucket_number, next_wake_up
         );
-        NaiveDateTime::try_from(&next_wake_up).map_err(|e| {
-            error!("Error building NaiveDateTime from Schedule: {}", e);
-            SchedulerError::ParseError(e)
-        })
+        Ok(next_wake_up)
     }
 
     /// Restores scheduled connections from the database after HES restart.
@@ -186,12 +204,7 @@ impl Scheduler {
     ) -> Result<(), SchedulerError> {
         let bucket_number = self.database.get_bucket_number(device_id).await?;
 
-        let next_wake_up = self.get_next_schedule(bucket_number as usize);
-
-        let next_wake_up = NaiveDateTime::try_from(&next_wake_up).map_err(|e| {
-            error!("Error building NaiveDateTime from Schedule: {}", e);
-            SchedulerError::ParseError(e)
-        })?;
+        let next_wake_up = self.next_wakeup(bucket_number as usize)?;
 
         let job_id = self.create_wakeup_job(device_id, next_wake_up).await?;
 
@@ -205,6 +218,22 @@ impl Scheduler {
         );
 
         Ok(())
+    }
+
+    /// Returns the next wakeup datetime for a device.
+    ///
+    /// In test mode, returns `now + 5 minutes` regardless of bucket assignment.
+    /// In normal mode, converts the bucket number to the next scheduled time of day.
+    fn next_wakeup(&self, bucket_number: usize) -> Result<NaiveDateTime, SchedulerError> {
+        if self.test_mode {
+            Ok((Utc::now() + chrono::Duration::seconds(TEST_MODE_WAKEUP_SECS)).naive_utc())
+        } else {
+            let schedule = self.get_next_schedule(bucket_number);
+            NaiveDateTime::try_from(&schedule).map_err(|e| {
+                error!("Error building NaiveDateTime from Schedule: {}", e);
+                SchedulerError::ParseError(e)
+            })
+        }
     }
 
     pub async fn get_bucket_number(&self) -> usize {
@@ -290,6 +319,14 @@ impl Scheduler {
         self.owned_devices = Some(owned_devices);
     }
 
+    /// Sets the sender side of the reschedule channel.
+    ///
+    /// After a successful periodic session, `wake_up_device` sends the device UUID
+    /// through this channel so the listener in main.rs can schedule the next job.
+    pub fn set_reschedule_sender(&mut self, tx: mpsc::Sender<Uuid>) {
+        self.reschedule_tx = Some(tx);
+    }
+
     /// Adds a device to the owned set (cluster mode only).
     pub fn add_owned_device(&mut self, device_id: Uuid) {
         if let Some(owned) = &mut self.owned_devices {
@@ -346,12 +383,14 @@ impl Scheduler {
         next_wake_up: NaiveDateTime,
     ) -> Result<Uuid, SchedulerError> {
         let database = self.database.clone();
+        let reschedule_tx = self.reschedule_tx.clone();
 
         let job = Job::new_async_tz(
             next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
             chrono_tz::UTC,
             move |job_id, _l| {
                 let db = database.clone();
+                let tx = reschedule_tx.clone();
                 Box::pin(async move {
                     // Measure how late the job fired vs its scheduled time
                     let actual_now = Utc::now().naive_utc();
@@ -361,7 +400,7 @@ impl Scheduler {
                         .observe(drift_ms);
 
                     let job_start = std::time::Instant::now();
-                    let result = wake_up_device(job_id, device_id, &db).await;
+                    let result = wake_up_device(job_id, device_id, &db, tx).await;
                     let elapsed_ms = job_start.elapsed().as_millis() as f64;
                     METRICS_CONNECTIONS
                         .hes_scheduler_job_execution_duration_ms

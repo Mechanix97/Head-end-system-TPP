@@ -8,6 +8,7 @@ members = [
     "src/device_manager",
     "src/rpc",
     "tools/mock_registry",
+    "tools/mock_device",
     "tools/malformed_registry",
     "tools/hes-cli",
 ]

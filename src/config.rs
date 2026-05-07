@@ -63,6 +63,8 @@ pub struct MetricsFileConfig {
 pub struct SchedulerFileConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buckets_number: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub test_mode: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -123,6 +125,7 @@ pub struct HesConfig {
     pub rpc_enabled: bool,
     pub rpc_ip: String,
     pub rpc_port: u16,
+    pub test_mode: bool,
 }
 
 impl Default for HesConfig {
@@ -148,6 +151,7 @@ impl Default for HesConfig {
             rpc_enabled: true,
             rpc_ip: "127.0.0.1".to_string(),
             rpc_port: 6600,
+            test_mode: false,
         }
     }
 }
@@ -168,6 +172,7 @@ impl HesConfig {
             }),
             scheduler: Some(SchedulerFileConfig {
                 buckets_number: Some(self.buckets_number),
+                test_mode: if self.test_mode { Some(true) } else { None },
             }),
             database: Some(DatabaseFileConfig {
                 db_type: Some(database_type_to_string(self.database_type)),
@@ -273,6 +278,7 @@ impl common::config_store::ConfigStore for ConfigManager {
         map.insert("rpc_enabled".to_string(), c.rpc_enabled.to_string());
         map.insert("rpc_ip".to_string(), c.rpc_ip.clone());
         map.insert("rpc_port".to_string(), c.rpc_port.to_string());
+        map.insert("test_mode".to_string(), c.test_mode.to_string());
         // Read-only keys (informational)
         map.insert("node_id".to_string(), c.node_id.to_string());
         map.insert("database_type".to_string(), database_type_to_string(c.database_type));
@@ -299,6 +305,7 @@ impl common::config_store::ConfigStore for ConfigManager {
             "rpc_enabled" => Some(c.rpc_enabled.to_string()),
             "rpc_ip" => Some(c.rpc_ip.clone()),
             "rpc_port" => Some(c.rpc_port.to_string()),
+            "test_mode" => Some(c.test_mode.to_string()),
             "node_id" => Some(c.node_id.to_string()),
             "database_type" => Some(database_type_to_string(c.database_type)),
             _ => None,
@@ -368,7 +375,7 @@ impl common::config_store::ConfigStore for ConfigManager {
                 }
                 Validated::U16(p)
             }
-            "rpc_enabled" => match value {
+            "rpc_enabled" | "test_mode" => match value {
                 "true" => Validated::Bool(true),
                 "false" => Validated::Bool(false),
                 _ => return Err(format!("'{value}' is not valid — use 'true' or 'false'").into()),
@@ -412,6 +419,7 @@ impl common::config_store::ConfigStore for ConfigManager {
             (Validated::Usize(v), "buckets_number") => c.buckets_number = *v,
             (Validated::U16(v), "cluster_port") => c.cluster_port = *v,
             (Validated::Bool(v), "rpc_enabled") => c.rpc_enabled = *v,
+            (Validated::Bool(v), "test_mode") => c.test_mode = *v,
             (Validated::Str(v), "rpc_ip") => c.rpc_ip = v.clone(),
             (Validated::U16(v), "rpc_port") => c.rpc_port = *v,
             (Validated::OptStr(v), "cluster_seeds") => c.cluster_seeds = v.clone(),
@@ -502,6 +510,7 @@ pub struct CliOverrides {
     pub disable_rpc: bool,
     pub rpc_ip: Option<String>,
     pub rpc_port: Option<u16>,
+    pub test_mode: bool,
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -554,6 +563,7 @@ fn apply_file_config(config: &mut HesConfig, fc: FileConfig) -> Result<(), Confi
 
     if let Some(s) = fc.scheduler {
         if let Some(v) = s.buckets_number { config.buckets_number = v; }
+        if let Some(v) = s.test_mode { config.test_mode = v; }
     }
 
     if let Some(db) = fc.database {
@@ -605,6 +615,7 @@ fn apply_cli_overrides(config: &mut HesConfig, cli: CliOverrides) -> Result<(), 
     if cli.disable_rpc { config.rpc_enabled = false; }
     if let Some(v) = cli.rpc_ip { config.rpc_ip = v; }
     if let Some(v) = cli.rpc_port { config.rpc_port = v; }
+    if cli.test_mode { config.test_mode = true; }
     Ok(())
 }
 
@@ -663,6 +674,7 @@ mod tests {
             disable_rpc: false,
             rpc_ip: None,
             rpc_port: None,
+            test_mode: false,
         }
     }
 

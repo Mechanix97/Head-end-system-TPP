@@ -537,11 +537,13 @@ fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use bytes::BytesMut;
     use common::database::{DatabaseConfig, api::Database};
     use device_manager::DeviceManager;
     use scheduler::scheduler::Scheduler;
     use std::sync::Arc;
+
     use tokio::sync::RwLock;
     use tokio_util::codec::Decoder;
     use tokio_util::codec::Encoder;
@@ -551,7 +553,7 @@ mod tests {
     async fn set_up_hes(backdoor_port: &str) -> Arc<RwLock<DeviceManager>> {
         let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
         let node_id = uuid::Uuid::new_v4();
-        let scheduler = Scheduler::new(1, db.clone(), node_id).await.unwrap();
+        let scheduler = Scheduler::new(1, db.clone(), node_id, false).await.unwrap();
         let device_manager = Arc::new(RwLock::new(DeviceManager::new(
             node_id,
             1,
@@ -598,7 +600,7 @@ mod tests {
         codec.encode(register_request.clone(), &mut buffer).unwrap();
 
         device_socket
-            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buffer, format!("127.0.0.1:{backdoor_port}"))
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
@@ -623,7 +625,7 @@ mod tests {
         codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
         device_socket
-            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buffer, format!("127.0.0.1:{backdoor_port}"))
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
@@ -670,7 +672,7 @@ mod tests {
         codec.encode(register_request.clone(), &mut buffer).unwrap();
 
         device_socket
-            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buffer, format!("127.0.0.1:{backdoor_port}"))
             .await
             .expect("Failed to send RegisterRequest");
         let connecitons_number = dm
@@ -696,7 +698,7 @@ mod tests {
         codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
         device_socket
-            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buffer, format!("127.0.0.1:{backdoor_port}"))
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
@@ -732,7 +734,7 @@ mod tests {
             codec.encode(register_request.clone(), &mut buffer).unwrap();
 
             device_socket
-                .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+                .send_to(&buffer, format!("127.0.0.1:{backdoor_port}"))
                 .await
                 .expect("Failed to send RegisterRequest");
             sleep(Duration::from_millis(100)).await;
@@ -756,7 +758,7 @@ mod tests {
             codec.encode(ack_msg.clone(), &mut buffer).unwrap();
 
             device_socket
-                .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+                .send_to(&buffer, format!("127.0.0.1:{backdoor_port}"))
                 .await
                 .expect("Failed to send RegisterRequest");
             sleep(Duration::from_millis(100)).await;
@@ -796,7 +798,7 @@ mod tests {
                     let mut buf = BytesMut::with_capacity(1024);
                     codec.encode(request, &mut buf).unwrap();
                     device_socket
-                        .send_to(&buf, format!("127.0.0.1:{}", port))
+                        .send_to(&buf, format!("127.0.0.1:{port}"))
                         .await
                         .unwrap();
 
@@ -812,7 +814,7 @@ mod tests {
                     let mut ack_buf = BytesMut::with_capacity(1024);
                     codec.encode(ack, &mut ack_buf).unwrap();
                     device_socket
-                        .send_to(&ack_buf, format!("127.0.0.1:{}", port))
+                        .send_to(&ack_buf, format!("127.0.0.1:{port}"))
                         .await
                         .unwrap();
                 })
@@ -860,7 +862,7 @@ mod tests {
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_millis() as u64,
+                .as_secs(),
             payload: MessagePayload::Ack,
             mac: 0,
         };
@@ -868,7 +870,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(invalid_request, &mut buf).unwrap();
         device_socket
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -903,7 +905,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         valid_socket
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -924,7 +926,7 @@ mod tests {
 
         // Send garbage bytes — much shorter than MIN_MSG_LEN (46 bytes)
         device_socket
-            .send_to(b"garbage", format!("127.0.0.1:{}", backdoor_port))
+            .send_to(b"garbage", format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
         sleep(Duration::from_millis(50)).await;
@@ -939,7 +941,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         device_socket
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -953,7 +955,7 @@ mod tests {
         let mut ack_buf = BytesMut::with_capacity(1024);
         codec.encode(ack, &mut ack_buf).unwrap();
         device_socket
-            .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&ack_buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -986,7 +988,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(handshake, &mut buf).unwrap();
         device_socket
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1020,7 +1022,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         device_socket
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1046,7 +1048,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(ack, &mut buf).unwrap();
         device_socket
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1070,7 +1072,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         device_socket
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1083,7 +1085,7 @@ mod tests {
         let mut ack_buf = BytesMut::with_capacity(1024);
         codec.encode(ack, &mut ack_buf).unwrap();
         device_socket
-            .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&ack_buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1125,7 +1127,7 @@ mod tests {
                     let mut buf = BytesMut::with_capacity(1024);
                     codec.encode(request, &mut buf).unwrap();
                     device_socket
-                        .send_to(&buf, format!("127.0.0.1:{}", port))
+                        .send_to(&buf, format!("127.0.0.1:{port}"))
                         .await
                         .unwrap();
 
@@ -1143,7 +1145,7 @@ mod tests {
                     let mut ack_buf = BytesMut::with_capacity(1024);
                     codec.encode(ack, &mut ack_buf).unwrap();
                     device_socket
-                        .send_to(&ack_buf, format!("127.0.0.1:{}", port))
+                        .send_to(&ack_buf, format!("127.0.0.1:{port}"))
                         .await
                         .unwrap();
 
@@ -1198,7 +1200,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         socket_a
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1212,7 +1214,7 @@ mod tests {
         let mut ack_buf = BytesMut::with_capacity(1024);
         codec.encode(ack, &mut ack_buf).unwrap();
         socket_a
-            .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&ack_buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
         sleep(Duration::from_millis(150)).await;
@@ -1241,7 +1243,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(ip_update_request, &mut buf).unwrap();
         socket_b
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1278,8 +1280,6 @@ mod tests {
     /// silently: no response is sent, and the backdoor keeps processing valid requests.
     #[tokio::test]
     async fn test_ip_update_unknown_device_id() {
-        use tokio::time::timeout;
-
         let backdoor_port = "8092";
         let dm = set_up_hes(backdoor_port).await;
 
@@ -1297,7 +1297,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         device_socket
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1329,7 +1329,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(valid_request, &mut buf).unwrap();
         device_socket
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1358,7 +1358,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(request, &mut buf).unwrap();
         socket_a
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1371,7 +1371,7 @@ mod tests {
         let mut ack_buf = BytesMut::with_capacity(1024);
         codec.encode(ack, &mut ack_buf).unwrap();
         socket_a
-            .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&ack_buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
         sleep(Duration::from_millis(150)).await;
@@ -1389,7 +1389,7 @@ mod tests {
         let mut buf = BytesMut::with_capacity(1024);
         codec.encode(ip_update_request, &mut buf).unwrap();
         socket_b
-            .send_to(&buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
 
@@ -1403,7 +1403,7 @@ mod tests {
         let mut ack_buf = BytesMut::with_capacity(1024);
         codec.encode(ack, &mut ack_buf).unwrap();
         socket_b
-            .send_to(&ack_buf, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&ack_buf, format!("127.0.0.1:{backdoor_port}"))
             .await
             .unwrap();
         sleep(Duration::from_millis(100)).await;
@@ -1440,7 +1440,7 @@ mod tests {
         codec.encode(register_request.clone(), &mut buffer).unwrap();
 
         device_socket_a
-            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buffer, format!("127.0.0.1:{backdoor_port}"))
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
@@ -1466,7 +1466,7 @@ mod tests {
         codec.encode(register_request.clone(), &mut buffer).unwrap();
 
         device_socket_b
-            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buffer, format!("127.0.0.1:{backdoor_port}"))
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
@@ -1496,7 +1496,7 @@ mod tests {
         codec.encode(ack_msg_a.clone(), &mut buffer).unwrap();
 
         device_socket_a
-            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buffer, format!("127.0.0.1:{backdoor_port}"))
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;
@@ -1508,7 +1508,7 @@ mod tests {
         codec.encode(ack_msg_b.clone(), &mut buffer).unwrap();
 
         device_socket_a
-            .send_to(&buffer, format!("127.0.0.1:{}", backdoor_port))
+            .send_to(&buffer, format!("127.0.0.1:{backdoor_port}"))
             .await
             .expect("Failed to send RegisterRequest");
         sleep(Duration::from_millis(100)).await;

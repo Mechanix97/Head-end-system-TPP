@@ -4,7 +4,7 @@ use clap::Parser;
 use std::{error::Error, sync::{Arc, atomic::AtomicBool}};
 use tokio::{
     io::{self, AsyncReadExt},
-    sync::{RwLock, watch},
+    sync::{RwLock, mpsc, watch},
 };
 use tracing::info;
 
@@ -102,6 +102,10 @@ struct Args {
     #[arg(long = "disable-rpc", help = "Disable the JSON-RPC admin console")]
     disable_rpc: bool,
 
+    /// Test mode: schedule all connections within 5 minutes instead of normal daily buckets
+    #[arg(long = "test-mode", help = "Schedule all connections within 5 minutes (for testing)")]
+    test_mode: bool,
+
     /// JSON-RPC server bind IP
     #[arg(long = "rpc-ip", help = "JSON-RPC server bind IP (default: 127.0.0.1)")]
     rpc_ip: Option<String>,
@@ -140,6 +144,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             disable_rpc: args.disable_rpc,
             rpc_ip: args.rpc_ip,
             rpc_port: args.rpc_port,
+            test_mode: args.test_mode,
         },
     )?;
     let config = config_manager.get().await;
@@ -161,7 +166,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     })
     .await?;
 
-    let scheduler = Scheduler::new(config.buckets_number, db.clone(), config.node_id).await?;
+    let scheduler = Scheduler::new(config.buckets_number, db.clone(), config.node_id, config.test_mode).await?;
 
     let device_manager = Arc::new(RwLock::new(DeviceManager::new(
         config.node_id,
@@ -201,6 +206,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         info!("Running in single-node mode");
         None
     };
+
+    // Reschedule channel: wake_up_device signals here after a successful session,
+    // and the listener task below calls schedule_next_wakeup for the device.
+    let (reschedule_tx, mut reschedule_rx) = mpsc::channel::<uuid::Uuid>(64);
+    device_manager.write().await.set_reschedule_sender(reschedule_tx);
+
+    let dm_reschedule = device_manager.clone();
+    tokio::spawn(async move {
+        while let Some(device_id) = reschedule_rx.recv().await {
+            if let Err(e) = dm_reschedule.write().await.schedule_next_wakeup(device_id).await {
+                tracing::error!("Failed to reschedule device {}: {}", device_id, e);
+            }
+        }
+    });
 
     // Hot-reload primitives shared between the RPC layer and the running services.
     let (backdoor_rebind_tx, backdoor_rebind_rx) =

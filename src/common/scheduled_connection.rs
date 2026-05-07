@@ -19,4 +19,6 @@ pub struct ScheduledConnection {
     pub status: ScheduledStatus,
     pub job_id: Option<Uuid>,
     pub renewable: bool,
+    /// When battery level was last read from this device. None means never.
+    pub last_battery_read: Option<NaiveDateTime>,
 }

@@ -3,8 +3,8 @@
 build: ## Build the server
 	cargo build
 
-run: ## run the server (in-memory DB, no metrics, single-node, no RPC sv)
-	cargo run -- --disble-metrics --database=in-memory --disable-cluster --disable-rpc
+run: ## run the server (in-memory DB, no metrics, single-node, no RPC, test mode: connections within 5 min)
+	cargo run -- --disble-metrics --database=in-memory --disable-cluster --disable-rpc --test-mode
 
 run-node-1: ## Run node 1 (seed node, postgres on localhost, metrics enabled)
 	cargo run -- --config configs/node-1.yaml
@@ -14,6 +14,9 @@ run-node-2: ## Run node 2 (joins via node-1, postgres on 100.86.94.38)
 
 run-node-3: ## Run node 3 (joins via node-1, separate ports, postgres on 100.86.94.38)
 	cargo run -- --config configs/node-3.yaml
+
+mock-device: ## Run a mock device that registers and handles periodic sessions (use with make run)
+	cargo run -p mock_device -- --backdoor-ip 127.0.0.1
 
 local-cli: ## Connect to local HES via interactive CLI (127.0.0.1:6600)
 	cargo run -p hes-cli

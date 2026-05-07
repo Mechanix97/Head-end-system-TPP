@@ -154,6 +154,7 @@ impl Engine for InMemoryDB {
                 status: ScheduledStatus::Awaiting,
                 job_id: Some(job_id),
                 renewable: true,
+                last_battery_read: None,
             },
         );
         Ok(())
@@ -293,6 +294,20 @@ impl Engine for InMemoryDB {
         Ok(device_ids)
     }
 
+    async fn update_last_battery_read(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        let mut lock = self.inner.lock().await;
+        let conn = lock
+            .scheduled_connections
+            .get_mut(&device_id)
+            .ok_or(DatabaseError::NoDataFound)?;
+        conn.last_battery_read = Some(timestamp);
+        Ok(())
+    }
+
     async fn get_upcoming_connections(
         &self,
         limit: i64,
@@ -340,6 +355,7 @@ impl Engine for InMemoryDB {
 
 #[cfg(test)]
 mod test {
+    #![allow(clippy::unwrap_used)]
     use crate::database::{DatabaseConfig, api::Database};
     use crate::device::Device;
 

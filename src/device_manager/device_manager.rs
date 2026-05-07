@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use tokio::sync::mpsc;
+
 use chrono::{NaiveDateTime, Utc};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -117,6 +119,11 @@ impl DeviceManager {
     /// Enables cluster mode on the scheduler with the given owned devices.
     pub fn enable_cluster_mode(&mut self, owned_devices: HashSet<Uuid>) {
         self.scheduler.enable_cluster_mode(owned_devices);
+    }
+
+    /// Sets the reschedule channel sender on the scheduler.
+    pub fn set_reschedule_sender(&mut self, tx: mpsc::Sender<Uuid>) {
+        self.scheduler.set_reschedule_sender(tx);
     }
 
     /// Restores scheduled connections from the database.
@@ -483,11 +490,12 @@ impl DeviceManager {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
     use common::database::{DatabaseConfig, api::Database};
 
     async fn create_test_scheduler(db: Database, node_id: Uuid) -> Scheduler {
-        Scheduler::new(1, db, node_id).await.unwrap()
+        Scheduler::new(1, db, node_id, false).await.unwrap()
     }
 
     #[tokio::test]

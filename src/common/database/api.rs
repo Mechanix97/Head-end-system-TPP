@@ -188,6 +188,15 @@ impl Database {
         self.engine.update_scheduled_connection(connection).await
     }
 
+    /// Records the timestamp of the last successful battery read for a device.
+    pub async fn update_last_battery_read(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
+    ) -> Result<(), DatabaseError> {
+        self.engine.update_last_battery_read(device_id, timestamp).await
+    }
+
     // ========== Cluster management ==========
 
     /// Registers a new node in the cluster.
@@ -343,6 +352,13 @@ pub trait Engine: Debug + Send + Sync {
     async fn update_scheduled_connection(
         &self,
         connection: &ScheduledConnection,
+    ) -> Result<(), DatabaseError>;
+
+    /// Updates the last_battery_read timestamp for a device's scheduled connection.
+    async fn update_last_battery_read(
+        &self,
+        device_id: Uuid,
+        timestamp: NaiveDateTime,
     ) -> Result<(), DatabaseError>;
 
     // ========== Cluster management ==========

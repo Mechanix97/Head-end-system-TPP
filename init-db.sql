@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS T_SCHEDULED_CONNECTIONS (
     status scheduledstatus NOT NULL default 'awaiting',
     job_id UUID,
     renewable BOOLEAN NOT NULL DEFAULT true,
-    FK_NODE UUID
+    FK_NODE UUID,
+    last_battery_read TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_by_owner ON T_SCHEDULED_CONNECTIONS(FK_NODE);
