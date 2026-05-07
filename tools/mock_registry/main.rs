@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         // 1. sends registration request msg
         let register_request =
-            Message::new_register_request_message(format!("{:015}", i), "fe80::1".to_string())?;
+            Message::new_register_request_message(format!("{i:015}"), "fe80::1".to_string())?;
         let device_socket = UdpSocket::bind("0.0.0.0:0").await?;
         let mut buffer = BytesMut::new();
 
