@@ -24,8 +24,62 @@ pub async fn wake_up_device(
     database: &Database,
 ) -> Result<(), TaskError> {
     info!("[Job {:#x}] Wake up device {:#x}", job_id, device_id);
+    METRICS_CONNECTIONS.hes_device_session_active.inc();
 
-    let device = database.get_device(device_id).await?;
+    let result = run_wake_up(job_id, device_id, database).await;
+
+    METRICS_CONNECTIONS.hes_device_session_active.dec();
+
+    match &result {
+        Ok(()) => {
+            METRICS_CONNECTIONS
+                .hes_device_connection_outcome_total
+                .with_label_values(&["success"])
+                .inc();
+        }
+        Err(TaskError::DeviceWithNoIP) => {
+            METRICS_CONNECTIONS
+                .hes_device_connection_outcome_total
+                .with_label_values(&["no_ip"])
+                .inc();
+        }
+        Err(TaskError::MaxRetriesExceeded) => {
+            METRICS_CONNECTIONS
+                .hes_device_connection_outcome_total
+                .with_label_values(&["max_retries"])
+                .inc();
+        }
+        Err(_) => {
+            METRICS_CONNECTIONS
+                .hes_device_connection_outcome_total
+                .with_label_values(&["error"])
+                .inc();
+        }
+    }
+
+    result
+}
+
+async fn run_wake_up(
+    job_id: Uuid,
+    device_id: Uuid,
+    database: &Database,
+) -> Result<(), TaskError> {
+    let db_start = std::time::Instant::now();
+    let device_result = database.get_device(device_id).await;
+    let db_elapsed = db_start.elapsed().as_millis() as f64;
+    let db_result_label = if device_result.is_ok() { "ok" } else { "error" };
+    METRICS_CONNECTIONS
+        .hes_db_query_duration_ms
+        .with_label_values(&["get_device", db_result_label])
+        .observe(db_elapsed);
+
+    let device = device_result.inspect_err(|_| {
+        METRICS_CONNECTIONS
+            .hes_db_errors_total
+            .with_label_values(&["get_device"])
+            .inc();
+    })?;
 
     let ip = match (device.ipv4, device.ipv6) {
         (Some(ip), None) => ip,
@@ -44,6 +98,10 @@ pub async fn wake_up_device(
             .connections_tracker
             .with_label_values(&["periodic_attempt"])
             .inc();
+
+        if attempt > 1 {
+            METRICS_CONNECTIONS.hes_device_retry_count_total.inc();
+        }
 
         match try_connect(&remote_addr, device_id).await {
             Ok(_socket) => {
@@ -103,7 +161,7 @@ async fn try_connect(remote_addr: &str, device_id: Uuid) -> Result<UdpSocket, Ta
 
     // Send HANDSHAKE message as per protocol specification
     // TODO: Generate cryptographically secure random nonce
-    let nonce = vec![0u8; 32];  // Temporary: use 32-byte zero nonce
+    let nonce = vec![0u8; 32];
     let handshake = Message::new_handshake_message(device_id.as_u128(), 0, nonce)?;
 
     let mut buf = BytesMut::new();
@@ -126,7 +184,6 @@ async fn try_connect(remote_addr: &str, device_id: Uuid) -> Result<UdpSocket, Ta
     .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Device did not respond"))??;
 
     // TODO: Decode and validate HANDSHAKE_RESPONSE
-    // For now, just check that we got some data back
     if n == 0 {
         return Err(
             std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Empty response").into(),

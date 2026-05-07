@@ -239,15 +239,47 @@ async fn handle_backdoor_register_msg(
     };
     let device = Device::new(socket_addr, imei);
 
-    database.add_device(&device).await?;
+    let db_start = std::time::Instant::now();
+    let add_result = database.add_device(&device).await;
+    let db_elapsed = db_start.elapsed().as_millis() as f64;
+    METRICS_CONNECTIONS
+        .hes_db_query_duration_ms
+        .with_label_values(&["add_device", if add_result.is_ok() { "ok" } else { "error" }])
+        .observe(db_elapsed);
+    add_result.map_err(|e| {
+        METRICS_CONNECTIONS
+            .hes_db_errors_total
+            .with_label_values(&["add_device"])
+            .inc();
+        BackdoorError::DatabaseError(e)
+    })?;
+
     let next_wake_up = device_manager
         .write()
         .await
         .register_device(&device)
         .await?;
-    database
+
+    let db_start = std::time::Instant::now();
+    let reg_result = database
         .register_device(device.id, msg.get_timestamp()?)
-        .await?;
+        .await;
+    let db_elapsed = db_start.elapsed().as_millis() as f64;
+    METRICS_CONNECTIONS
+        .hes_db_query_duration_ms
+        .with_label_values(&["register_device", if reg_result.is_ok() { "ok" } else { "error" }])
+        .observe(db_elapsed);
+    reg_result.map_err(|e| {
+        METRICS_CONNECTIONS
+            .hes_db_errors_total
+            .with_label_values(&["register_device"])
+            .inc();
+        METRICS_CONNECTIONS
+            .hes_registration_total
+            .with_label_values(&["db_error"])
+            .inc();
+        BackdoorError::DatabaseError(e)
+    })?;
 
     let next_wake_time = next_wake_up.and_utc().timestamp() as u64;
     let response = Message::new_register_response_message(
@@ -317,6 +349,13 @@ async fn handle_backdoor_ack_msg(
             METRICS_CONNECTIONS
                 .ack_response_time_ms
                 .observe(registration_duration as f64);
+            METRICS_CONNECTIONS
+                .hes_registration_duration_ms
+                .observe(registration_duration as f64);
+            METRICS_CONNECTIONS
+                .hes_registration_total
+                .with_label_values(&["success"])
+                .inc();
 
             info!(
                 "Adding new connection, device_id: {:#x}, ACK response time: {:.2}ms",
@@ -482,6 +521,10 @@ fn spawn_ack_timeout_task(database: Database, ack_timeout_duration: u64, device_
         {
             Ok(true) => {
                 METRICS_CONNECTIONS.ack_timeout_count.inc();
+                METRICS_CONNECTIONS
+                    .hes_registration_total
+                    .with_label_values(&["ack_timeout"])
+                    .inc();
                 info!("Ack from {} not received", device_id);
             }
             Err(e) => {

@@ -91,7 +91,7 @@ impl Scheduler {
         METRICS_CONNECTIONS.scheduled_devices_total.inc();
         METRICS_CONNECTIONS
             .devices_per_bucket
-            .with_label_values(&[&bucket_number.to_string()])
+            .with_label_values(&[&format!("{bucket_number:02}")])
             .inc();
 
         info!(
@@ -112,7 +112,23 @@ impl Scheduler {
     /// In cluster mode, only loads connections for devices owned by this node.
     /// Must be called after `enable_cluster_mode()` so that the ownership set is populated.
     pub async fn reload_active_connections(&mut self) -> Result<(), SchedulerError> {
-        let scheduled_connections = self.database.get_scheduled_connections().await?;
+        let db_start = std::time::Instant::now();
+        let connections_result = self.database.get_scheduled_connections().await;
+        let db_elapsed = db_start.elapsed().as_millis() as f64;
+        METRICS_CONNECTIONS
+            .hes_db_query_duration_ms
+            .with_label_values(&["get_scheduled_connections", if connections_result.is_ok() { "ok" } else { "error" }])
+            .observe(db_elapsed);
+
+        let scheduled_connections = connections_result.map_err(|e| {
+            METRICS_CONNECTIONS
+                .hes_db_errors_total
+                .with_label_values(&["get_scheduled_connections"])
+                .inc();
+            SchedulerError::DatabaseError(e)
+        })?;
+
+        let mut overdue_count: i64 = 0;
 
         for mut connection in scheduled_connections {
             // In cluster mode, check if we own this device
@@ -130,6 +146,7 @@ impl Scheduler {
                     "Connection {:#x} expired, changing status to lost in db",
                     connection.fk_device
                 );
+                overdue_count += 1;
                 connection.status = ScheduledStatus::Lost;
                 connection.renewable = false;
                 connection.job_id = None;
@@ -155,6 +172,11 @@ impl Scheduler {
                 .with_label_values(&["new_connection"])
                 .inc();
         }
+
+        METRICS_CONNECTIONS
+            .hes_scheduler_overdue_devices_total
+            .set(overdue_count);
+
         Ok(())
     }
 
@@ -331,7 +353,21 @@ impl Scheduler {
             move |job_id, _l| {
                 let db = database.clone();
                 Box::pin(async move {
-                    if let Err(e) = wake_up_device(job_id, device_id, &db).await {
+                    // Measure how late the job fired vs its scheduled time
+                    let actual_now = Utc::now().naive_utc();
+                    let drift_ms = (actual_now - next_wake_up).num_milliseconds().max(0) as f64;
+                    METRICS_CONNECTIONS
+                        .hes_scheduler_wake_drift_ms
+                        .observe(drift_ms);
+
+                    let job_start = std::time::Instant::now();
+                    let result = wake_up_device(job_id, device_id, &db).await;
+                    let elapsed_ms = job_start.elapsed().as_millis() as f64;
+                    METRICS_CONNECTIONS
+                        .hes_scheduler_job_execution_duration_ms
+                        .observe(elapsed_ms);
+
+                    if let Err(e) = result {
                         error!("[Job {:#x}] Wake up device failed: {}", job_id, e);
 
                         match db.get_scheduled_connection(device_id).await {
