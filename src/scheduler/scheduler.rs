@@ -91,7 +91,7 @@ impl Scheduler {
         METRICS_CONNECTIONS.scheduled_devices_total.inc();
         METRICS_CONNECTIONS
             .devices_per_bucket
-            .with_label_values(&[&bucket_number.to_string()])
+            .with_label_values(&[&format!("{bucket_number:02}")])
             .inc();
 
         info!(

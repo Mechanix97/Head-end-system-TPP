@@ -931,7 +931,7 @@
       "id": 30,
       "options": {
         "displayMode": "gradient",
-        "minVizHeight": 10,
+        "minVizHeight": 6,
         "minVizWidth": 0,
         "namePlacement": "auto",
         "orientation": "horizontal",
@@ -953,7 +953,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sort_desc(devices_per_bucket)",
+          "expr": "devices_per_bucket",
           "instant": true,
           "legendFormat": "Bucket {{bucket}}",
           "range": false,
@@ -961,6 +961,19 @@
         }
       ],
       "title": "Devices per Bucket",
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": [
+              {
+                "desc": false,
+                "displayName": "Display name"
+              }
+            ]
+          }
+        }
+      ],
       "type": "bargauge"
     },
     {
