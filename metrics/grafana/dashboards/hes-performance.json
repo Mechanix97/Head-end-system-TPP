@@ -1,0 +1,356 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Overview",     "url": "/d/hes-overview",     "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Cluster",      "url": "/d/hes-cluster",      "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Devices",      "url": "/d/hes-devices",      "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Protocol",     "url": "/d/hes-protocol",     "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Reliability",  "url": "/d/hes-reliability",  "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Scheduler",    "url": "/d/hes-scheduler",    "type": "link", "icon": "external link", "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "type": "row", "id": 100, "title": "Registration Latency", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
+    },
+    {
+      "type": "stat", "id": 1, "title": "ACK Latency P50 (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [], "unit": "ms",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 100 },
+            { "color": "red", "value": 500 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "histogram_quantile(0.50, sum(rate(ack_response_time_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 2, "title": "ACK Latency P95 (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [], "unit": "ms",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 200 },
+            { "color": "red", "value": 1000 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(ack_response_time_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 3, "title": "Registration P95 (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [], "unit": "ms",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 200 },
+            { "color": "red", "value": 1000 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(hes_registration_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 4, "title": "DB Query P95 (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [], "unit": "ms",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 50 },
+            { "color": "red", "value": 250 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(hes_db_query_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 5, "title": "RPC P95 (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [], "unit": "ms",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 25 },
+            { "color": "red", "value": 100 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(hes_rpc_request_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 6, "title": "Active RPC Connections",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(hes_rpc_active_connections{node_id=~\"$node_id\"})",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "row", "id": 101, "title": "Registration & ACK Latency", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 10, "title": "ACK Response Time Percentiles (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "ms",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 2,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.50, sum(rate(ack_response_time_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p50", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(ack_response_time_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p95", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.99, sum(rate(ack_response_time_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p99", "range": true, "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries", "id": 11, "title": "Registration Duration Percentiles (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "ms",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 2,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.50, sum(rate(hes_registration_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p50", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(hes_registration_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p95", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.99, sum(rate(hes_registration_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p99", "range": true, "refId": "C" }
+      ]
+    },
+    {
+      "type": "row", "id": 102, "title": "Database Performance", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 20, "title": "DB Query Latency P95 by Query (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "ms",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 2,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code",
+        "expr": "histogram_quantile(0.95, sum by (query_name, le) (rate(hes_db_query_duration_ms_bucket{node_id=~\"$node_id\",result=\"ok\"}[5m])))",
+        "legendFormat": "{{query_name}} p95", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 21, "title": "DB Query Rate by Query",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (query_name) (rate(hes_db_query_duration_ms_count{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "{{query_name}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "row", "id": 103, "title": "RPC Performance", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 30, "title": "RPC Request Rate by Method",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (method) (rate(hes_rpc_request_total{node_id=~\"$node_id\",result=\"success\"}[5m]))",
+        "legendFormat": "{{method}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 31, "title": "RPC Latency by Method (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "ms",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 2,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code",
+        "expr": "histogram_quantile(0.95, sum by (method, le) (rate(hes_rpc_request_duration_ms_bucket{node_id=~\"$node_id\"}[5m])))",
+        "legendFormat": "{{method}} p95", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "row", "id": 104, "title": "Cluster Performance", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 }, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 40, "title": "Config Apply Duration (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "ms",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 2,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.50, sum(rate(hes_cluster_config_apply_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p50", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(hes_cluster_config_apply_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p95", "range": true, "refId": "B" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["hes", "performance"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(ack_response_time_ms_bucket, node_id)",
+        "hide": 0, "includeAll": true, "multi": true, "name": "node_id",
+        "options": [], "query": "label_values(ack_response_time_ms_bucket, node_id)",
+        "refresh": 2, "sort": 1, "type": "query", "label": "Node"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "HES — Performance",
+  "uid": "hes-performance",
+  "version": 1
+}

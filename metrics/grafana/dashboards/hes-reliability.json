@@ -1,0 +1,320 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Overview",     "url": "/d/hes-overview",     "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Cluster",      "url": "/d/hes-cluster",      "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Devices",      "url": "/d/hes-devices",      "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Protocol",     "url": "/d/hes-protocol",     "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Performance",  "url": "/d/hes-performance",  "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Scheduler",    "url": "/d/hes-scheduler",    "type": "link", "icon": "external link", "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "type": "row", "id": 100, "title": "Error Overview", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
+    },
+    {
+      "type": "stat", "id": 1, "title": "Total Errors",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 10 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(errors_total{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 2, "title": "Connection Failures",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 5 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_device_connection_outcome_total{node_id=~\"$node_id\",outcome!=\"success\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 3, "title": "DB Errors",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "red", "value": 1 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_db_errors_total{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 4, "title": "ACK Timeouts",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 10 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(ack_timeout_count{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 5, "title": "Heartbeat Timeouts",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 5 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_cluster_heartbeat_timeout_total{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 6, "title": "Decode Errors",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 5 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_message_decode_errors_total{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "row", "id": 101, "title": "Error Rates over Time", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 10, "title": "Error Rate by Component",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (component) (rate(errors_total{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "{{component}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 11, "title": "Error Rate by Type",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (error_type) (rate(errors_total{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "{{error_type}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "row", "id": 102, "title": "Connection Reliability", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 20, "title": "Connection Failure Rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "max_retries" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "no_ip" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "fixedColor": "dark-red", "mode": "fixed" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (outcome) (rate(hes_device_connection_outcome_total{node_id=~\"$node_id\",outcome!=\"success\"}[5m]))",
+        "legendFormat": "{{outcome}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 21, "title": "DB Errors by Query",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (query_name) (rate(hes_db_errors_total{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "{{query_name}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "row", "id": 103, "title": "Registration & Cluster Reliability", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 30, "title": "Registration Failure Rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ack_timeout" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "db_error" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (outcome) (rate(hes_registration_total{node_id=~\"$node_id\",outcome!=\"success\"}[5m]))",
+        "legendFormat": "{{outcome}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 31, "title": "Cluster Heartbeat Timeout Rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(rate(hes_cluster_heartbeat_timeout_total{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "heartbeat timeouts/s", "range": true, "refId": "A" }]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["hes", "reliability"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(errors_total, node_id)",
+        "hide": 0, "includeAll": true, "multi": true, "name": "node_id",
+        "options": [], "query": "label_values(errors_total, node_id)",
+        "refresh": 2, "sort": 1, "type": "query", "label": "Node"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "HES — Reliability",
+  "uid": "hes-reliability",
+  "version": 1
+}
