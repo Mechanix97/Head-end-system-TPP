@@ -90,6 +90,13 @@ impl DeviceManager {
         Ok(next_wake)
     }
 
+    /// Cancels a pending wake-up job for a device.
+    ///
+    /// Returns `Ok(true)` if a job was removed, `Ok(false)` if none was scheduled.
+    pub async fn cancel_wakeup_job(&mut self, device_id: Uuid) -> Result<bool, DeviceManagerError> {
+        self.scheduler.cancel_wakeup_job(device_id).await.map_err(DeviceManagerError::Scheduler)
+    }
+
     /// Schedules the next wakeup job for a device.
     pub async fn schedule_next_wakeup(
         &mut self,

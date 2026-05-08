@@ -57,6 +57,9 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
     let max_handlers = max_concurrent_handlers.unwrap_or(DEFAULT_MAX_CONCURRENT_HANDLERS);
     let semaphore = Arc::new(Semaphore::new(max_handlers));
 
+    #[cfg(feature = "debug-session-start")]
+    let debug_router = crate::debug_session::new_router();
+
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         let mut buf = vec![0u8; UDP_BUFFER_SIZE];
         let mut current_socket = socket;
@@ -95,6 +98,11 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                     continue;
                 }
             };
+
+            #[cfg(feature = "debug-session-start")]
+            if crate::debug_session::try_route(&debug_router, addr, &msg).await {
+                continue;
+            }
 
             match msg.msg_type {
                 MsgType::RegisterRequest => {
@@ -197,6 +205,33 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                                 .errors_total
                                 .with_label_values(&["backdoor", "ack_handler"])
                                 .inc();
+                        }
+                    });
+                }
+
+                #[cfg(feature = "debug-session-start")]
+                MsgType::SessionStartRequest => {
+                    info!("SessionStartRequest received from {addr}");
+                    METRICS_CONNECTIONS
+                        .messages_total
+                        .with_label_values(&["session_start_request", "inbound"])
+                        .inc();
+                    let socket = current_socket.clone();
+                    let database = database.clone();
+                    let device_manager = device_manager.clone();
+                    let router = debug_router.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::debug_session::handle_session_start(
+                            socket,
+                            msg,
+                            addr,
+                            database,
+                            device_manager,
+                            router,
+                        )
+                        .await
+                        {
+                            warn!("debug session error: {e}");
                         }
                     });
                 }

@@ -198,6 +198,22 @@ impl Scheduler {
         Ok(())
     }
 
+    /// Cancel a pending wake-up job for a device.
+    ///
+    /// Returns `Ok(true)` if a job was removed, `Ok(false)` if none was scheduled.
+    pub async fn cancel_wakeup_job(&mut self, device_id: Uuid) -> Result<bool, SchedulerError> {
+        let conn = self.database.get_scheduled_connection(device_id).await?;
+        let Some(job_id) = conn.job_id else {
+            return Ok(false);
+        };
+        self.job_scheduler.remove(&job_id).await?;
+        let mut conn = conn;
+        conn.job_id = None;
+        conn.renewable = false;
+        self.database.update_scheduled_connection(&conn).await?;
+        Ok(true)
+    }
+
     pub async fn schedule_next_wakeup_job(
         &mut self,
         device_id: Uuid,
