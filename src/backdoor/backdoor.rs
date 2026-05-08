@@ -2,6 +2,7 @@ use bytes::BytesMut;
 use chrono::Utc;
 use common::database::api::Database;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
+use metrics::metrics_protocol::METRICS_PROTOCOL;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,6 +21,7 @@ use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
 use common::messages::message::MsgType;
 use common::messages::nack::{NACK_DEVICE_NOT_FOUND, NACK_INTERNAL_ERROR};
+use common::messages::MsgCodecError;
 use common::registration_status::RegistrationStatus;
 use device_manager::DeviceManager;
 
@@ -85,12 +87,33 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
 
             let mut bytes = BytesMut::from(&buf[..len]);
             let msg = match MessageCodec.decode(&mut bytes) {
-                Ok(Some(msg)) => msg,
+                Ok(Some(msg)) => {
+                    METRICS_PROTOCOL
+                        .hes_message_size_bytes
+                        .with_label_values(&[msg.msg_type.as_str()])
+                        .observe(len as f64);
+                    // MAC verification not yet implemented (issue #9).
+                    METRICS_PROTOCOL
+                        .hes_mac_verification_total
+                        .with_label_values(&["skipped"])
+                        .inc();
+                    msg
+                }
                 Ok(None) => {
                     warn!("Incomplete message received from {addr}");
                     continue;
                 }
                 Err(e) => {
+                    let error_kind = match &e {
+                        MsgCodecError::InvalidLength => "invalid_length",
+                        MsgCodecError::UnknownMsgType => "unknown_msg_type",
+                        MsgCodecError::PayloadDecodeError(_) => "payload_decode",
+                        MsgCodecError::IoError(_) => "io",
+                    };
+                    METRICS_PROTOCOL
+                        .hes_message_decode_errors_total
+                        .with_label_values(&[error_kind])
+                        .inc();
                     warn!("Invalid codec conversion from {addr}: {e}");
                     continue;
                 }

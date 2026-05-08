@@ -11,7 +11,9 @@ use common::database::api::Database;
 use common::messages::codec::MessageCodec;
 use common::messages::message::{Message, MessagePayload};
 use common::messages::write::WriteParameter;
+use common::messages::MsgCodecError;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
+use metrics::metrics_protocol::METRICS_PROTOCOL;
 
 use crate::error::TaskError;
 
@@ -230,6 +232,12 @@ async fn run_session(
         job_id,
         data.values.len()
     );
+    for value in &data.values {
+        METRICS_PROTOCOL
+            .hes_obis_read_total
+            .with_label_values(&[&value.code])
+            .inc();
+    }
     // TODO: persist data.values to database (water volume, clock)
 
     // WRITE_REQUEST: tell device when to wake next.
@@ -272,8 +280,13 @@ async fn run_session(
 }
 
 async fn send_msg(socket: &UdpSocket, msg: Message) -> Result<(), TaskError> {
+    let msg_type = msg.msg_type.as_str();
     let mut buf = BytesMut::new();
     MessageCodec.encode(msg, &mut buf)?;
+    METRICS_PROTOCOL
+        .hes_message_size_bytes
+        .with_label_values(&[msg_type])
+        .observe(buf.len() as f64);
     socket.send(&buf).await?;
     Ok(())
 }
@@ -288,10 +301,35 @@ async fn recv_msg(socket: &UdpSocket) -> Result<Message, TaskError> {
     .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "device did not respond"))??;
 
     let mut buf = BytesMut::from(&raw[..n]);
-    MessageCodec.decode(&mut buf)?.ok_or_else(|| {
-        TaskError::IoError(std::io::Error::new(
+    match MessageCodec.decode(&mut buf) {
+        Ok(Some(msg)) => {
+            METRICS_PROTOCOL
+                .hes_message_size_bytes
+                .with_label_values(&[msg.msg_type.as_str()])
+                .observe(n as f64);
+            // MAC verification not yet implemented (issue #9).
+            METRICS_PROTOCOL
+                .hes_mac_verification_total
+                .with_label_values(&["skipped"])
+                .inc();
+            Ok(msg)
+        }
+        Ok(None) => Err(TaskError::IoError(std::io::Error::new(
             std::io::ErrorKind::UnexpectedEof,
             "incomplete message",
-        ))
-    })
+        ))),
+        Err(e) => {
+            let error_kind = match &e {
+                MsgCodecError::InvalidLength => "invalid_length",
+                MsgCodecError::UnknownMsgType => "unknown_msg_type",
+                MsgCodecError::PayloadDecodeError(_) => "payload_decode",
+                MsgCodecError::IoError(_) => "io",
+            };
+            METRICS_PROTOCOL
+                .hes_message_decode_errors_total
+                .with_label_values(&[error_kind])
+                .inc();
+            Err(e.into())
+        }
+    }
 }
