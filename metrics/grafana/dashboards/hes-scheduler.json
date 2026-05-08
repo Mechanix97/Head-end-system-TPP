@@ -142,25 +142,23 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "panels": []
     },
     {
-      "type": "timeseries", "id": 10, "title": "Devices per Bucket",
+      "type": "bargauge", "id": 10, "title": "Devices per Bucket",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 16, "x": 0, "y": 6 },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" }, "unit": "short",
-          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
-            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" } },
           "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
         }, "overrides": []
       },
       "options": {
-        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "displayMode": "basic", "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true, "valueMode": "color"
       },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
         "editorMode": "code", "expr": "devices_per_bucket{node_id=~\"$node_id\"}",
-        "legendFormat": "bucket {{bucket}}", "range": true, "refId": "A" }]
+        "legendFormat": "bucket {{bucket}}", "instant": true, "refId": "A" }]
     },
     {
       "type": "stat", "id": 11, "title": "Max Devices / Bucket",

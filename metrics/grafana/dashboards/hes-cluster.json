@@ -34,7 +34,7 @@
         "textMode": "auto", "wideLayout": true },
       "pluginVersion": "11.0.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "editorMode": "code", "expr": "sum(hes_cluster_nodes_total{node_id=~\"$node_id\"})",
+        "editorMode": "code", "expr": "sum(hes_cluster_nodes_total{node_id=~\"$node_id\"}) + 1",
         "legendFormat": "", "range": true, "refId": "A" }]
     },
     {
