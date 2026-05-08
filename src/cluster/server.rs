@@ -119,10 +119,9 @@ async fn handle_message(
         msg.msg_type, msg.node_id, from_addr
     );
 
-    let msg_type_str = format!("{:?}", msg.msg_type);
     METRICS_CLUSTER
         .cluster_messages_total
-        .with_label_values(&[msg_type_str.as_str(), "inbound"])
+        .with_label_values(&[msg.msg_type.label_str(), "inbound"])
         .inc();
 
     match msg.msg_type {
@@ -260,7 +259,7 @@ async fn handle_config_update(
         Err(e) => (false, Some(e.to_string())),
     };
     METRICS_CLUSTER
-        .hes_cluster_config_propagation_duration_ms
+        .hes_cluster_config_apply_duration_ms
         .observe(apply_start.elapsed().as_millis() as f64);
 
     // Send ConfigUpdateAck back to sender
@@ -633,6 +632,9 @@ async fn handle_node_dead(
         .with_label_values(&["suspect", "dead"])
         .inc();
     METRICS_CLUSTER.hes_cluster_suspect_nodes.dec();
+    let dead_node_id_str = dead.dead_node_id.to_string();
+    let _ = METRICS_CLUSTER.cluster_node_devices.remove_label_values(&[&dead_node_id_str]);
+    let _ = METRICS_CLUSTER.cluster_node_load_percent.remove_label_values(&[&dead_node_id_str]);
 
     // Update node status in database to "dead"
     database

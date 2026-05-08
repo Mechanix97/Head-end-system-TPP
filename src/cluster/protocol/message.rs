@@ -68,6 +68,27 @@ impl ClusterMessageType {
         }
     }
 
+    /// Returns a stable lowercase string for use as a Prometheus label.
+    pub fn label_str(&self) -> &'static str {
+        match self {
+            ClusterMessageType::Heartbeat => "heartbeat",
+            ClusterMessageType::HeartbeatAck => "heartbeat_ack",
+            ClusterMessageType::StatusRequest => "status_request",
+            ClusterMessageType::StatusResponse => "status_response",
+            ClusterMessageType::DelegateRequest => "delegate_request",
+            ClusterMessageType::DelegateAccept => "delegate_accept",
+            ClusterMessageType::DelegateReject => "delegate_reject",
+            ClusterMessageType::NodeJoin => "node_join",
+            ClusterMessageType::NodeLeave => "node_leave",
+            ClusterMessageType::NodeSuspect => "node_suspect",
+            ClusterMessageType::NodeDead => "node_dead",
+            ClusterMessageType::ProbeRequest => "probe_request",
+            ClusterMessageType::ProbeResponse => "probe_response",
+            ClusterMessageType::ConfigUpdate => "config_update",
+            ClusterMessageType::ConfigUpdateAck => "config_update_ack",
+        }
+    }
+
     /// Creates a message type from its wire code.
     pub fn from_code(code: u8) -> Result<Self, ClusterCodecError> {
         match code {

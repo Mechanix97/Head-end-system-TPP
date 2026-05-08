@@ -74,7 +74,7 @@ pub struct MetricsCluster {
     /// Current number of nodes in suspect state.
     pub hes_cluster_suspect_nodes: IntGauge,
     /// Duration to apply a received config update locally, in milliseconds.
-    pub hes_cluster_config_propagation_duration_ms: Histogram,
+    pub hes_cluster_config_apply_duration_ms: Histogram,
 }
 
 impl MetricsCluster {
@@ -202,13 +202,13 @@ impl MetricsCluster {
         )
         .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
-        let config_prop_buckets = vec![0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0];
-        let hes_cluster_config_propagation_duration_ms = Histogram::with_opts(
+        let config_apply_buckets = vec![0.1, 0.5, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0];
+        let hes_cluster_config_apply_duration_ms = Histogram::with_opts(
             HistogramOpts::new(
-                "hes_cluster_config_propagation_duration_ms",
+                "hes_cluster_config_apply_duration_ms",
                 "Time to apply a received config update locally, in milliseconds",
             )
-            .buckets(config_prop_buckets),
+            .buckets(config_apply_buckets),
         )
         .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
@@ -262,7 +262,7 @@ impl MetricsCluster {
             .register(Box::new(hes_cluster_suspect_nodes.clone()))
             .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
-            .register(Box::new(hes_cluster_config_propagation_duration_ms.clone()))
+            .register(Box::new(hes_cluster_config_apply_duration_ms.clone()))
             .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
         Ok(MetricsCluster {
@@ -283,7 +283,7 @@ impl MetricsCluster {
             cluster_node_load_percent,
             hes_cluster_state_changes_total,
             hes_cluster_suspect_nodes,
-            hes_cluster_config_propagation_duration_ms,
+            hes_cluster_config_apply_duration_ms,
         })
     }
 
