@@ -3,9 +3,9 @@ backdoor:
   ip: 0.0.0.0
   port: '6566'
 metrics:
-  enabled: false
+  enabled: true
   ip: 0.0.0.0
-  port: '6464'
+  port: '6465'
 scheduler:
   buckets_number: 48
 database:
