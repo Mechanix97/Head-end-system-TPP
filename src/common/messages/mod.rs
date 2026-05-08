@@ -20,6 +20,18 @@ pub enum MsgCodecError {
     PayloadDecodeError(String),
 }
 
+impl MsgCodecError {
+    /// Returns a short snake_case label suitable for Prometheus metric tags.
+    pub fn as_metric_label(&self) -> &'static str {
+        match self {
+            MsgCodecError::InvalidLength => "invalid_length",
+            MsgCodecError::UnknownMsgType => "unknown_msg_type",
+            MsgCodecError::PayloadDecodeError(_) => "payload_decode",
+            MsgCodecError::IoError(_) => "io",
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum MessageError {
     #[error("Error: Invalid msg length")]

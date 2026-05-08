@@ -7,6 +7,7 @@ use tracing::{error, info};
 use crate::MetricsError;
 use crate::metrics_cluster::METRICS_CLUSTER;
 use crate::metrics_connections::METRICS_CONNECTIONS;
+use crate::metrics_protocol::METRICS_PROTOCOL;
 
 /// Starts the Prometheus metrics HTTP server.
 ///
@@ -57,6 +58,11 @@ pub(crate) async fn get_metrics(
     match METRICS_CLUSTER.gather_metrics() {
         Ok(s) => output.push_str(&s),
         Err(_) => error!("Failed to gather METRICS_CLUSTER"),
+    }
+
+    match METRICS_PROTOCOL.gather_metrics() {
+        Ok(s) => output.push_str(&s),
+        Err(_) => error!("Failed to gather METRICS_PROTOCOL"),
     }
 
     (StatusCode::OK, output)

@@ -1,6 +1,7 @@
 pub mod api;
 pub mod metrics_cluster;
 pub mod metrics_connections;
+pub mod metrics_protocol;
 
 use std::sync::OnceLock;
 
