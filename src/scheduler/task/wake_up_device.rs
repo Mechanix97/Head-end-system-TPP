@@ -1,14 +1,16 @@
 use bytes::BytesMut;
 use tokio::net::UdpSocket;
 use tokio::time::{Duration, sleep, timeout};
-use tokio_util::codec::Encoder;
+use tokio_util::codec::{Decoder, Encoder};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use common::database::api::Database;
 use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
+use common::messages::MsgCodecError;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
+use metrics::metrics_protocol::METRICS_PROTOCOL;
 
 use crate::error::TaskError;
 
@@ -168,11 +170,16 @@ async fn try_connect(remote_addr: &str, device_id: Uuid) -> Result<UdpSocket, Ta
     let mut codec = MessageCodec;
     codec.encode(handshake, &mut buf)?;
 
+    let encoded_len = buf.len();
     socket.send(&buf).await?;
     METRICS_CONNECTIONS
         .messages_total
         .with_label_values(&["handshake", "outbound"])
         .inc();
+    METRICS_PROTOCOL
+        .hes_message_size_bytes
+        .with_label_values(&["handshake"])
+        .observe(encoded_len as f64);
 
     // Wait for HANDSHAKE_RESPONSE from device
     let mut response_buf = [0u8; 1024];
@@ -183,11 +190,50 @@ async fn try_connect(remote_addr: &str, device_id: Uuid) -> Result<UdpSocket, Ta
     .await
     .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Device did not respond"))??;
 
-    // TODO: Decode and validate HANDSHAKE_RESPONSE
     if n == 0 {
         return Err(
             std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Empty response").into(),
         );
+    }
+
+    // Decode and validate HANDSHAKE_RESPONSE
+    let mut decode_buf = bytes::BytesMut::from(&response_buf[..n]);
+    match MessageCodec.decode(&mut decode_buf) {
+        Ok(Some(msg)) => {
+            METRICS_PROTOCOL
+                .hes_message_size_bytes
+                .with_label_values(&[msg.msg_type.as_str()])
+                .observe(n as f64);
+            // MAC verification not yet implemented (issue #9).
+            METRICS_PROTOCOL
+                .hes_mac_verification_total
+                .with_label_values(&["skipped"])
+                .inc();
+
+            // TODO: Verify msg_type is HandshakeResponse and validate nonce.
+            // When ReadResponse processing is implemented, iterate the OBIS values:
+            //   for value in &read_response.values {
+            //       METRICS_PROTOCOL.hes_obis_read_total
+            //           .with_label_values(&[&value.code])
+            //           .inc();
+            //   }
+        }
+        Ok(None) => {
+            warn!("[Job {:#x}] Incomplete HANDSHAKE_RESPONSE from {}", device_id, remote_addr);
+        }
+        Err(e) => {
+            let error_kind = match &e {
+                MsgCodecError::InvalidLength => "invalid_length",
+                MsgCodecError::UnknownMsgType => "unknown_msg_type",
+                MsgCodecError::PayloadDecodeError(_) => "payload_decode",
+                MsgCodecError::IoError(_) => "io",
+            };
+            METRICS_PROTOCOL
+                .hes_message_decode_errors_total
+                .with_label_values(&[error_kind])
+                .inc();
+            warn!("[Job {:#x}] Failed to decode HANDSHAKE_RESPONSE: {}", device_id, e);
+        }
     }
 
     Ok(socket)
