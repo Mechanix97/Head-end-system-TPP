@@ -6,7 +6,7 @@ use bytes::BytesMut;
 use chrono::Utc;
 use common::database::api::Database;
 use common::messages::codec::MessageCodec;
-use common::messages::message::{Message, MessagePayload};
+use common::messages::message::{Message, MessagePayload, MsgType};
 use common::messages::write::WriteParameter;
 use device_manager::DeviceManager;
 use tokio::net::UdpSocket;
@@ -36,7 +36,15 @@ pub fn new_router() -> DebugRouter {
 /// Called by the backdoor main loop before the normal match.
 /// Returns `true` if the message was forwarded to a waiting debug session
 /// (the main loop should then skip normal handling).
+///
+/// Only session-response types are forwarded. Registration messages (RegisterRequest,
+/// Ack, SessionStartRequest) always fall through to normal backdoor handling so that
+/// stale ACKs from the preceding registration flow don't corrupt the session.
 pub async fn try_route(router: &DebugRouter, addr: SocketAddr, msg: &Message) -> bool {
+    match msg.msg_type {
+        MsgType::HandshakeResponse | MsgType::ReadResponse | MsgType::WriteResponse => {}
+        _ => return false,
+    }
     let guard = router.read().await;
     if let Some(tx) = guard.get(&addr) {
         let _ = tx.send(msg.clone());
