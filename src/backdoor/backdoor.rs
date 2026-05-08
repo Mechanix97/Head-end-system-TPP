@@ -21,7 +21,6 @@ use common::messages::codec::MessageCodec;
 use common::messages::message::Message;
 use common::messages::message::MsgType;
 use common::messages::nack::{NACK_DEVICE_NOT_FOUND, NACK_INTERNAL_ERROR};
-use common::messages::MsgCodecError;
 use common::registration_status::RegistrationStatus;
 use device_manager::DeviceManager;
 
@@ -104,15 +103,9 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                     continue;
                 }
                 Err(e) => {
-                    let error_kind = match &e {
-                        MsgCodecError::InvalidLength => "invalid_length",
-                        MsgCodecError::UnknownMsgType => "unknown_msg_type",
-                        MsgCodecError::PayloadDecodeError(_) => "payload_decode",
-                        MsgCodecError::IoError(_) => "io",
-                    };
                     METRICS_PROTOCOL
                         .hes_message_decode_errors_total
-                        .with_label_values(&[error_kind])
+                        .with_label_values(&[e.as_metric_label()])
                         .inc();
                     warn!("Invalid codec conversion from {addr}: {e}");
                     continue;

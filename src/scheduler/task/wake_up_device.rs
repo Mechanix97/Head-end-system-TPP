@@ -11,7 +11,6 @@ use common::database::api::Database;
 use common::messages::codec::MessageCodec;
 use common::messages::message::{Message, MessagePayload};
 use common::messages::write::WriteParameter;
-use common::messages::MsgCodecError;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
 use metrics::metrics_protocol::METRICS_PROTOCOL;
 
@@ -319,15 +318,9 @@ async fn recv_msg(socket: &UdpSocket) -> Result<Message, TaskError> {
             "incomplete message",
         ))),
         Err(e) => {
-            let error_kind = match &e {
-                MsgCodecError::InvalidLength => "invalid_length",
-                MsgCodecError::UnknownMsgType => "unknown_msg_type",
-                MsgCodecError::PayloadDecodeError(_) => "payload_decode",
-                MsgCodecError::IoError(_) => "io",
-            };
             METRICS_PROTOCOL
                 .hes_message_decode_errors_total
-                .with_label_values(&[error_kind])
+                .with_label_values(&[e.as_metric_label()])
                 .inc();
             Err(e.into())
         }
