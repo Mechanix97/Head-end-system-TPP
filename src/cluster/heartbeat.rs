@@ -7,6 +7,8 @@ use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
+use metrics::metrics_cluster::METRICS_CLUSTER;
+
 use crate::membership::{MembershipList, broadcast_message};
 use crate::protocol::ClusterMessage;
 
@@ -34,6 +36,12 @@ pub async fn heartbeat_loop(
 
         if let Err(e) = broadcast_message(&membership, &socket, msg).await {
             warn!("Failed to broadcast heartbeat: {}", e);
+        } else {
+            METRICS_CLUSTER.cluster_heartbeat_sent_total.inc();
+            METRICS_CLUSTER
+                .cluster_messages_total
+                .with_label_values(&["Heartbeat", "outbound"])
+                .inc();
         }
     }
 }

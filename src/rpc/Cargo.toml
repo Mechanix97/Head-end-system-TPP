@@ -10,6 +10,7 @@ path = "src/mod.rs"
 common = { workspace = true }
 cluster = { workspace = true }
 device_manager = { workspace = true }
+metrics = { workspace = true }
 
 tokio = { workspace = true }
 tokio-util = { workspace = true }

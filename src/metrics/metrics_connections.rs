@@ -39,6 +39,11 @@ pub static METRICS_CONNECTIONS: LazyLock<MetricsConns> =
 /// Phase 1 metrics (domain F — database):
 /// - `hes_db_query_duration_ms`: Histogram of query latency by (query_name, result)
 /// - `hes_db_errors_total`: Counter of DB errors by query_name
+///
+/// Phase 2 metrics (domain G — RPC):
+/// - `hes_rpc_request_total`: Counter of RPC requests by (method, result)
+/// - `hes_rpc_request_duration_ms`: Histogram of RPC latency by method
+/// - `hes_rpc_active_connections`: Gauge of open RPC TCP connections
 #[derive(Debug)]
 pub struct MetricsConns {
     registry: Registry,
@@ -81,6 +86,14 @@ pub struct MetricsConns {
     pub hes_db_query_duration_ms: HistogramVec,
     /// Count of DB errors by query_name.
     pub hes_db_errors_total: IntCounterVec,
+
+    // ── Phase 2 — domain G (RPC) ──────────────────────────────────────────────
+    /// Count of JSON-RPC requests. Labels: (method, result ∈ {success, error}).
+    pub hes_rpc_request_total: IntCounterVec,
+    /// JSON-RPC request latency in milliseconds. Label: method.
+    pub hes_rpc_request_duration_ms: HistogramVec,
+    /// Gauge of currently open RPC TCP connections.
+    pub hes_rpc_active_connections: IntGauge,
 }
 
 impl MetricsConns {
@@ -223,6 +236,34 @@ impl MetricsConns {
         )
         .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
+        // ── Phase 2 — domain G ────────────────────────────────────────────────
+        let hes_rpc_request_total = IntCounterVec::new(
+            Opts::new(
+                "hes_rpc_request_total",
+                "JSON-RPC requests by method and result",
+            ),
+            &["method", "result"],
+        )
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+
+        let rpc_latency_buckets = vec![1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0];
+
+        let hes_rpc_request_duration_ms = HistogramVec::new(
+            HistogramOpts::new(
+                "hes_rpc_request_duration_ms",
+                "JSON-RPC request latency in milliseconds",
+            )
+            .buckets(rpc_latency_buckets),
+            &["method"],
+        )
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+
+        let hes_rpc_active_connections = IntGauge::new(
+            "hes_rpc_active_connections",
+            "Currently open JSON-RPC TCP connections",
+        )
+        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
+
         // ── Register all metrics ──────────────────────────────────────────────
         for m in [
             Box::new(connections_tracker.clone()) as Box<dyn prometheus::core::Collector>,
@@ -242,6 +283,9 @@ impl MetricsConns {
             Box::new(hes_registration_duration_ms.clone()),
             Box::new(hes_db_query_duration_ms.clone()),
             Box::new(hes_db_errors_total.clone()),
+            Box::new(hes_rpc_request_total.clone()),
+            Box::new(hes_rpc_request_duration_ms.clone()),
+            Box::new(hes_rpc_active_connections.clone()),
         ] {
             registry
                 .register(m)
@@ -267,6 +311,9 @@ impl MetricsConns {
             hes_registration_duration_ms,
             hes_db_query_duration_ms,
             hes_db_errors_total,
+            hes_rpc_request_total,
+            hes_rpc_request_duration_ms,
+            hes_rpc_active_connections,
         })
     }
 

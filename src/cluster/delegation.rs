@@ -14,6 +14,8 @@ use uuid::Uuid;
 use common::database::api::Database;
 use common::delegated_device::DelegatedDevice;
 
+use metrics::metrics_cluster::METRICS_CLUSTER;
+
 use device_manager::DeviceManager;
 use crate::error::ClusterError;
 use crate::membership::{send_message, MembershipList};
@@ -196,6 +198,7 @@ impl DelegationHandler {
         send_message(&self.socket, from_addr, msg).await?;
 
         info!("Accepted delegation of {} devices", accepted_device_ids.len());
+        METRICS_CLUSTER.cluster_delegations_total.inc();
 
         // If we accepted a Shutdown delegation while overloaded, redistribute some devices
         if is_overloaded && payload.reason == DelegationReason::Shutdown {
