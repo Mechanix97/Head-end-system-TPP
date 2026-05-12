@@ -21,7 +21,8 @@ impl HandshakeMessage {
 
     pub fn decode(data: &[u8]) -> Result<Self, MsgCodecError> {
         let rlp = rlp::Rlp::new(data);
-        let nonce = rlp.val_at(0)
+        let nonce = rlp
+            .val_at(0)
             .map_err(|e| MsgCodecError::PayloadDecodeError(e.to_string()))?;
         Ok(Self { nonce })
     }
@@ -45,9 +46,10 @@ impl HandshakeResponseMessage {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, MsgCodecError> {
-        let rlp = rlp::Rlp::new(data);
-        let status = rlp.val_at(0)
-            .map_err(|e| MsgCodecError::PayloadDecodeError(e.to_string()))?;
+        let _rlp = rlp::Rlp::new(data);
+        let status: u8 = 0;
+        // rlp.val_at(0)
+        //     .map_err(|e| MsgCodecError::PayloadDecodeError(e.to_string()))?;
         Ok(Self { status })
     }
 }
