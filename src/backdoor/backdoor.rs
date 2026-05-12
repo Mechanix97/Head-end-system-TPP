@@ -2,6 +2,7 @@ use bytes::BytesMut;
 use chrono::Utc;
 use common::database::api::Database;
 use metrics::metrics_connections::METRICS_CONNECTIONS;
+use metrics::metrics_protocol::METRICS_PROTOCOL;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -88,13 +89,28 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
 
             let mut bytes = BytesMut::from(&buf[..len]);
             let msg = match MessageCodec.decode(&mut bytes) {
-                Ok(Some(msg)) => msg,
+                Ok(Some(msg)) => {
+                    METRICS_PROTOCOL
+                        .hes_message_size_bytes
+                        .with_label_values(&[msg.msg_type.as_str()])
+                        .observe(len as f64);
+                    // MAC verification not yet implemented (issue #9).
+                    METRICS_PROTOCOL
+                        .hes_mac_verification_total
+                        .with_label_values(&["skipped"])
+                        .inc();
+                    msg
+                }
                 Ok(None) => {
                     warn!("Incomplete message received from {addr}");
                     continue;
                 }
                 Err(e) => {
-                    warn!("Invalid codec conversion from {addr} ({len} B): {e}");
+                    METRICS_PROTOCOL
+                        .hes_message_decode_errors_total
+                        .with_label_values(&[e.as_metric_label()])
+                        .inc();
+                    warn!("Invalid codec conversion from {addr}: {e}");
                     continue;
                 }
             };

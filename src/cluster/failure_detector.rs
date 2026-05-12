@@ -13,6 +13,8 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use metrics::metrics_cluster::METRICS_CLUSTER;
+
 use common::database::api::Database;
 
 use device_manager::DeviceManager;
@@ -88,6 +90,12 @@ async fn handle_suspect_node(
         "Node {} is suspected to be down, initiating probe",
         node_name
     );
+    METRICS_CLUSTER.cluster_heartbeat_timeout_total.inc();
+    METRICS_CLUSTER
+        .hes_cluster_state_changes_total
+        .with_label_values(&["active", "suspect"])
+        .inc();
+    METRICS_CLUSTER.hes_cluster_suspect_nodes.inc();
 
     // Broadcast NODE_SUSPECT
     let (local_id, seq) = {
@@ -147,6 +155,15 @@ async fn handle_dead_node(
         "Node {} confirmed dead, initiating redistribution",
         node_name
     );
+    METRICS_CLUSTER.cluster_failovers_total.inc();
+    METRICS_CLUSTER
+        .hes_cluster_state_changes_total
+        .with_label_values(&["suspect", "dead"])
+        .inc();
+    METRICS_CLUSTER.hes_cluster_suspect_nodes.dec();
+    let dead_node_id_str = node_id.to_string();
+    let _ = METRICS_CLUSTER.cluster_node_devices.remove_label_values(&[&dead_node_id_str]);
+    let _ = METRICS_CLUSTER.cluster_node_load_percent.remove_label_values(&[&dead_node_id_str]);
 
     // Update node status in database
     if let Err(e) = database.update_cluster_node_status(node_id, "dead").await {
