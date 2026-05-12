@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::error::SchedulerError;
 
-const TEST_MODE_WAKEUP_SECS: i64 = 300;
+const TEST_MODE_WAKEUP_SECS: i64 = 150;
 use crate::schedule::Schedule;
 use crate::task::wake_up_device::wake_up_device;
 use common::database::api::Database;
@@ -135,7 +135,14 @@ impl Scheduler {
         let db_elapsed = db_start.elapsed().as_millis() as f64;
         METRICS_CONNECTIONS
             .hes_db_query_duration_ms
-            .with_label_values(&["get_scheduled_connections", if connections_result.is_ok() { "ok" } else { "error" }])
+            .with_label_values(&[
+                "get_scheduled_connections",
+                if connections_result.is_ok() {
+                    "ok"
+                } else {
+                    "error"
+                },
+            ])
             .observe(db_elapsed);
 
         let scheduled_connections = connections_result.map_err(|e| {
