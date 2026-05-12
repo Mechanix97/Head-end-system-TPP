@@ -525,6 +525,12 @@ async fn handle_backdoor_ip_update_msg(
 /// Encodes and sends a message to the given address, logging any errors.
 async fn send_msg(socket: &UdpSocket, msg: Message, addr: SocketAddr) {
     let label = msg.msg_type.as_str();
+    debug!(
+        msg_type = label,
+        device_id = %Uuid::from_u128(msg.device_id),
+        seq = msg.seq,
+        "→ {addr}",
+    );
     let mut buf = BytesMut::with_capacity(1024);
     match MessageCodec.encode(msg, &mut buf) {
         Err(err) => {
@@ -542,6 +548,7 @@ async fn send_msg(socket: &UdpSocket, msg: Message, addr: SocketAddr) {
                     .with_label_values(&["backdoor", label])
                     .inc();
             } else {
+                debug!(bytes = buf.len(), "→ {addr} sent");
                 METRICS_CONNECTIONS
                     .messages_total
                     .with_label_values(&[label, "outbound"])
