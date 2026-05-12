@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::BackdoorError;
@@ -94,10 +94,18 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                     continue;
                 }
                 Err(e) => {
-                    warn!("Invalid codec conversion from {addr}: {e}");
+                    warn!("Invalid codec conversion from {addr} ({len} B): {e}");
                     continue;
                 }
             };
+
+            debug!(
+                msg_type = msg.msg_type.as_str(),
+                device_id = %Uuid::from_u128(msg.device_id),
+                seq = msg.seq,
+                bytes = len,
+                "← {addr}",
+            );
 
             #[cfg(feature = "debug-session-start")]
             if crate::debug_session::try_route(&debug_router, addr, &msg).await {
@@ -106,7 +114,14 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
 
             match msg.msg_type {
                 MsgType::RegisterRequest => {
-                    info!("RegisterRequest received");
+                    if msg.device_id == 0 {
+                        info!("RegisterRequest from {addr} — new device registration");
+                    } else {
+                        info!(
+                            "RegisterRequest from {addr} — IP update for device {}",
+                            Uuid::from_u128(msg.device_id)
+                        );
+                    }
                     METRICS_CONNECTIONS
                         .messages_total
                         .with_label_values(&["register_request", "inbound"])
@@ -178,7 +193,7 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                     }
                 }
                 MsgType::Ack => {
-                    info!("Ack received");
+                    info!("Ack from {addr} — device {}", Uuid::from_u128(msg.device_id));
                     METRICS_CONNECTIONS
                         .messages_total
                         .with_label_values(&["ack", "inbound"])
@@ -211,7 +226,11 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
 
                 #[cfg(feature = "debug-session-start")]
                 MsgType::SessionStartRequest => {
-                    info!("SessionStartRequest received from {addr}");
+                    info!(
+                        "SessionStartRequest from {addr} — device {} seq={}",
+                        Uuid::from_u128(msg.device_id),
+                        msg.seq
+                    );
                     METRICS_CONNECTIONS
                         .messages_total
                         .with_label_values(&["session_start_request", "inbound"])
@@ -237,7 +256,12 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                 }
 
                 _ => {
-                    warn!("Received incompatible msg in backdoor: {:?}", msg.msg_type);
+                    warn!(
+                        "Received incompatible msg {:?} (0x{:02x}) from {addr} — device {}",
+                        msg.msg_type,
+                        msg.msg_type.code(),
+                        Uuid::from_u128(msg.device_id),
+                    );
                     METRICS_CONNECTIONS
                         .errors_total
                         .with_label_values(&["backdoor", "invalid_msg_type"])

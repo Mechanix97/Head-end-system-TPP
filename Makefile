@@ -1,10 +1,13 @@
-.PHONY: build run run-node-1 run-node-2 run-node-3 lint local-cli
+.PHONY: build run run-debug run-node-1 run-node-2 run-node-3 lint local-cli
 
 build: ## Build the server
 	cargo build
 
 run: ## run the server (in-memory DB, no metrics, single-node, no RPC, test mode: connections within 5 min)
 	cargo run --features debug-session-start -- --disble-metrics --database=in-memory --disable-cluster --disable-rpc --test-mode
+
+run-debug: ## Run with debug-level logging for communication (backdoor + codec). Use RUST_LOG to override.
+	RUST_LOG=info,backdoor=debug,common=debug cargo run --features debug-session-start -- --disble-metrics --database=in-memory --disable-cluster --disable-rpc --test-mode
 
 run-node-1: ## Run node 1 (seed node, postgres on localhost, metrics enabled)
 	cargo run -- --config configs/node-1.yaml
