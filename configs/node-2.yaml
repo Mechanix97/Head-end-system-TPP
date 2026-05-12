@@ -19,4 +19,8 @@ cluster:
   enabled: true
   ip: 0.0.0.0
   port: 6570
-  seeds: 100.86.94.38:6570
+  seeds: 100.93.152.61:6571,100.86.94.38:6570
+rpc:
+  enabled: true
+  ip: 127.0.0.1
+  port: 6600

