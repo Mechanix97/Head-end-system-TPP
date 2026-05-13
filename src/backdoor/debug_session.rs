@@ -89,30 +89,50 @@ pub async fn handle_session_start(
         Err(e) => warn!("[debug] failed to cancel job for device {device_id}: {e}"),
     }
 
+    // Schedule the next wakeup before the session so we can tell the device the real time.
+    let next_wake_ts = match device_manager
+        .write()
+        .await
+        .schedule_next_wakeup(device_id)
+        .await
+    {
+        Ok(()) => match database.get_scheduled_connection(device_id).await {
+            Ok(conn) => {
+                let ts = conn.schedule_time.and_utc().timestamp() as u64;
+                let utc_str = conn
+                    .schedule_time
+                    .and_utc()
+                    .format("%Y-%m-%d %H:%M:%S UTC")
+                    .to_string();
+                info!("[debug] next wake scheduled for device {device_id} at {utc_str}");
+                ts
+            }
+            Err(e) => {
+                warn!("[debug] could not read scheduled time for {device_id}: {e} — falling back to +1 day");
+                (Utc::now() + chrono::Duration::days(1)).timestamp() as u64
+            }
+        },
+        Err(e) => {
+            warn!("[debug] failed to schedule next wakeup for device {device_id}: {e} — falling back to +1 day");
+            (Utc::now() + chrono::Duration::days(1)).timestamp() as u64
+        }
+    };
+
     // Register inbound channel so subsequent packets from this addr are forwarded here.
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
     router.write().await.insert(addr, tx);
 
-    let result = run_session_over_backdoor(&socket, addr, device_id, &mut rx, &database).await;
+    let result =
+        run_session_over_backdoor(&socket, addr, device_id, &mut rx, &database, next_wake_ts)
+            .await;
 
     info!(
         "[debug] session ended — device {device_id}: {}",
         if result.is_ok() { "ok" } else { "error" }
     );
 
-    // Always clean up the router entry, then reschedule the next daily wake.
+    // Clean up the router entry.
     router.write().await.remove(&addr);
-
-    if let Err(e) = device_manager
-        .write()
-        .await
-        .schedule_next_wakeup(device_id)
-        .await
-    {
-        warn!("[debug] failed to reschedule next wakeup for device {device_id}: {e}");
-    } else {
-        info!("[debug] next wake scheduled for device {device_id}");
-    }
 
     result
 }
@@ -123,6 +143,7 @@ async fn run_session_over_backdoor(
     device_id: Uuid,
     rx: &mut mpsc::UnboundedReceiver<Message>,
     database: &Database,
+    next_wake_ts: u64,
 ) -> Result<(), BackdoorError> {
     let device_id_u128 = device_id.as_u128();
     let mut seq: u32 = 0;
@@ -192,16 +213,22 @@ async fn run_session_over_backdoor(
     }
     // TODO: persist data.values to database (water volume, clock)
 
-    // WRITE_REQUEST: tell device when to wake next.
-    let next_wake_ts = (Utc::now() + chrono::Duration::days(1)).timestamp() as u64;
+    // WRITE_REQUEST: sync device clock and tell it when to wake next.
+    let now_ts = Utc::now().timestamp() as u64;
     let next_wake_utc = chrono::DateTime::from_timestamp(next_wake_ts as i64, 0)
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
         .unwrap_or_else(|| format!("{next_wake_ts}"));
-    let parameters = vec![WriteParameter {
-        code: OBIS_NEXT_WAKE.to_string(),
-        value: next_wake_ts.to_be_bytes().to_vec(),
-    }];
-    info!("[debug] → WRITE_REQUEST  seq={seq}  next_wake={next_wake_utc}");
+    let parameters = vec![
+        WriteParameter {
+            code: OBIS_CLOCK.to_string(),
+            value: now_ts.to_be_bytes().to_vec(),
+        },
+        WriteParameter {
+            code: OBIS_NEXT_WAKE.to_string(),
+            value: next_wake_ts.to_be_bytes().to_vec(),
+        },
+    ];
+    info!("[debug] → WRITE_REQUEST  seq={seq}  clock_sync={now_ts}  next_wake={next_wake_utc}");
     send(
         socket,
         addr,
