@@ -298,3 +298,97 @@ async fn recv(
     );
     Ok(msg)
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use std::net::SocketAddr;
+
+    use common::messages::message::Message;
+    use tokio::sync::mpsc;
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn addr(port: u16) -> SocketAddr {
+        format!("127.0.0.1:{port}").parse().unwrap()
+    }
+
+    fn device() -> u128 {
+        Uuid::new_v4().as_u128()
+    }
+
+    // --- try_route: types that MUST be forwarded ---
+
+    #[tokio::test]
+    async fn try_route_forwards_handshake_response() {
+        let router = new_router();
+        let a = addr(19100);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        router.write().await.insert(a, tx);
+
+        let msg = Message::new_handshake_response_message(device(), 1, 0).unwrap();
+        assert!(try_route(&router, a, &msg).await);
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[tokio::test]
+    async fn try_route_forwards_read_response() {
+        let router = new_router();
+        let a = addr(19101);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        router.write().await.insert(a, tx);
+
+        let msg = Message::new_read_response_message(device(), 2, vec![]).unwrap();
+        assert!(try_route(&router, a, &msg).await);
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[tokio::test]
+    async fn try_route_forwards_write_response() {
+        let router = new_router();
+        let a = addr(19102);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        router.write().await.insert(a, tx);
+
+        let msg = Message::new_write_response_message(device(), 3, true, vec![]).unwrap();
+        assert!(try_route(&router, a, &msg).await);
+        assert!(rx.try_recv().is_ok());
+    }
+
+    // --- try_route: types that MUST fall through ---
+
+    #[tokio::test]
+    async fn try_route_does_not_forward_ack() {
+        let router = new_router();
+        let a = addr(19103);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        router.write().await.insert(a, tx);
+
+        let msg = Message::new_ack_message(device(), 0).unwrap();
+        assert!(!try_route(&router, a, &msg).await);
+        assert!(rx.try_recv().is_err()); // nothing sent to channel
+    }
+
+    // --- try_route: addr not registered ---
+
+    #[tokio::test]
+    async fn try_route_returns_false_for_unknown_addr() {
+        let router = new_router();
+        let registered = addr(19104);
+        let other = addr(19105);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        router.write().await.insert(registered, tx);
+
+        let msg = Message::new_handshake_response_message(device(), 1, 0).unwrap();
+        assert!(!try_route(&router, other, &msg).await);
+        assert!(rx.try_recv().is_err()); // channel for `registered` untouched
+    }
+
+    #[tokio::test]
+    async fn try_route_returns_false_for_empty_router() {
+        let router = new_router();
+        let msg = Message::new_handshake_response_message(device(), 0, 0).unwrap();
+        assert!(!try_route(&router, addr(19106), &msg).await);
+    }
+}

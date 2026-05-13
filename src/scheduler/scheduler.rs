@@ -530,6 +530,88 @@ impl Scheduler {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use common::database::{DatabaseConfig, api::Database};
+
+    async fn make_scheduler() -> Scheduler {
+        let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
+        Scheduler::new(1, db, Uuid::new_v4(), false).await.unwrap()
+    }
+
+    // --- abort_active_wakeup ---
+
+    #[tokio::test]
+    async fn abort_returns_false_when_no_task_running() {
+        let scheduler = make_scheduler().await;
+        assert!(!scheduler.abort_active_wakeup(Uuid::new_v4()));
+    }
+
+    #[tokio::test]
+    async fn abort_returns_true_and_cancels_task() {
+        let scheduler = make_scheduler().await;
+        let device_id = Uuid::new_v4();
+
+        // Simulate a long-running wake_up_device by spawning a task that sleeps forever.
+        let handle = tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        });
+        let abort_handle = handle.abort_handle();
+        scheduler.active_tasks.lock().unwrap().insert(device_id, abort_handle);
+
+        assert!(scheduler.abort_active_wakeup(device_id));
+
+        // The spawned task should have been cancelled.
+        assert!(handle.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn abort_removes_entry_so_second_call_returns_false() {
+        let scheduler = make_scheduler().await;
+        let device_id = Uuid::new_v4();
+
+        let handle = tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        });
+        scheduler.active_tasks.lock().unwrap().insert(device_id, handle.abort_handle());
+
+        assert!(scheduler.abort_active_wakeup(device_id));
+        assert!(!scheduler.abort_active_wakeup(device_id)); // entry already gone
+
+        handle.abort(); // cleanup so the test doesn't leak the task
+    }
+
+    #[tokio::test]
+    async fn abort_only_targets_the_specified_device() {
+        let scheduler = make_scheduler().await;
+        let device_a = Uuid::new_v4();
+        let device_b = Uuid::new_v4();
+
+        let handle_a = tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        });
+        let handle_b = tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        });
+        {
+            let mut tasks = scheduler.active_tasks.lock().unwrap();
+            tasks.insert(device_a, handle_a.abort_handle());
+            tasks.insert(device_b, handle_b.abort_handle());
+        }
+
+        // Abort only device_a.
+        assert!(scheduler.abort_active_wakeup(device_a));
+
+        // device_b's task should still be running.
+        assert!(!handle_b.is_finished());
+        assert_eq!(scheduler.active_tasks.lock().unwrap().len(), 1);
+
+        handle_b.abort(); // cleanup
+    }
+}
+
 /// Determines the date (day/month/year) for a scheduled wake-up based on the hour.
 ///
 /// This function decides whether a scheduled connection should happen today or tomorrow:
