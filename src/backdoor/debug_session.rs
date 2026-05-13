@@ -13,7 +13,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, mpsc};
 use tokio::time::{Duration, timeout};
 use tokio_util::codec::Encoder;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::BackdoorError;
@@ -75,19 +75,19 @@ pub async fn handle_session_start(
 ) -> Result<(), BackdoorError> {
     let device_id = Uuid::from_u128(msg.device_id);
 
-    info!("[debug] session starting — device {device_id} at {addr}");
+    debug!("session starting — device {device_id} at {addr}");
 
     // Cancel the pending scheduler job and abort any already-running wake-up task
     // so the normal path doesn't race with the debug session.
     {
         let mut dm = device_manager.write().await;
         match dm.cancel_wakeup_job(device_id).await {
-            Ok(true) => info!("[debug] cancelled wake-up job for device {device_id}"),
-            Ok(false) => info!("[debug] no pending job to cancel for device {device_id}"),
-            Err(e) => warn!("[debug] failed to cancel job for device {device_id}: {e}"),
+            Ok(true) => debug!("cancelled wake-up job for device {device_id}"),
+            Ok(false) => debug!("no pending job to cancel for device {device_id}"),
+            Err(e) => warn!("failed to cancel job for device {device_id}: {e}"),
         }
         if dm.abort_active_wakeup(device_id) {
-            info!("[debug] aborted running wake-up task for device {device_id}");
+            debug!("aborted running wake-up task for device {device_id}");
         }
     }
 
@@ -106,16 +106,16 @@ pub async fn handle_session_start(
                     .and_utc()
                     .format("%Y-%m-%d %H:%M:%S UTC")
                     .to_string();
-                info!("[debug] next wake scheduled for device {device_id} at {utc_str}");
+                debug!("next wake scheduled for device {device_id} at {utc_str}");
                 ts
             }
             Err(e) => {
-                warn!("[debug] could not read scheduled time for {device_id}: {e} — falling back to +1 day");
+                warn!("could not read scheduled time for {device_id}: {e} — falling back to +1 day");
                 (Utc::now() + chrono::Duration::days(1)).timestamp() as u64
             }
         },
         Err(e) => {
-            warn!("[debug] failed to schedule next wakeup for device {device_id}: {e} — falling back to +1 day");
+            warn!("failed to schedule next wakeup for device {device_id}: {e} — falling back to +1 day");
             (Utc::now() + chrono::Duration::days(1)).timestamp() as u64
         }
     };
@@ -128,8 +128,8 @@ pub async fn handle_session_start(
         run_session_over_backdoor(&socket, addr, device_id, &mut rx, &database, next_wake_ts)
             .await;
 
-    info!(
-        "[debug] session ended — device {device_id}: {}",
+    debug!(
+        "session ended — device {device_id}: {}",
         if result.is_ok() { "ok" } else { "error" }
     );
 
@@ -168,7 +168,7 @@ async fn run_session_over_backdoor(
         Message::new_handshake_message(device_id_u128, seq, vec![0u8; 32])?,
     )
     .await?;
-    info!("[debug] → HANDSHAKE  seq={seq}  to={addr}");
+    debug!("→ HANDSHAKE  seq={seq}  to={addr}");
     seq += 1;
 
     // HANDSHAKE_RESPONSE
@@ -179,7 +179,7 @@ async fn run_session_over_backdoor(
             "expected handshake_response, got {got}"
         )));
     };
-    info!("[debug] ← HANDSHAKE_RESPONSE  seq={}", resp.seq);
+    debug!("← HANDSHAKE_RESPONSE  seq={}", resp.seq);
     debug!(status = hs_resp.status, "HANDSHAKE_RESPONSE detail");
 
     // READ_REQUEST
@@ -188,7 +188,7 @@ async fn run_session_over_backdoor(
         obis_codes.push(OBIS_BATTERY.to_string());
         debug!("battery OBIS ({OBIS_BATTERY}) added to READ_REQUEST — last read was >{}d ago", BATTERY_READ_INTERVAL_DAYS);
     }
-    info!("[debug] → READ_REQUEST  seq={seq}  codes={:?}", obis_codes);
+    debug!("→ READ_REQUEST  seq={seq}  codes={:?}", obis_codes);
     send(
         socket,
         addr,
@@ -205,7 +205,7 @@ async fn run_session_over_backdoor(
             "expected read_response, got {got}"
         )));
     };
-    info!("[debug] ← READ_RESPONSE  seq={}  values={}", resp.seq, data.values.len());
+    debug!("← READ_RESPONSE  seq={}  values={}", resp.seq, data.values.len());
     for v in &data.values {
         debug!(
             code = v.code,
@@ -230,7 +230,7 @@ async fn run_session_over_backdoor(
             value: next_wake_ts.to_be_bytes().to_vec(),
         },
     ];
-    info!("[debug] → WRITE_REQUEST  seq={seq}  clock_sync={now_ts}  next_wake={next_wake_utc}");
+    debug!("→ WRITE_REQUEST  seq={seq}  clock_sync={now_ts}  next_wake={next_wake_utc}");
     send(
         socket,
         addr,
@@ -247,11 +247,11 @@ async fn run_session_over_backdoor(
             "expected write_response, got {got}"
         )));
     };
-    info!("[debug] ← WRITE_RESPONSE  seq={}", resp.seq);
+    debug!("← WRITE_RESPONSE  seq={}", resp.seq);
     debug!(success = wr_resp.success, codes = ?wr_resp.written_codes, "WRITE_RESPONSE detail");
 
     // ACK — session close
-    info!("[debug] → ACK  seq={seq}  session closed");
+    debug!("→ ACK  seq={seq}  session closed");
     send(socket, addr, Message::new_ack_message(device_id_u128, seq)?).await?;
 
     if needs_battery {
@@ -259,7 +259,7 @@ async fn run_session_over_backdoor(
             .update_last_battery_read(device_id, Utc::now().naive_utc())
             .await
         {
-            warn!("[debug] failed to update last_battery_read: {e}");
+            warn!("failed to update last_battery_read: {e}");
         }
     }
 
