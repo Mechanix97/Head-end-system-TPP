@@ -242,6 +242,17 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
 
                 #[cfg(feature = "debug-session-start")]
                 MsgType::SessionStartRequest => {
+                    // Discard duplicate while a session is already active for this addr.
+                    // Without this guard, two concurrent tasks would race on the router
+                    // entry and both fail with "channel closed".
+                    if debug_router.read().await.contains_key(&addr) {
+                        debug!(
+                            device_id = %Uuid::from_u128(msg.device_id),
+                            seq = msg.seq,
+                            "SESSION_START_REQUEST dropped — session already active for {addr}",
+                        );
+                        continue;
+                    }
                     info!(
                         "SessionStartRequest from {addr} — device {} seq={}",
                         Uuid::from_u128(msg.device_id),
