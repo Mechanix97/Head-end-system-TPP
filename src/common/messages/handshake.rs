@@ -46,10 +46,10 @@ impl HandshakeResponseMessage {
     }
 
     pub fn decode(data: &[u8]) -> Result<Self, MsgCodecError> {
-        let _rlp = rlp::Rlp::new(data);
-        let status: u8 = 0;
-        // rlp.val_at(0)
-        //     .map_err(|e| MsgCodecError::PayloadDecodeError(e.to_string()))?;
+        let rlp = rlp::Rlp::new(data);
+        let status: u8 = rlp
+            .val_at(0)
+            .map_err(|e| MsgCodecError::PayloadDecodeError(e.to_string()))?;
         Ok(Self { status })
     }
 }
