@@ -97,6 +97,15 @@ impl DeviceManager {
         self.scheduler.cancel_wakeup_job(device_id).await.map_err(DeviceManagerError::Scheduler)
     }
 
+    /// Aborts the `wake_up_device` task currently running for `device_id`, if any.
+    ///
+    /// Returns `true` if a task was aborted, `false` if none was running.
+    /// Call this alongside `cancel_wakeup_job` so that a debug session can take over
+    /// immediately without waiting for up to 5 × 30 s of retry attempts to finish.
+    pub fn abort_active_wakeup(&self, device_id: Uuid) -> bool {
+        self.scheduler.abort_active_wakeup(device_id)
+    }
+
     /// Schedules the next wakeup job for a device.
     pub async fn schedule_next_wakeup(
         &mut self,

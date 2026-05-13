@@ -1,7 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
+use tokio::task::AbortHandle;
 
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
@@ -44,6 +46,9 @@ pub struct Scheduler {
     reschedule_tx: Option<mpsc::Sender<Uuid>>,
     /// When true, all connections are scheduled within 5 minutes instead of normal daily buckets
     test_mode: bool,
+    /// AbortHandles for wake_up_device tasks that are currently executing.
+    /// Keyed by device_id so a debug session can abort a running task before taking over.
+    active_tasks: Arc<Mutex<HashMap<Uuid, AbortHandle>>>,
 }
 
 impl Scheduler {
@@ -68,6 +73,7 @@ impl Scheduler {
             local_node_id,
             reschedule_tx: None,
             test_mode,
+            active_tasks: Arc::new(Mutex::new(HashMap::new())),
         };
         scheduler.start().await?;
 
@@ -342,6 +348,21 @@ impl Scheduler {
         self.owned_devices = Some(owned_devices);
     }
 
+    /// Aborts the `wake_up_device` task currently running for `device_id`, if any.
+    ///
+    /// Returns `true` if a task was found and aborted, `false` if none was running.
+    /// The aborted task receives a cancellation signal at its next `.await` point and
+    /// exits cleanly without updating metrics or the database.
+    pub fn abort_active_wakeup(&self, device_id: Uuid) -> bool {
+        let mut tasks = self.active_tasks.lock().expect("active_tasks lock poisoned");
+        if let Some(handle) = tasks.remove(&device_id) {
+            handle.abort();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Sets the sender side of the reschedule channel.
     ///
     /// After a successful periodic session, `wake_up_device` sends the device UUID
@@ -407,6 +428,7 @@ impl Scheduler {
     ) -> Result<Uuid, SchedulerError> {
         let database = self.database.clone();
         let reschedule_tx = self.reschedule_tx.clone();
+        let active_tasks = self.active_tasks.clone();
 
         let job = Job::new_async_tz(
             next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
@@ -414,8 +436,9 @@ impl Scheduler {
             move |job_id, _l| {
                 let db = database.clone();
                 let tx = reschedule_tx.clone();
+                let active_tasks = active_tasks.clone();
                 Box::pin(async move {
-                    // Measure how late the job fired vs its scheduled time
+                    // Measure how late the job fired vs its scheduled time.
                     let actual_now = Utc::now().naive_utc();
                     let drift_ms = (actual_now - next_wake_up).num_milliseconds().max(0) as f64;
                     METRICS_CONNECTIONS
@@ -423,7 +446,46 @@ impl Scheduler {
                         .observe(drift_ms);
 
                     let job_start = std::time::Instant::now();
-                    let result = wake_up_device(job_id, device_id, &db, tx).await;
+
+                    // Spawn the task so it can be aborted externally if a debug session
+                    // takes over the device while retries are in progress.
+                    let db_for_task = db.clone();
+                    let handle = tokio::spawn(async move {
+                        wake_up_device(job_id, device_id, &db_for_task, tx).await
+                    });
+                    active_tasks
+                        .lock()
+                        .expect("active_tasks lock poisoned")
+                        .insert(device_id, handle.abort_handle());
+
+                    let result = match handle.await {
+                        Ok(res) => res,
+                        Err(e) if e.is_cancelled() => {
+                            info!(
+                                "[Job {:#x}] wake-up task aborted — debug session took over",
+                                job_id
+                            );
+                            active_tasks
+                                .lock()
+                                .expect("active_tasks lock poisoned")
+                                .remove(&device_id);
+                            return;
+                        }
+                        Err(e) => {
+                            error!("[Job {:#x}] wake-up task panicked: {}", job_id, e);
+                            active_tasks
+                                .lock()
+                                .expect("active_tasks lock poisoned")
+                                .remove(&device_id);
+                            return;
+                        }
+                    };
+
+                    active_tasks
+                        .lock()
+                        .expect("active_tasks lock poisoned")
+                        .remove(&device_id);
+
                     let elapsed_ms = job_start.elapsed().as_millis() as f64;
                     METRICS_CONNECTIONS
                         .hes_scheduler_job_execution_duration_ms

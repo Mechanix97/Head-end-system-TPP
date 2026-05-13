@@ -77,16 +77,18 @@ pub async fn handle_session_start(
 
     info!("[debug] session starting — device {device_id} at {addr}");
 
-    // Cancel pending scheduler job so the normal path doesn't race with us.
-    match device_manager
-        .write()
-        .await
-        .cancel_wakeup_job(device_id)
-        .await
+    // Cancel the pending scheduler job and abort any already-running wake-up task
+    // so the normal path doesn't race with the debug session.
     {
-        Ok(true) => info!("[debug] cancelled wake-up job for device {device_id}"),
-        Ok(false) => info!("[debug] no pending job to cancel for device {device_id}"),
-        Err(e) => warn!("[debug] failed to cancel job for device {device_id}: {e}"),
+        let mut dm = device_manager.write().await;
+        match dm.cancel_wakeup_job(device_id).await {
+            Ok(true) => info!("[debug] cancelled wake-up job for device {device_id}"),
+            Ok(false) => info!("[debug] no pending job to cancel for device {device_id}"),
+            Err(e) => warn!("[debug] failed to cancel job for device {device_id}: {e}"),
+        }
+        if dm.abort_active_wakeup(device_id) {
+            info!("[debug] aborted running wake-up task for device {device_id}");
+        }
     }
 
     // Schedule the next wakeup before the session so we can tell the device the real time.
