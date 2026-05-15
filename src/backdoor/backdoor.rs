@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::codec::Decoder;
 use tokio_util::codec::Encoder;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::BackdoorError;
@@ -57,6 +57,9 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
     let ack_timeout_duration = ack_timeout_duration.unwrap_or(ACK_TIMEOUT_DURATION_MS);
     let max_handlers = max_concurrent_handlers.unwrap_or(DEFAULT_MAX_CONCURRENT_HANDLERS);
     let semaphore = Arc::new(Semaphore::new(max_handlers));
+
+    #[cfg(feature = "debug-session-start")]
+    let debug_router = crate::debug_session::new_router();
 
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         let mut buf = vec![0u8; UDP_BUFFER_SIZE];
@@ -112,9 +115,29 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                 }
             };
 
+            debug!(
+                msg_type = msg.msg_type.as_str(),
+                device_id = %Uuid::from_u128(msg.device_id),
+                seq = msg.seq,
+                bytes = len,
+                "← {addr}",
+            );
+
+            #[cfg(feature = "debug-session-start")]
+            if crate::debug_session::try_route(&debug_router, addr, &msg).await {
+                continue;
+            }
+
             match msg.msg_type {
                 MsgType::RegisterRequest => {
-                    info!("RegisterRequest received");
+                    if msg.device_id == 0 {
+                        info!("RegisterRequest from {addr} — new device registration");
+                    } else {
+                        info!(
+                            "RegisterRequest from {addr} — IP update for device {}",
+                            Uuid::from_u128(msg.device_id)
+                        );
+                    }
                     METRICS_CONNECTIONS
                         .messages_total
                         .with_label_values(&["register_request", "inbound"])
@@ -186,7 +209,7 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                     }
                 }
                 MsgType::Ack => {
-                    info!("Ack received");
+                    info!("Ack from {addr} — device {}", Uuid::from_u128(msg.device_id));
                     METRICS_CONNECTIONS
                         .messages_total
                         .with_label_values(&["ack", "inbound"])
@@ -217,8 +240,55 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                     });
                 }
 
+                #[cfg(feature = "debug-session-start")]
+                MsgType::SessionStartRequest => {
+                    // Discard duplicate while a session is already active for this addr.
+                    // Without this guard, two concurrent tasks would race on the router
+                    // entry and both fail with "channel closed".
+                    if debug_router.read().await.contains_key(&addr) {
+                        debug!(
+                            device_id = %Uuid::from_u128(msg.device_id),
+                            seq = msg.seq,
+                            "SESSION_START_REQUEST dropped — session already active for {addr}",
+                        );
+                        continue;
+                    }
+                    info!(
+                        "SessionStartRequest from {addr} — device {} seq={}",
+                        Uuid::from_u128(msg.device_id),
+                        msg.seq
+                    );
+                    METRICS_CONNECTIONS
+                        .messages_total
+                        .with_label_values(&["session_start_request", "inbound"])
+                        .inc();
+                    let socket = current_socket.clone();
+                    let database = database.clone();
+                    let device_manager = device_manager.clone();
+                    let router = debug_router.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::debug_session::handle_session_start(
+                            socket,
+                            msg,
+                            addr,
+                            database,
+                            device_manager,
+                            router,
+                        )
+                        .await
+                        {
+                            warn!("debug session error: {e}");
+                        }
+                    });
+                }
+
                 _ => {
-                    warn!("Received incompatible msg in backdoor: {:?}", msg.msg_type);
+                    warn!(
+                        "Received incompatible msg {:?} (0x{:02x}) from {addr} — device {}",
+                        msg.msg_type,
+                        msg.msg_type.code(),
+                        Uuid::from_u128(msg.device_id),
+                    );
                     METRICS_CONNECTIONS
                         .errors_total
                         .with_label_values(&["backdoor", "invalid_msg_type"])
@@ -482,6 +552,12 @@ async fn handle_backdoor_ip_update_msg(
 /// Encodes and sends a message to the given address, logging any errors.
 async fn send_msg(socket: &UdpSocket, msg: Message, addr: SocketAddr) {
     let label = msg.msg_type.as_str();
+    debug!(
+        msg_type = label,
+        device_id = %Uuid::from_u128(msg.device_id),
+        seq = msg.seq,
+        "→ {addr}",
+    );
     let mut buf = BytesMut::with_capacity(1024);
     match MessageCodec.encode(msg, &mut buf) {
         Err(err) => {
@@ -499,6 +575,7 @@ async fn send_msg(socket: &UdpSocket, msg: Message, addr: SocketAddr) {
                     .with_label_values(&["backdoor", label])
                     .inc();
             } else {
+                debug!(bytes = buf.len(), "→ {addr} sent");
                 METRICS_CONNECTIONS
                     .messages_total
                     .with_label_values(&[label, "outbound"])
