@@ -64,6 +64,11 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
     let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
         let mut buf = vec![0u8; UDP_BUFFER_SIZE];
         let mut current_socket = socket;
+        // When all rebind senders are dropped, `changed()` resolves immediately
+        // with Err forever. Without this guard the select! arm would be
+        // permanently ready and busy-spin, starving handler tasks on a
+        // single-threaded runtime. Disable the arm once the channel is closed.
+        let mut rebind_active = true;
         loop {
             let (len, addr) = tokio::select! {
                 biased;
@@ -74,7 +79,11 @@ pub async fn init_backdoor(cfg: BackdoorConfig) -> Result<JoinHandle<()>, Backdo
                         continue;
                     }
                 },
-                _ = rebind_rx.changed() => {
+                changed = rebind_rx.changed(), if rebind_active => {
+                    if changed.is_err() {
+                        rebind_active = false;
+                        continue;
+                    }
                     let (new_ip, new_port) = rebind_rx.borrow().clone();
                     match UdpSocket::bind(format!("{new_ip}:{new_port}")).await {
                         Ok(s) => {
@@ -653,8 +662,13 @@ mod tests {
             db.clone(),
             scheduler,
         )));
-        let (_, rebind_rx) =
+        // Keep the rebind Sender alive so `changed()` stays Pending, matching
+        // production (where the Sender lives in the RPC state). Dropping it
+        // makes `changed()` resolve with Err immediately, which the backdoor
+        // loop now tolerates but which would not reflect real operation.
+        let (rebind_tx, rebind_rx) =
             tokio::sync::watch::channel(("0.0.0.0".to_string(), backdoor_port.to_string()));
+        std::mem::forget(rebind_tx);
         init_backdoor(BackdoorConfig {
             ip: "0.0.0.0".to_string(),
             port: backdoor_port.to_string(),
