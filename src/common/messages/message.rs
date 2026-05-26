@@ -271,6 +271,8 @@ pub enum MsgType {
     Ack,
     /// Generic failure / rejection (0xFE)
     Nack,
+    /// Debug-only: device-initiated session trigger (0xF0)
+    SessionStartRequest,
 }
 
 impl MsgType {
@@ -291,6 +293,7 @@ impl MsgType {
             MsgType::ActionResponse => "action_response",
             MsgType::Ack => "ack",
             MsgType::Nack => "nack",
+            MsgType::SessionStartRequest => "session_start_request",
         }
     }
 
@@ -311,6 +314,7 @@ impl MsgType {
             MsgType::ActionResponse => 0x29,
             MsgType::Ack => 0xFF,
             MsgType::Nack => 0xFE,
+            MsgType::SessionStartRequest => 0xF0,
         }
     }
 
@@ -333,6 +337,7 @@ impl MsgType {
             0x29 => Ok(MsgType::ActionResponse),
             0xFE => Ok(MsgType::Nack),
             0xFF => Ok(MsgType::Ack),
+            0xF0 => Ok(MsgType::SessionStartRequest),
             _ => Err(MsgCodecError::UnknownMsgType),
         }
     }
@@ -358,6 +363,7 @@ pub enum MessagePayload {
     ActionResponse(ActionResponseMessage),
     Ack,
     Nack(NackMessage),
+    SessionStartRequest,
 }
 
 impl MessagePayload {
@@ -381,6 +387,7 @@ impl MessagePayload {
             MessagePayload::ActionResponse(msg) => msg.encode(buf),
             MessagePayload::Ack => Ok(()),
             MessagePayload::Nack(msg) => msg.encode(buf),
+            MessagePayload::SessionStartRequest => Ok(()),
         }
     }
 
@@ -401,6 +408,7 @@ impl MessagePayload {
             0x29 => Ok(MessagePayload::ActionResponse(ActionResponseMessage::decode(msg_data)?)),
             0xFE => Ok(MessagePayload::Nack(NackMessage::decode(msg_data)?)),
             0xFF => Ok(MessagePayload::Ack),
+            0xF0 => Ok(MessagePayload::SessionStartRequest),
             _ => Err(MsgCodecError::UnknownMsgType),
         }
     }

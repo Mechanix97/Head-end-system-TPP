@@ -79,5 +79,8 @@ serde_yaml = "0.9"
 serde_json = "1"
 rlp = "0.6"
 
+[features]
+debug-session-start = ["backdoor/debug-session-start"]
+
 [lints.clippy]
 unwrap_used = "deny"

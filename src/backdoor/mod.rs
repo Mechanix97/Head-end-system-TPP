@@ -1,4 +1,6 @@
 pub mod backdoor;
+#[cfg(feature = "debug-session-start")]
+pub mod debug_session;
 
 use common::{database::DatabaseError, messages::MessageError};
 use device_manager::DeviceManagerError;

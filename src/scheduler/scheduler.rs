@@ -1,7 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
+use tokio::task::AbortHandle;
 
 use chrono::NaiveDateTime;
 use chrono::{Datelike, Timelike, Utc};
@@ -11,7 +13,7 @@ use uuid::Uuid;
 
 use crate::error::SchedulerError;
 
-const TEST_MODE_WAKEUP_SECS: i64 = 300;
+const TEST_MODE_WAKEUP_SECS: i64 = 150;
 use crate::schedule::Schedule;
 use crate::task::wake_up_device::wake_up_device;
 use common::database::api::Database;
@@ -44,6 +46,9 @@ pub struct Scheduler {
     reschedule_tx: Option<mpsc::Sender<Uuid>>,
     /// When true, all connections are scheduled within 5 minutes instead of normal daily buckets
     test_mode: bool,
+    /// AbortHandles for wake_up_device tasks that are currently executing.
+    /// Keyed by device_id so a debug session can abort a running task before taking over.
+    active_tasks: Arc<Mutex<HashMap<Uuid, AbortHandle>>>,
 }
 
 impl Scheduler {
@@ -68,6 +73,7 @@ impl Scheduler {
             local_node_id,
             reschedule_tx: None,
             test_mode,
+            active_tasks: Arc::new(Mutex::new(HashMap::new())),
         };
         scheduler.start().await?;
 
@@ -135,7 +141,14 @@ impl Scheduler {
         let db_elapsed = db_start.elapsed().as_millis() as f64;
         METRICS_CONNECTIONS
             .hes_db_query_duration_ms
-            .with_label_values(&["get_scheduled_connections", if connections_result.is_ok() { "ok" } else { "error" }])
+            .with_label_values(&[
+                "get_scheduled_connections",
+                if connections_result.is_ok() {
+                    "ok"
+                } else {
+                    "error"
+                },
+            ])
             .observe(db_elapsed);
 
         let scheduled_connections = connections_result.map_err(|e| {
@@ -196,6 +209,22 @@ impl Scheduler {
             .set(overdue_count);
 
         Ok(())
+    }
+
+    /// Cancel a pending wake-up job for a device.
+    ///
+    /// Returns `Ok(true)` if a job was removed, `Ok(false)` if none was scheduled.
+    pub async fn cancel_wakeup_job(&mut self, device_id: Uuid) -> Result<bool, SchedulerError> {
+        let conn = self.database.get_scheduled_connection(device_id).await?;
+        let Some(job_id) = conn.job_id else {
+            return Ok(false);
+        };
+        self.job_scheduler.remove(&job_id).await?;
+        let mut conn = conn;
+        conn.job_id = None;
+        conn.renewable = false;
+        self.database.update_scheduled_connection(&conn).await?;
+        Ok(true)
     }
 
     pub async fn schedule_next_wakeup_job(
@@ -319,6 +348,21 @@ impl Scheduler {
         self.owned_devices = Some(owned_devices);
     }
 
+    /// Aborts the `wake_up_device` task currently running for `device_id`, if any.
+    ///
+    /// Returns `true` if a task was found and aborted, `false` if none was running.
+    /// The aborted task receives a cancellation signal at its next `.await` point and
+    /// exits cleanly without updating metrics or the database.
+    pub fn abort_active_wakeup(&self, device_id: Uuid) -> bool {
+        let mut tasks = self.active_tasks.lock().expect("active_tasks lock poisoned");
+        if let Some(handle) = tasks.remove(&device_id) {
+            handle.abort();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Sets the sender side of the reschedule channel.
     ///
     /// After a successful periodic session, `wake_up_device` sends the device UUID
@@ -384,6 +428,7 @@ impl Scheduler {
     ) -> Result<Uuid, SchedulerError> {
         let database = self.database.clone();
         let reschedule_tx = self.reschedule_tx.clone();
+        let active_tasks = self.active_tasks.clone();
 
         let job = Job::new_async_tz(
             next_wake_up.format("%S %M %H %d %m * %Y").to_string(),
@@ -391,8 +436,9 @@ impl Scheduler {
             move |job_id, _l| {
                 let db = database.clone();
                 let tx = reschedule_tx.clone();
+                let active_tasks = active_tasks.clone();
                 Box::pin(async move {
-                    // Measure how late the job fired vs its scheduled time
+                    // Measure how late the job fired vs its scheduled time.
                     let actual_now = Utc::now().naive_utc();
                     let drift_ms = (actual_now - next_wake_up).num_milliseconds().max(0) as f64;
                     METRICS_CONNECTIONS
@@ -400,7 +446,46 @@ impl Scheduler {
                         .observe(drift_ms);
 
                     let job_start = std::time::Instant::now();
-                    let result = wake_up_device(job_id, device_id, &db, tx).await;
+
+                    // Spawn the task so it can be aborted externally if a debug session
+                    // takes over the device while retries are in progress.
+                    let db_for_task = db.clone();
+                    let handle = tokio::spawn(async move {
+                        wake_up_device(job_id, device_id, &db_for_task, tx).await
+                    });
+                    active_tasks
+                        .lock()
+                        .expect("active_tasks lock poisoned")
+                        .insert(device_id, handle.abort_handle());
+
+                    let result = match handle.await {
+                        Ok(res) => res,
+                        Err(e) if e.is_cancelled() => {
+                            info!(
+                                "[Job {:#x}] wake-up task aborted — debug session took over",
+                                job_id
+                            );
+                            active_tasks
+                                .lock()
+                                .expect("active_tasks lock poisoned")
+                                .remove(&device_id);
+                            return;
+                        }
+                        Err(e) => {
+                            error!("[Job {:#x}] wake-up task panicked: {}", job_id, e);
+                            active_tasks
+                                .lock()
+                                .expect("active_tasks lock poisoned")
+                                .remove(&device_id);
+                            return;
+                        }
+                    };
+
+                    active_tasks
+                        .lock()
+                        .expect("active_tasks lock poisoned")
+                        .remove(&device_id);
+
                     let elapsed_ms = job_start.elapsed().as_millis() as f64;
                     METRICS_CONNECTIONS
                         .hes_scheduler_job_execution_duration_ms
@@ -442,6 +527,88 @@ impl Scheduler {
         })?;
 
         Ok(job_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use common::database::{DatabaseConfig, api::Database};
+
+    async fn make_scheduler() -> Scheduler {
+        let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
+        Scheduler::new(1, db, Uuid::new_v4(), false).await.unwrap()
+    }
+
+    // --- abort_active_wakeup ---
+
+    #[tokio::test]
+    async fn abort_returns_false_when_no_task_running() {
+        let scheduler = make_scheduler().await;
+        assert!(!scheduler.abort_active_wakeup(Uuid::new_v4()));
+    }
+
+    #[tokio::test]
+    async fn abort_returns_true_and_cancels_task() {
+        let scheduler = make_scheduler().await;
+        let device_id = Uuid::new_v4();
+
+        // Simulate a long-running wake_up_device by spawning a task that sleeps forever.
+        let handle = tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        });
+        let abort_handle = handle.abort_handle();
+        scheduler.active_tasks.lock().unwrap().insert(device_id, abort_handle);
+
+        assert!(scheduler.abort_active_wakeup(device_id));
+
+        // The spawned task should have been cancelled.
+        assert!(handle.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn abort_removes_entry_so_second_call_returns_false() {
+        let scheduler = make_scheduler().await;
+        let device_id = Uuid::new_v4();
+
+        let handle = tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        });
+        scheduler.active_tasks.lock().unwrap().insert(device_id, handle.abort_handle());
+
+        assert!(scheduler.abort_active_wakeup(device_id));
+        assert!(!scheduler.abort_active_wakeup(device_id)); // entry already gone
+
+        handle.abort(); // cleanup so the test doesn't leak the task
+    }
+
+    #[tokio::test]
+    async fn abort_only_targets_the_specified_device() {
+        let scheduler = make_scheduler().await;
+        let device_a = Uuid::new_v4();
+        let device_b = Uuid::new_v4();
+
+        let handle_a = tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        });
+        let handle_b = tokio::spawn(async {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        });
+        {
+            let mut tasks = scheduler.active_tasks.lock().unwrap();
+            tasks.insert(device_a, handle_a.abort_handle());
+            tasks.insert(device_b, handle_b.abort_handle());
+        }
+
+        // Abort only device_a.
+        assert!(scheduler.abort_active_wakeup(device_a));
+
+        // device_b's task should still be running.
+        assert!(!handle_b.is_finished());
+        assert_eq!(scheduler.active_tasks.lock().unwrap().len(), 1);
+
+        handle_b.abort(); // cleanup
     }
 }
 
