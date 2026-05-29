@@ -78,7 +78,18 @@ impl ClusterManager {
     pub async fn start(&mut self) -> Result<(), ClusterError> {
         info!("Starting cluster manager for node {}", self.config.node_id);
 
-        // 1. Load device ownership from database; if first node, also claim all devices
+        // 1. Register this node first so T_NODES has the row before any T_BUCKETS FK write
+        self.database
+            .register_cluster_node(
+                self.config.node_id,
+                self.config.node_name.clone(),
+                self.config.cluster_ip.clone(),
+                self.config.cluster_port as i32,
+                self.config.backdoor_port as i32,
+            )
+            .await?;
+
+        // 2. Load device ownership from database; if first node, also claim all devices
         {
             let mut dm = self.device_manager.write().await;
             dm.load_from_database().await?;
@@ -90,21 +101,10 @@ impl ClusterManager {
             }
         }
 
-        // 2. If joining an existing cluster, contact seed nodes
+        // 3. If joining an existing cluster, contact seed nodes
         if !self.config.cluster_seeds.is_empty() {
             self.join_cluster().await?;
         }
-
-        // Register this node in the database
-        self.database
-            .register_cluster_node(
-                self.config.node_id,
-                self.config.node_name.clone(),
-                self.config.cluster_ip.clone(),
-                self.config.cluster_port as i32,
-                self.config.backdoor_port as i32,
-            )
-            .await?;
 
         // Set local node status to active
         {
