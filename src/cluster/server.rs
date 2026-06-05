@@ -312,14 +312,6 @@ async fn handle_heartbeat(
         node.load_percent = heartbeat.load_percent.into();
         node.max_device_suggested = heartbeat.max_device_suggested;
         node.update_heartbeat();
-        METRICS_CLUSTER
-            .cluster_node_devices
-            .with_label_values(&[&node_id.to_string()])
-            .set(i64::from(heartbeat.device_count));
-        METRICS_CLUSTER
-            .cluster_node_load_percent
-            .with_label_values(&[&node_id.to_string()])
-            .set(i64::from(heartbeat.load_percent));
     } else {
         // New node - add to membership
         let node = NodeInfo {
@@ -632,9 +624,6 @@ async fn handle_node_dead(
         .with_label_values(&["suspect", "dead"])
         .inc();
     METRICS_CLUSTER.hes_cluster_suspect_nodes.dec();
-    let dead_node_id_str = dead.dead_node_id.to_string();
-    let _ = METRICS_CLUSTER.cluster_node_devices.remove_label_values(&[&dead_node_id_str]);
-    let _ = METRICS_CLUSTER.cluster_node_load_percent.remove_label_values(&[&dead_node_id_str]);
 
     // Update node status in database to "dead"
     database

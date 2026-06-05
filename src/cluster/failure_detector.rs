@@ -161,9 +161,6 @@ async fn handle_dead_node(
         .with_label_values(&["suspect", "dead"])
         .inc();
     METRICS_CLUSTER.hes_cluster_suspect_nodes.dec();
-    let dead_node_id_str = node_id.to_string();
-    let _ = METRICS_CLUSTER.cluster_node_devices.remove_label_values(&[&dead_node_id_str]);
-    let _ = METRICS_CLUSTER.cluster_node_load_percent.remove_label_values(&[&dead_node_id_str]);
 
     // Update node status in database
     if let Err(e) = database.update_cluster_node_status(node_id, "dead").await {
