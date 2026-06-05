@@ -640,8 +640,19 @@ async fn handle_node_dead(
     };
 
     // Participate in redistribution of devices
-    let mut dm = device_manager.write().await;
-    dm.redistribute_from_failed(dead.dead_node_id, other_active_nodes).await?;
+    {
+        let mut dm = device_manager.write().await;
+        dm.redistribute_from_failed(dead.dead_node_id, other_active_nodes).await?;
+    }
+
+    // Sync membership local stats so heartbeat exports reflect the new load.
+    {
+        let dm = device_manager.read().await;
+        let new_count = dm.device_count() as u32;
+        let mut m = membership.write().await;
+        let bucket_count = m.local_node().bucket_count;
+        m.update_local_stats(bucket_count, new_count);
+    }
 
     // Remove from membership (in-memory only)
     let mut m = membership.write().await;

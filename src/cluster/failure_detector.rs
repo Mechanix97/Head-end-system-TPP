@@ -199,6 +199,15 @@ async fn handle_dead_node(
         warn!("Failed to redistribute devices from dead node: {}", e);
     }
 
+    // Sync membership local stats so heartbeat exports reflect the new load.
+    {
+        let dm = device_manager.read().await;
+        let new_count = dm.device_count() as u32;
+        let mut m = membership.write().await;
+        let bucket_count = m.local_node().bucket_count;
+        m.update_local_stats(bucket_count, new_count);
+    }
+
     // Remove node from membership list
     let removed = {
         let mut membership = membership.write().await;
