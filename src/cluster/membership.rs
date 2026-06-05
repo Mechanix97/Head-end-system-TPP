@@ -128,6 +128,7 @@ impl MembershipList {
             );
             self.nodes.insert(node.node_id, node);
         }
+        self.sync_nodes_active_metric();
     }
 
     /// Updates a node's heartbeat timestamp.
@@ -143,6 +144,7 @@ impl MembershipList {
             if node.status == NodeStatus::Active {
                 warn!("Marking node {} as suspect", node.node_name);
                 node.status = NodeStatus::Suspect;
+                self.sync_nodes_active_metric();
             }
         }
     }
@@ -152,12 +154,20 @@ impl MembershipList {
         if let Some(node) = self.nodes.get_mut(&node_id) {
             warn!("Marking node {} as dead", node.node_name);
             node.status = NodeStatus::Dead;
+            self.sync_nodes_active_metric();
         }
     }
 
     /// Removes a dead node from the list.
     pub fn remove_node(&mut self, node_id: Uuid) -> Option<NodeInfo> {
-        self.nodes.remove(&node_id)
+        let node = self.nodes.remove(&node_id);
+        self.sync_nodes_active_metric();
+        node
+    }
+
+    fn sync_nodes_active_metric(&self) {
+        let active = self.nodes.values().filter(|n| n.status == NodeStatus::Active).count();
+        METRICS_CLUSTER.cluster_nodes_active.set(active as i64);
     }
 
     /// Gets nodes that have exceeded the suspect timeout.
