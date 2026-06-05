@@ -5,4 +5,9 @@ global:
 scrape_configs:
   - job_name: 'headend_app'
     static_configs:
-      - targets: ['127.0.0.1:6464']
+      - targets:
+          - '127.0.0.1:6464'        # node-1 (server)
+          - '100.93.152.61:6464'    # node-2
+          - '100.93.152.61:6465'    # node-3
+          - '100.122.28.56:6464'    # node-2
+          - '100.122.28.56:6465'    # node-3

@@ -10,6 +10,8 @@ use tokio::sync::RwLock;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use metrics::metrics_cluster::METRICS_CLUSTER;
+
 use crate::error::ClusterError;
 use crate::node::{ClusterConfig, NodeInfo, NodeStatus};
 use crate::protocol::{ClusterMessage, ClusterMessageCodec, HeartbeatPayload, NodeJoinPayload};
@@ -190,6 +192,17 @@ impl MembershipList {
 
     /// Creates a heartbeat payload for this node.
     pub fn create_heartbeat_payload(&self) -> HeartbeatPayload {
+        // Export this node's own load with the const `node_id` label so that a
+        // single Prometheus can build the per-node view by aggregating across
+        // instances. (Replaces the old `cluster_node_*` gauges that carried a
+        // variable `node_id` label colliding with the registry const label.)
+        METRICS_CLUSTER
+            .cluster_devices_owned
+            .set(i64::from(self.local_node.device_count));
+        METRICS_CLUSTER
+            .cluster_buckets_owned
+            .set(i64::from(self.local_node.bucket_count));
+
         HeartbeatPayload {
             status: self.local_node.status,
             bucket_count: self.local_node.bucket_count as u16,

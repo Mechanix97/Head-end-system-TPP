@@ -1,0 +1,274 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Overview",     "url": "/d/hes-overview",     "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Cluster",      "url": "/d/hes-cluster",      "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Devices",      "url": "/d/hes-devices",      "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Reliability",  "url": "/d/hes-reliability",  "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Performance",  "url": "/d/hes-performance",  "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Scheduler",    "url": "/d/hes-scheduler",    "type": "link", "icon": "external link", "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "type": "row", "id": 100, "title": "Message Traffic", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
+    },
+    {
+      "type": "stat", "id": 1, "title": "Message Rate (1m)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [], "unit": "reqps",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(rate(messages_total{node_id=~\"$node_id\"}[1m]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 2, "title": "Decode Errors (total)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 10 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_message_decode_errors_total{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 3, "title": "Replay Attacks Detected",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "red", "value": 1 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_sequence_replay_detected_total{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 4, "title": "MAC Verifications (total)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_mac_verification_total{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 10, "title": "Message Rate by Type",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (msg_type, direction) (rate(messages_total{node_id=~\"$node_id\"}[1m]))",
+        "legendFormat": "{{msg_type}} ({{direction}})", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 11, "title": "Message Size by Type (bytes, avg)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "bytes",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 2,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code",
+        "expr": "sum by (msg_type) (rate(hes_message_size_bytes_sum{node_id=~\"$node_id\"}[5m])) / sum by (msg_type) (rate(hes_message_size_bytes_count{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "{{msg_type}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "row", "id": 101, "title": "Decode Quality", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 }, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 20, "title": "Decode Error Rate by Kind",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["sum", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (error_kind) (rate(hes_message_decode_errors_total{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "{{error_kind}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 21, "title": "MAC Verification Outcomes",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "valid" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "invalid" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "skipped" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (result) (rate(hes_mac_verification_total{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "{{result}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "row", "id": 102, "title": "OBIS Codes", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 }, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 30, "title": "OBIS Read Rate by Code",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 14, "x": 0, "y": 23 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (obis_code) (rate(hes_obis_read_total{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "{{obis_code}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 31, "title": "OBIS Reads (total)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 5, "x": 14, "y": 23 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_obis_read_total{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "piechart", "id": 32, "title": "OBIS Read Distribution",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 5, "x": 19, "y": 23 },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "mappings": [] },
+        "overrides": []
+      },
+      "options": {
+        "displayLabels": ["percent"], "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "pieType": "donut", "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (obis_code) (increase(hes_obis_read_total{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "{{obis_code}}", "range": false, "instant": true, "refId": "A" }]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["hes", "protocol"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(messages_total, node_id)",
+        "hide": 0, "includeAll": true, "multi": true, "name": "node_id",
+        "options": [], "query": "label_values(messages_total, node_id)",
+        "refresh": 2, "sort": 1, "type": "query", "label": "Node"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "HES — Protocol",
+  "uid": "hes-protocol",
+  "version": 1
+}

@@ -1,0 +1,357 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Overview",     "url": "/d/hes-overview",     "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Cluster",      "url": "/d/hes-cluster",      "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Protocol",     "url": "/d/hes-protocol",     "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Reliability",  "url": "/d/hes-reliability",  "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Performance",  "url": "/d/hes-performance",  "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Scheduler",    "url": "/d/hes-scheduler",    "type": "link", "icon": "external link", "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "type": "row", "id": 100, "title": "Active Sessions", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
+    },
+    {
+      "type": "stat", "id": 1, "title": "Active Sessions",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(hes_device_session_active{node_id=~\"$node_id\"})",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 2, "title": "Scheduled Devices",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(scheduled_devices_total{node_id=~\"$node_id\"})",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 3, "title": "Session Success Rate (1h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [], "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red", "value": null },
+            { "color": "yellow", "value": 0.8 },
+            { "color": "green", "value": 0.95 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code",
+        "expr": "sum(increase(hes_device_connection_outcome_total{node_id=~\"$node_id\",outcome=\"success\"}[1h])) / sum(increase(hes_device_connection_outcome_total{node_id=~\"$node_id\"}[1h]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 4, "title": "Total Retries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 10 },
+            { "color": "red", "value": 50 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_device_retry_count_total{node_id=~\"$node_id\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 5, "title": "Overdue Devices",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 10 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(hes_scheduler_overdue_devices_total{node_id=~\"$node_id\"})",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 6, "title": "Periodic Attempts (1h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(connections_tracker{node_id=~\"$node_id\",type=\"periodic_attempt\"}[1h]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "row", "id": 101, "title": "Session Outcomes", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "panels": []
+    },
+    {
+      "type": "timeseries", "id": 10, "title": "Session Outcomes over Time",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "success" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "max_retries" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "no_ip" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "fixedColor": "dark-red", "mode": "fixed" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (outcome) (rate(hes_device_connection_outcome_total{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "{{outcome}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 11, "title": "Retry Rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(rate(hes_device_retry_count_total{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "retries/s", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "row", "id": 102, "title": "Registration", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }, "panels": []
+    },
+    {
+      "type": "stat", "id": 20, "title": "Successful Registrations",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 15 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_registration_total{node_id=~\"$node_id\",outcome=\"success\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 21, "title": "ACK Timeouts",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 15 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 10 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_registration_total{node_id=~\"$node_id\",outcome=\"ack_timeout\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 22, "title": "Registration DB Errors",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 15 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "red", "value": 1 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum(increase(hes_registration_total{node_id=~\"$node_id\",outcome=\"db_error\"}[$__range]))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "stat", "id": 23, "title": "ACK Response Time P95 (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 15 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" }, "mappings": [], "unit": "ms",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 100 },
+            { "color": "red", "value": 500 }
+          ]}
+        }, "overrides": []
+      },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "11.0.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(hes_registration_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+        "legendFormat": "", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 30, "title": "Registration Outcomes over Time",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "success" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "ack_timeout" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "db_error" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "editorMode": "code", "expr": "sum by (outcome) (rate(hes_registration_total{node_id=~\"$node_id\"}[5m]))",
+        "legendFormat": "{{outcome}}", "range": true, "refId": "A" }]
+    },
+    {
+      "type": "timeseries", "id": 31, "title": "Registration Duration Percentiles (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }, "unit": "ms",
+          "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 2,
+            "showPoints": "never", "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" } },
+          "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }]}
+        }, "overrides": []
+      },
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.50, sum(rate(hes_registration_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p50", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.95, sum(rate(hes_registration_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p95", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code", "expr": "histogram_quantile(0.99, sum(rate(hes_registration_duration_ms_bucket{node_id=~\"$node_id\"}[5m])) by (le))",
+          "legendFormat": "p99", "range": true, "refId": "C" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["hes", "devices"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(scheduled_devices_total, node_id)",
+        "hide": 0, "includeAll": true, "multi": true, "name": "node_id",
+        "options": [], "query": "label_values(scheduled_devices_total, node_id)",
+        "refresh": 2, "sort": 1, "type": "query", "label": "Node"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "HES — Devices",
+  "uid": "hes-devices",
+  "version": 1
+}
