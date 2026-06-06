@@ -54,7 +54,7 @@
         "textMode": "auto", "wideLayout": true },
       "pluginVersion": "11.0.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "editorMode": "code", "expr": "sum(increase(hes_message_decode_errors_total{node_id=~\"$node_id\"}[$__range]))",
+        "editorMode": "code", "expr": "sum(hes_message_decode_errors_total{node_id=~\"$node_id\"})",
         "legendFormat": "", "range": true, "refId": "A" }]
     },
     {
