@@ -34,7 +34,7 @@
         "textMode": "auto", "wideLayout": true },
       "pluginVersion": "11.0.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "editorMode": "code", "expr": "sum(hes_cluster_nodes_total{node_id=~\"$node_id\"}) + 1",
+        "editorMode": "code", "expr": "count(hes_cluster_nodes_total{node_id=~\"$node_id\"})",
         "legendFormat": "", "range": true, "refId": "A" }]
     },
     {
@@ -160,7 +160,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "editorMode": "code", "expr": "hes_cluster_node_devices{node_id=~\"$node_id\"}",
+        "editorMode": "code", "expr": "hes_cluster_devices_owned{node_id=~\"$node_id\"}",
         "legendFormat": "{{node_id}}", "range": true, "refId": "A" }]
     },
     {
@@ -181,7 +181,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "editorMode": "code", "expr": "hes_cluster_node_buckets{node_id=~\"$node_id\"}",
+        "editorMode": "code", "expr": "hes_cluster_buckets_owned{node_id=~\"$node_id\"}",
         "legendFormat": "{{node_id}}", "range": true, "refId": "A" }]
     },
     {

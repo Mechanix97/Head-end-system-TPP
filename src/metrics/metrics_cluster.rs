@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry};
+use prometheus::{Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, Opts, Registry};
 
 use crate::MetricsError;
 
@@ -59,14 +59,6 @@ pub struct MetricsCluster {
     // Message metrics
     /// Total cluster messages by type (label: msg_type, direction)
     pub cluster_messages_total: IntCounterVec,
-
-    // Per-node metrics
-    /// Buckets per node (label: node_id)
-    pub cluster_node_buckets: IntGaugeVec,
-    /// Devices per node (label: node_id)
-    pub cluster_node_devices: IntGaugeVec,
-    /// Load percentage per node (label: node_id)
-    pub cluster_node_load_percent: IntGaugeVec,
 
     // ── Phase 2 — new cluster metrics ────────────────────────────────────────
     /// Node state transitions. Labels: (from ∈ {active,suspect}, to ∈ {suspect,dead}).
@@ -158,34 +150,6 @@ impl MetricsCluster {
         )
         .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
 
-        // Per-node metrics
-        let cluster_node_buckets = IntGaugeVec::new(
-            Opts::new(
-                "hes_cluster_node_buckets",
-                "Number of buckets per node",
-            ),
-            &["node_id"],
-        )
-        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-
-        let cluster_node_devices = IntGaugeVec::new(
-            Opts::new(
-                "hes_cluster_node_devices",
-                "Number of devices per node",
-            ),
-            &["node_id"],
-        )
-        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-
-        let cluster_node_load_percent = IntGaugeVec::new(
-            Opts::new(
-                "hes_cluster_node_load_percent",
-                "Load percentage per node (0-100)",
-            ),
-            &["node_id"],
-        )
-        .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-
         // ── Phase 2 ───────────────────────────────────────────────────────────
         let hes_cluster_state_changes_total = IntCounterVec::new(
             Opts::new(
@@ -247,15 +211,6 @@ impl MetricsCluster {
             .register(Box::new(cluster_messages_total.clone()))
             .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
-            .register(Box::new(cluster_node_buckets.clone()))
-            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-        registry
-            .register(Box::new(cluster_node_devices.clone()))
-            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-        registry
-            .register(Box::new(cluster_node_load_percent.clone()))
-            .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
-        registry
             .register(Box::new(hes_cluster_state_changes_total.clone()))
             .map_err(|e| MetricsError::PrometheusErr(e.to_string()))?;
         registry
@@ -278,9 +233,6 @@ impl MetricsCluster {
             cluster_delegations_total,
             cluster_rebalances_total,
             cluster_messages_total,
-            cluster_node_buckets,
-            cluster_node_devices,
-            cluster_node_load_percent,
             hes_cluster_state_changes_total,
             hes_cluster_suspect_nodes,
             hes_cluster_config_apply_duration_ms,

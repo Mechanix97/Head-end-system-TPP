@@ -161,9 +161,6 @@ async fn handle_dead_node(
         .with_label_values(&["suspect", "dead"])
         .inc();
     METRICS_CLUSTER.hes_cluster_suspect_nodes.dec();
-    let dead_node_id_str = node_id.to_string();
-    let _ = METRICS_CLUSTER.cluster_node_devices.remove_label_values(&[&dead_node_id_str]);
-    let _ = METRICS_CLUSTER.cluster_node_load_percent.remove_label_values(&[&dead_node_id_str]);
 
     // Update node status in database
     if let Err(e) = database.update_cluster_node_status(node_id, "dead").await {
@@ -200,6 +197,15 @@ async fn handle_dead_node(
 
     if let Err(e) = redistribute_result {
         warn!("Failed to redistribute devices from dead node: {}", e);
+    }
+
+    // Sync membership local stats so heartbeat exports reflect the new load.
+    {
+        let dm = device_manager.read().await;
+        let new_count = dm.device_count() as u32;
+        let mut m = membership.write().await;
+        let bucket_count = m.local_node().bucket_count;
+        m.update_local_stats(bucket_count, new_count);
     }
 
     // Remove node from membership list
