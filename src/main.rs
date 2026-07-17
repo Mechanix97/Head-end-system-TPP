@@ -171,26 +171,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     })
     .await?;
 
-    // Register this node in T_NODES before anything can write a T_BUCKETS row.
-    // Any bucket write (scheduler's add_device_to_bucket, or claim_all_devices'
-    // set_device_owner) sets fk_node = node_id, which the FK t_buckets_fk_node_fkey
-    // requires to already exist in T_NODES. This runs in every mode; the cluster
-    // manager later re-registers idempotently (ON CONFLICT (id) DO UPDATE).
-    let node_name = config.node_name.clone().unwrap_or_else(|| {
-        hostname::get()
-            .ok()
-            .and_then(|h| h.into_string().ok())
-            .unwrap_or_else(|| "hes-node".to_string())
-    });
-    db.register_cluster_node(
-        config.node_id,
-        node_name,
-        config.cluster_ip.clone(),
-        config.cluster_port as i32,
-        config.backdoor_port.parse().unwrap_or(6565),
-    )
-    .await?;
-
     let scheduler = Scheduler::new(config.buckets_number, db.clone(), config.node_id, config.test_mode).await?;
 
     let device_manager = Arc::new(RwLock::new(DeviceManager::new(
