@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -22,6 +22,18 @@ pub struct InnerDB {
     device_registration: HashMap<Uuid, (RegistrationStatus, NaiveDateTime)>,
     buckets: HashMap<Uuid, (i32, Uuid)>, // device_id -> (bucket_number, node_id)
     scheduled_connections: HashMap<Uuid, ScheduledConnection>,
+    nodes: HashSet<Uuid>, // registered node ids, models the T_NODES table
+}
+
+/// Builds the error a real Postgres backend raises when a T_BUCKETS write
+/// references a node id that is absent from T_NODES. Kept in one place so the
+/// in-memory engine faithfully models the `t_buckets_fk_node_fkey` constraint.
+fn fk_node_violation() -> DatabaseError {
+    DatabaseError::QueryError(
+        "insert or update on table \"t_buckets\" violates foreign key constraint \
+         \"t_buckets_fk_node_fkey\""
+            .to_string(),
+    )
 }
 
 #[async_trait::async_trait]
@@ -118,11 +130,13 @@ impl Engine for InMemoryDB {
         bucket_number: i32,
         node_id: Uuid,
     ) -> Result<(), DatabaseError> {
-        self.inner
-            .lock()
-            .await
-            .buckets
-            .insert(device_id, (bucket_number, node_id));
+        let mut lock = self.inner.lock().await;
+        // Mirror the T_BUCKETS.FK_NODE -> T_NODES foreign key: a bucket row can
+        // only reference a node that has been registered first.
+        if !lock.nodes.contains(&node_id) {
+            return Err(fk_node_violation());
+        }
+        lock.buckets.insert(device_id, (bucket_number, node_id));
         Ok(())
     }
 
@@ -239,15 +253,17 @@ impl Engine for InMemoryDB {
 
     async fn register_cluster_node(
         &self,
-        _node_id: Uuid,
+        node_id: Uuid,
         _node_name: String,
         _cluster_ip: String,
         _cluster_port: i32,
         _backdoor_port: i32,
     ) -> Result<(), DatabaseError> {
-        Err(DatabaseError::QueryError(
-            "Cluster operations are not supported in in-memory database. Use PostgreSQL for cluster mode.".to_string()
-        ))
+        // Multi-node cluster membership still requires PostgreSQL, but a node must
+        // be able to register itself so its own T_BUCKETS writes satisfy the
+        // fk_node constraint (this is what single-node in-memory mode relies on).
+        self.inner.lock().await.nodes.insert(node_id);
+        Ok(())
     }
 
     async fn get_active_cluster_nodes(&self) -> Result<Vec<(Uuid, String, String, i32, i32)>, DatabaseError> {
@@ -282,6 +298,11 @@ impl Engine for InMemoryDB {
 
     async fn set_device_owner(&self, device_id: Uuid, node_id: Uuid) -> Result<(), DatabaseError> {
         let mut lock = self.inner.lock().await;
+        // A no-op UPDATE (no matching bucket row) never trips the FK in Postgres,
+        // so only enforce the constraint when a row would actually be rewritten.
+        if lock.buckets.contains_key(&device_id) && !lock.nodes.contains(&node_id) {
+            return Err(fk_node_violation());
+        }
         if let Some(entry) = lock.buckets.get_mut(&device_id) {
             entry.1 = node_id;
         }
@@ -358,8 +379,68 @@ mod test {
     #![allow(clippy::unwrap_used)]
     use crate::database::{DatabaseConfig, api::Database};
     use crate::device::Device;
+    use uuid::Uuid;
 
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    /// Regression test for the `t_buckets_fk_node_fkey` violation.
+    ///
+    /// Writing a device into a bucket stamps it with a node id (fk_node), which
+    /// the foreign key requires to already exist in T_NODES. If the node was never
+    /// registered the write must fail — this is exactly the startup bug where a
+    /// node claimed/scheduled devices before registering itself.
+    #[tokio::test]
+    async fn add_device_to_bucket_requires_registered_node() {
+        let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
+        let device_id = Uuid::new_v4();
+        let node_id = Uuid::new_v4();
+
+        // Unregistered node -> FK violation, mirroring Postgres.
+        let err = db
+            .add_device_to_bucket(device_id, 0, node_id)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("t_buckets_fk_node_fkey"),
+            "expected the fk_node constraint to fire, got: {err}"
+        );
+
+        // After registering the node (as startup now does), the write succeeds.
+        db.register_cluster_node(node_id, "n".into(), "0.0.0.0".into(), 6570, 6565)
+            .await
+            .unwrap();
+        db.add_device_to_bucket(device_id, 0, node_id).await.unwrap();
+        assert_eq!(db.get_bucket_number(device_id).await.unwrap(), 0);
+    }
+
+    /// The claim path (`set_device_owner`) stamps existing bucket rows with the
+    /// claiming node's id, so it is subject to the same foreign key.
+    #[tokio::test]
+    async fn set_device_owner_requires_registered_node() {
+        let db = Database::new(DatabaseConfig::in_memory()).await.unwrap();
+        let device_id = Uuid::new_v4();
+        let owner = Uuid::new_v4();
+        let new_owner = Uuid::new_v4();
+
+        // Seed a bucket row owned by a registered node.
+        db.register_cluster_node(owner, "n".into(), "0.0.0.0".into(), 6570, 6565)
+            .await
+            .unwrap();
+        db.add_device_to_bucket(device_id, 0, owner).await.unwrap();
+
+        // Reassigning to an unregistered node must fail the fk_node constraint.
+        let err = db.set_device_owner(device_id, new_owner).await.unwrap_err();
+        assert!(
+            err.to_string().contains("t_buckets_fk_node_fkey"),
+            "expected the fk_node constraint to fire, got: {err}"
+        );
+
+        // Registering the node first makes the reassignment succeed.
+        db.register_cluster_node(new_owner, "n".into(), "0.0.0.0".into(), 6570, 6565)
+            .await
+            .unwrap();
+        db.set_device_owner(device_id, new_owner).await.unwrap();
+    }
 
     #[tokio::test]
     async fn test_devices() {
