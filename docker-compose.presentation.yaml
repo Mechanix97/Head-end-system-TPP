@@ -16,6 +16,11 @@ services:
       - --disable-cluster
       - --disable-rpc
       - --test-mode
+    environment:
+      # The protocol traffic (one line per message in and out, plus the session
+      # steps) is logged at debug level by the backdoor crate. Override with
+      # RUST_LOG=info make run-presentation for a quieter run.
+      - RUST_LOG=${RUST_LOG:-info,backdoor=debug,device_manager=debug}
     # The server reads stdin waiting for 'q'. Without an open stdin the read
     # hits EOF on every iteration and the main loop spins on the CPU.
     stdin_open: true
