@@ -209,7 +209,7 @@ async fn run_session_over_backdoor(
     for v in &data.values {
         debug!(
             code = v.code,
-            value = %v.value.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            value = %obis_value_decimal(&v.value),
             "READ_RESPONSE value",
         );
     }
@@ -264,6 +264,22 @@ async fn run_session_over_backdoor(
     }
 
     Ok(())
+}
+
+/// Renders an OBIS value as a decimal number.
+///
+/// Values travel as big-endian unsigned integers: 8 bytes for the water volume
+/// and the clock, 1 for the battery level. Anything that does not fit a u64 is
+/// not a number we can render, so it falls back to hex.
+fn obis_value_decimal(bytes: &[u8]) -> String {
+    if bytes.is_empty() || bytes.len() > 8 {
+        return bytes.iter().map(|b| format!("{b:02x}")).collect();
+    }
+    let mut value: u64 = 0;
+    for byte in bytes {
+        value = (value << 8) | u64::from(*byte);
+    }
+    value.to_string()
 }
 
 async fn send(socket: &UdpSocket, addr: SocketAddr, msg: Message) -> Result<(), BackdoorError> {
