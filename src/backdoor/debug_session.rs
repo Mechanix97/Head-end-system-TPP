@@ -13,7 +13,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::{RwLock, mpsc};
 use tokio::time::{Duration, timeout};
 use tokio_util::codec::Encoder;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::BackdoorError;
@@ -75,7 +75,7 @@ pub async fn handle_session_start(
 ) -> Result<(), BackdoorError> {
     let device_id = Uuid::from_u128(msg.device_id);
 
-    debug!("session starting — device {device_id} at {addr}");
+    info!("Session started — device {device_id} at {addr}");
 
     // Cancel the pending scheduler job and abort any already-running wake-up task
     // so the normal path doesn't race with the debug session.
@@ -128,10 +128,10 @@ pub async fn handle_session_start(
         run_session_over_backdoor(&socket, addr, device_id, &mut rx, &database, next_wake_ts)
             .await;
 
-    debug!(
-        "session ended — device {device_id}: {}",
-        if result.is_ok() { "ok" } else { "error" }
-    );
+    match &result {
+        Ok(()) => info!("Session ended — device {device_id}: ok"),
+        Err(e) => info!("Session ended — device {device_id}: error: {e}"),
+    }
 
     // Clean up the router entry.
     router.write().await.remove(&addr);
