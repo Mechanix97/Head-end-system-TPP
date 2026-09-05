@@ -1,5 +1,5 @@
 # Demo stack for the presentation: single node, in-memory DB, metrics on,
-# test mode (sessions within 5 min), no RPC. Run it with `make run-presentation`
+# test mode (frequent sessions), no RPC. Run it with `make run-presentation`
 # (project name hes-presentation, so it does not collide with the postgres stack).
 services:
   app:

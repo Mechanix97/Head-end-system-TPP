@@ -8,7 +8,7 @@ make run-docker-metrics ## runs the HES in a docker with metics
 
 make stop-docker-metrics ## stops the HES running in docker
 
-make run-presentation ## demo stack in docker: single node, in-memory DB, metrics, test mode (sessions within 5 min), no RPC
+make run-presentation ## demo stack in docker: single node, in-memory DB, metrics, test mode (frequent sessions), no RPC
 
 make logs-presentation ## follows the demo stack logs
 

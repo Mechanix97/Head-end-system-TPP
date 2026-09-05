@@ -44,7 +44,7 @@ pub struct Scheduler {
     pub local_node_id: Uuid,
     /// Channel to signal main.rs to reschedule a device after a successful session
     reschedule_tx: Option<mpsc::Sender<Uuid>>,
-    /// When true, all connections are scheduled within 5 minutes instead of normal daily buckets
+    /// When true, all connections are scheduled TEST_MODE_WAKEUP_SECS ahead instead of normal daily buckets
     test_mode: bool,
     /// AbortHandles for wake_up_device tasks that are currently executing.
     /// Keyed by device_id so a debug session can abort a running task before taking over.
@@ -63,7 +63,7 @@ impl Scheduler {
         test_mode: bool,
     ) -> Result<Self, SchedulerError> {
         if test_mode {
-            info!("Scheduler running in TEST MODE — all connections scheduled within 5 minutes");
+            info!("Scheduler running in TEST MODE — all connections scheduled within {} seconds", TEST_MODE_WAKEUP_SECS);
         }
         let mut scheduler = Self {
             bucket_number: bucket_number as i32,
@@ -251,7 +251,7 @@ impl Scheduler {
 
     /// Returns the next wakeup datetime for a device.
     ///
-    /// In test mode, returns `now + 5 minutes` regardless of bucket assignment.
+    /// In test mode, returns `now + TEST_MODE_WAKEUP_SECS` regardless of bucket assignment.
     /// In normal mode, converts the bucket number to the next scheduled time of day.
     fn next_wakeup(&self, bucket_number: usize) -> Result<NaiveDateTime, SchedulerError> {
         if self.test_mode {

@@ -102,8 +102,8 @@ struct Args {
     #[arg(long = "disable-rpc", help = "Disable the JSON-RPC admin console")]
     disable_rpc: bool,
 
-    /// Test mode: schedule all connections within 5 minutes instead of normal daily buckets
-    #[arg(long = "test-mode", help = "Schedule all connections within 5 minutes (for testing)")]
+    /// Test mode: schedule all connections a few minutes ahead instead of normal daily buckets
+    #[arg(long = "test-mode", help = "Schedule all connections a few minutes ahead instead of the daily buckets (for testing)")]
     test_mode: bool,
 
     /// JSON-RPC server bind IP

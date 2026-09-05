@@ -5,7 +5,7 @@ PRESENTATION := -p hes-presentation -f docker-compose.presentation.yaml
 build: ## Build the server
 	cargo build
 
-run: ## run the server (in-memory DB, no metrics, single-node, no RPC, test mode: connections within 5 min)
+run: ## run the server (in-memory DB, no metrics, single-node, no RPC, test mode: connections a few minutes ahead)
 	cargo run --features debug-session-start -- --disble-metrics --database=in-memory --disable-cluster --disable-rpc --test-mode
 
 run-debug: ## Run with debug-level logging for communication (backdoor + codec). Use RUST_LOG to override.

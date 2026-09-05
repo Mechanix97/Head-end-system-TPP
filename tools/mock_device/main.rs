@@ -2,7 +2,7 @@
 ///
 /// Registers with the HES backdoor and then keeps running as a UDP server,
 /// handling periodic sessions initiated by the HES (HANDSHAKE → READ → WRITE → ACK).
-/// Designed to be used with `make run` (which enables --test-mode, connecting every 5 min).
+/// Designed to be used with `make run` (which enables --test-mode, connecting every few minutes).
 ///
 /// Usage:
 ///   cargo run -p mock_device -- --backdoor-ip 127.0.0.1
