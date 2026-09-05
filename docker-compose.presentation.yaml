@@ -1,0 +1,49 @@
+# Demo stack for the presentation: single node, in-memory DB, metrics on,
+# test mode (sessions within 5 min), no RPC. Run it with `make run-presentation`
+# (project name hes-presentation, so it does not collide with the postgres stack).
+services:
+  app:
+    build:
+      context: .
+      dockerfile: dockerfile
+      args:
+        CARGO_FEATURES: debug-session-start
+    container_name: hes_presentation_app
+    network_mode: host
+    command:
+      - ./hes
+      - --database=in-memory
+      - --disable-cluster
+      - --disable-rpc
+      - --test-mode
+    # The server reads stdin waiting for 'q'. Without an open stdin the read
+    # hits EOF on every iteration and the main loop spins on the CPU.
+    stdin_open: true
+    tty: true
+    depends_on:
+      prometheus:
+        condition: service_started
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: hes_presentation_prometheus
+    network_mode: host
+    volumes:
+      - ./metrics/prometheus-presentation.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hes_presentation_grafana
+    network_mode: host
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./metrics/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./metrics/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./metrics/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SERVER_HTTP_PORT=6969
+
+volumes:
+  grafana_data:

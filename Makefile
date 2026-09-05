@@ -1,4 +1,6 @@
-.PHONY: build run run-debug run-node-1 run-node-2 run-node-3 lint local-cli
+.PHONY: build run run-debug run-node-1 run-node-2 run-node-3 lint local-cli run-presentation logs-presentation stop-presentation
+
+PRESENTATION := -p hes-presentation -f docker-compose.presentation.yaml
 
 build: ## Build the server
 	cargo build
@@ -39,6 +41,19 @@ run-docker-metrics: ## run server in docker with metrics
 
 stop-docker-metrics: ## stop docker with metrics
 	docker compose stop
+
+run-presentation: ## demo stack in docker: single node, in-memory DB, metrics, test mode, no RPC
+	docker compose $(PRESENTATION) build
+	docker compose $(PRESENTATION) up -d
+	@echo ""
+	@echo "HES listo: backdoor udp/6565, metricas :6464, prometheus :9090, grafana :6969 (admin/admin)"
+	@echo "Logs: make logs-presentation | Parar: make stop-presentation"
+
+logs-presentation: ## follow the presentation stack logs
+	docker compose $(PRESENTATION) logs -f app
+
+stop-presentation: ## stop and remove the presentation stack
+	docker compose $(PRESENTATION) down --remove-orphans
 
 clean-docker: ## clean docker containers, networks, volumes and images
 	docker compose down -v --remove-orphans

@@ -11,9 +11,12 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 FROM rust:1.88 AS builder
 WORKDIR /app
+# Optional cargo features (e.g. debug-session-start). Empty by default so the
+# plain `docker compose build` keeps producing the same binary as before.
+ARG CARGO_FEATURES=""
 COPY . .
 COPY --from=planner /app/target target
-RUN cargo build --release
+RUN if [ -n "$CARGO_FEATURES" ]; then cargo build --release --features "$CARGO_FEATURES"; else cargo build --release; fi
 
 FROM debian:bookworm-slim
 WORKDIR /app
