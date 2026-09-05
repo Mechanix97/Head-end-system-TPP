@@ -15,6 +15,7 @@ use common::database::{DatabaseConfig, DatabaseType, api::Database};
 use config::{CliOverrides, resolve_config};
 use device_manager::DeviceManager;
 use metrics::api::start_prometheus_metrics_api;
+use metrics::metrics_cluster::METRICS_CLUSTER;
 use rpc::{ClusterManagerHandle, RpcState, start_rpc_server};
 use scheduler::scheduler::Scheduler;
 
@@ -209,6 +210,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some(manager)
     } else {
         info!("Running in single-node mode");
+        // Nothing drives the cluster gauges without a membership list, so the
+        // dashboards would report zero nodes while this one is serving devices.
+        METRICS_CLUSTER.cluster_nodes_total.set(1);
+        METRICS_CLUSTER.cluster_nodes_active.set(1);
         None
     };
 
